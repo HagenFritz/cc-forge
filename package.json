@@ -1,0 +1,40 @@
+{
+  "name": "cc-forge",
+  "version": "0.1.0",
+  "description": "Structured development workflows, code review, and research automation for Claude Code",
+  "type": "module",
+  "bin": {
+    "cc-forge": "./dist/cli.mjs"
+  },
+  "files": [
+    "dist/",
+    "skills/",
+    "agents/"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsdown --watch",
+    "prepublishOnly": "npm run build && npm run typecheck"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "workflow",
+    "code-review",
+    "development",
+    "cli"
+  ],
+  "author": "Hagen Fritz",
+  "license": "MIT",
+  "repository": "https://github.com/HagenFritz/cc-forge",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@clack/prompts": "^0.9.0",
+    "@types/node": "^25.5.0",
+    "tsdown": "latest",
+    "typescript": "^5.0.0"
+  }
+}
