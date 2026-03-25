@@ -1,0 +1,10 @@
+{
+  "name": "cc-forge",
+  "version": "0.1.0",
+  "description": "Personal development workflow plugin for Claude Code with Toggl and GitHub integration.",
+  "author": {
+    "name": "Hagen Fritz"
+  },
+  "repository": "https://github.com/HagenFritz/cc-forge",
+  "license": "MIT"
+}
