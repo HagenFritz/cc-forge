@@ -53,8 +53,9 @@ export function copyAgents(packageRoot: string): string[] {
 
 export function removeSkills(): string[] {
   const skillNames = [
-    'brainstorm', 'compound', 'deepen-plan', 'document-review',
-    'frontend-design', 'git-worktree', 'ideate', 'plan', 'review', 'work',
+    'branch', 'brainstorm', 'compound', 'create-issue-from-context', 'deepen-plan',
+    'document-review', 'frontend-design', 'git-worktree', 'ideate', 'plan',
+    'review', 'ship', 'sync-github-config', 'work',
   ]
   const removed: string[] = []
   for (const name of skillNames) {

@@ -31,6 +31,11 @@ Core workflow: brainstorm -> plan -> work -> review -> compound
 - `/git-worktree` - Manage git worktrees
 - `/frontend-design` - Design-quality frontend code
 
+**GitHub Integration:**
+- `/branch` - Create and checkout a branch from an issue number (auto-detects repo)
+- `/create-issue-from-context` - Create GitHub issues from conversation context (auto-detects repo)
+- `/ship` - Commit changes, push branch, and create a PR (auto-detects repo)
+
 ## Agent References in Skills
 
 When referencing agents from within SKILL.md files, use fully-qualified names:

@@ -43,16 +43,19 @@ export async function runInstall(): Promise<void> {
   outro(`cc-forge installed!
 
 Skills added:
-  /brainstorm        Explore requirements and approaches
-  /plan              Create implementation plans
-  /work              Execute work plans
-  /review            Multi-agent code review
-  /compound          Document learnings
-  /ideate            Generate improvement ideas
-  /deepen-plan       Enhance plans with research
-  /document-review   Review requirement/plan docs
-  /git-worktree      Manage git worktrees
-  /frontend-design   Design-quality frontend code
+  /brainstorm                Explore requirements and approaches
+  /plan                      Create implementation plans
+  /work                      Execute work plans
+  /review                    Multi-agent code review
+  /compound                  Document learnings
+  /ideate                    Generate improvement ideas
+  /deepen-plan               Enhance plans with research
+  /document-review           Review requirement/plan docs
+  /git-worktree              Manage git worktrees
+  /frontend-design           Design-quality frontend code
+  /branch                    Create a branch from an issue number
+  /create-issue-from-context Create GitHub issues from context
+  /ship                      Commit, push, and create a PR
 
 Agent categories: research, review, workflow
 
