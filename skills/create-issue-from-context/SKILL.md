@@ -2,7 +2,7 @@
 name: create-issue-from-context
 description: Generate a GitHub issue from conversation context and add it to a project
 argument-hint: "[optional framing to guide the issue's focus, used alongside conversation and git context]"
-allowed-tools: Bash, AskUserQuestion, Read, TaskCreate, TaskUpdate
+allowed-tools: Bash, AskUserQuestion, Read, TaskCreate, TaskUpdate, TaskList
 ---
 
 # Create GitHub Issue from Context
@@ -11,7 +11,7 @@ Create a GitHub issue using the current conversation context and git diff/log to
 
 ## Progress Tracking
 
-Before starting, create all tasks upfront using `TaskCreate` so the user can see the full checklist. Mark each task `in_progress` when you start it and `completed` when done. Create these tasks:
+Before starting, use `TaskList` to find any lingering tasks and delete them all with `TaskUpdate` (status: `deleted`). Then create fresh tasks upfront using `TaskCreate` so the user can see the full checklist. Mark each task `in_progress` when you start it and `completed` when done. Create these tasks:
 
 1. "Detect repo and check auth" (activeForm: "Detecting repository...")
 2. "Gather context and git signals" (activeForm: "Collecting signals...")
@@ -66,6 +66,22 @@ Before starting, create all tasks upfront using `TaskCreate` so the user can see
    - Body: Use the template format from [issue-template.md](issue-template.md) and fill in each section based on the context and git signals
    - Keep the body concise and low-verbosity
    - If context is thin, ask one clarifying question before proceeding; if still thin, stop and tell the user to gather more context
+
+5a. **Preview and confirm the issue**
+   - Use `AskUserQuestion` with a single question. Set the `preview` field on the "Confirm" option to show the full draft:
+     ```
+     Title: <title>
+     Label: <label>
+     Type: <type>
+
+     <body rendered as-is>
+     ```
+   - Options:
+     - **Confirm** (description: "Create this issue as shown") — include the full preview on this option
+     - **Cancel** (description: "Abort without creating")
+   - Also allow "Other" (automatic) for the user to type a revised title or notes
+   - If user cancels, stop.
+   - If user provides custom input via Other, treat it as revision notes and regenerate the title/body accordingly, then re-show the preview.
 
 6. **Create the issue**
    - Create the issue with label (HEREDOC for body):
