@@ -1,5 +1,5 @@
 ---
-name: ce:review
+name: review
 description: Perform exhaustive code reviews using multi-agent analysis, ultra-thinking, and worktrees
 argument-hint: "[PR number, GitHub URL, branch name, or latest] [--serial]"
 ---
@@ -53,8 +53,8 @@ Ensure that the code is ready for analysis (either in worktree or on current bra
 <protected_artifacts>
 The following paths are compound-engineering pipeline artifacts and must never be flagged for deletion, removal, or gitignore by any review agent:
 
-- `docs/brainstorms/*-requirements.md` — Requirements documents created by `/ce:brainstorm`. These are the product-definition artifacts that planning depends on.
-- `docs/plans/*.md` — Plan files created by `/ce:plan`. These are living documents that track implementation progress (checkboxes are checked off by `/ce:work`).
+- `docs/brainstorms/*-requirements.md` — Requirements documents created by `/brainstorm`. These are the product-definition artifacts that planning depends on.
+- `docs/plans/*.md` — Plan files created by `/plan`. These are living documents that track implementation progress (checkboxes are checked off by `/work`).
 - `docs/solutions/*.md` — Solution documents created during the pipeline.
 
 If a review agent flags any file in these directories for cleanup or removal, discard that finding during synthesis. Do not create a todo for it.

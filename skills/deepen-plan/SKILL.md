@@ -10,7 +10,7 @@ argument-hint: "[path to plan file]"
 
 **Note: The current year is 2026.** Use this when searching for recent documentation and best practices.
 
-`ce:plan` does the first planning pass. `deepen-plan` is a second-pass confidence check.
+`plan` does the first planning pass. `deepen-plan` is a second-pass confidence check.
 
 Use this skill when the plan already exists and the question is not "Is this document clear?" but rather "Is this plan grounded enough for the complexity and risk involved?"
 
@@ -43,7 +43,7 @@ Do not proceed until you have a valid plan file path.
 3. **Prefer the simplest execution mode** - Use direct agent synthesis by default. Switch to artifact-backed research only when the selected research scope is large enough that returning all findings inline would create avoidable context pressure.
 4. **Preserve the planning boundary** - No implementation code, no git command choreography, no exact test command recipes.
 5. **Use artifact-contained evidence** - Work from the written plan, its `Context & Research`, `Sources & References`, and its origin document when present.
-6. **Respect product boundaries** - Do not invent new product requirements. If deepening reveals a product-level gap, surface it as an open question or route back to `ce:brainstorm`.
+6. **Respect product boundaries** - Do not invent new product requirements. If deepening reveals a product-level gap, surface it as an open question or route back to `brainstorm`.
 7. **Prioritize risk and cross-cutting impact** - The more dangerous or interconnected the work, the more valuable another planning pass becomes.
 
 ## Workflow
@@ -83,10 +83,10 @@ Use this default:
 
 If the plan already appears sufficiently grounded:
 - Say so briefly
-- Recommend moving to `/ce:work` or the `document-review` skill
+- Recommend moving to `/work` or the `document-review` skill
 - If the user explicitly asked to deepen anyway, continue with a light pass and deepen at most 1-2 sections
 
-### Phase 1: Parse the Current `ce:plan` Structure
+### Phase 1: Parse the Current `plan` Structure
 
 Map the plan into the current template. Look for these sections, or their nearest equivalents:
 - `Overview`
@@ -363,7 +363,7 @@ Do **not**:
 If research reveals a product-level ambiguity that should change behavior or scope:
 - Do not silently decide it here
 - Record it under `Open Questions`
-- Recommend `ce:brainstorm` if the gap is truly product-defining
+- Recommend `brainstorm` if the gap is truly product-defining
 
 ### Phase 6: Final Checks and Write the File
 
@@ -393,17 +393,17 @@ If substantive changes were made, present next steps using the platform's blocki
 **Options:**
 1. **View diff** - Show what changed
 2. **Run `document-review` skill** - Improve the updated plan through structured document review
-3. **Start `ce:work` skill** - Begin implementing the plan
+3. **Start `work` skill** - Begin implementing the plan
 4. **Deepen specific sections further** - Run another targeted deepening pass on named sections
 
 Based on selection:
 - **View diff** -> Show the important additions and changed sections
 - **`document-review` skill** -> Load the `document-review` skill with the plan path
-- **Start `ce:work` skill** -> Call the `ce:work` skill with the plan path
+- **Start `work` skill** -> Call the `work` skill with the plan path
 - **Deepen specific sections further** -> Ask which sections still feel weak and run another targeted pass only for those sections
 
 If no substantive changes were warranted:
 - Say that the plan already appears sufficiently grounded
-- Offer the `document-review` skill or `/ce:work` as the next step instead
+- Offer the `document-review` skill or `/work` as the next step instead
 
 NEVER CODE! Research, challenge, and strengthen the plan.
