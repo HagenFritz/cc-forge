@@ -1,5 +1,5 @@
 ---
-name: ce:brainstorm
+name: brainstorm
 description: 'Explore requirements and approaches through collaborative dialogue before writing a right-sized requirements document and planning implementation. Use for feature ideas, problem framing, when the user says ''let''s brainstorm'', or when they want to think through options before deciding what to build. Also use when a user describes a vague or ambitious feature request, asks ''what should we build'', ''help me think through X'', presents a problem with multiple valid solutions, or seems unsure about scope or direction — even if they don''t explicitly ask to brainstorm.'
 argument-hint: "[feature idea or problem to explore]"
 ---
@@ -8,7 +8,7 @@ argument-hint: "[feature idea or problem to explore]"
 
 **Note: The current year is 2026.** Use this when dating requirements documents.
 
-Brainstorming helps answer **WHAT** to build through collaborative dialogue. It precedes `/ce:plan`, which answers **HOW** to build it.
+Brainstorming helps answer **WHAT** to build through collaborative dialogue. It precedes `/plan`, which answers **HOW** to build it.
 
 The durable output of this workflow is a **requirements document**. In other workflows this might be called a lightweight PRD or feature brief. In compound engineering, keep the workflow name `brainstorm`, but make the written artifact strong enough that planning does not need to invent product behavior, scope boundaries, or success criteria.
 
@@ -211,8 +211,8 @@ topic: <kebab-case-topic>
 - [Affects R2][Needs research] [Question that likely requires research during planning]
 
 ## Next Steps
-[If `Resolve Before Planning` is empty: `→ /ce:plan` for structured implementation planning]
-[If `Resolve Before Planning` is not empty: `→ Resume /ce:brainstorm` to resolve blocking questions before planning]
+[If `Resolve Before Planning` is empty: `→ /plan` for structured implementation planning]
+[If `Resolve Before Planning` is not empty: `→ Resume /brainstorm` to resolve blocking questions before planning]
 ```
 
 For **Standard** and **Deep** brainstorms, a requirements document is usually warranted.
@@ -224,7 +224,7 @@ For very small requirements docs with only 1-3 simple requirements, plain bullet
 When the work is simple, combine sections rather than padding them. A short requirements document is better than a bloated one.
 
 Before finalizing, check:
-- What would `ce:plan` still have to invent if this brainstorm ended now?
+- What would `plan` still have to invent if this brainstorm ended now?
 - Do any requirements depend on something claimed to be out of scope?
 - Are any unresolved items actually product decisions rather than planning questions?
 - Did implementation details leak in when they shouldn't have?
@@ -260,7 +260,7 @@ If `Resolve Before Planning` contains any items:
 **Question when blocking questions remain and user wants to pause:** "Brainstorm paused. Planning is blocked until the remaining questions are resolved. What would you like to do next?"
 
 Present only the options that apply:
-- **Proceed to planning (Recommended)** - Run `/ce:plan` for structured implementation planning
+- **Proceed to planning (Recommended)** - Run `/plan` for structured implementation planning
 - **Proceed directly to work** - Only offer this when scope is lightweight, success criteria are clear, scope boundaries are clear, and no meaningful technical or research questions remain
 - **Review and refine** - Offer this only when a requirements document exists and can be improved through structured review
 - **Ask more questions** - Continue clarifying scope, preferences, or edge cases
@@ -273,11 +273,11 @@ If the direct-to-work gate is not satisfied, omit that option entirely.
 
 **If user selects "Proceed to planning (Recommended)":**
 
-Immediately run `/ce:plan` in the current session. Pass the requirements document path when one exists; otherwise pass a concise summary of the finalized brainstorm decisions. Do not print the closing summary first.
+Immediately run `/plan` in the current session. Pass the requirements document path when one exists; otherwise pass a concise summary of the finalized brainstorm decisions. Do not print the closing summary first.
 
 **If user selects "Proceed directly to work":**
 
-Immediately run `/ce:work` in the current session using the finalized brainstorm output as context. If a compact requirements document exists, pass its path. Do not print the closing summary first.
+Immediately run `/work` in the current session using the finalized brainstorm output as context. If a compact requirements document exists, pass its path. Do not print the closing summary first.
 
 **If user selects "Share to Proof":**
 
@@ -317,7 +317,7 @@ Key decisions:
 - [Decision 1]
 - [Decision 2]
 
-Recommended next step: `/ce:plan`
+Recommended next step: `/plan`
 ```
 
 If the user pauses with `Resolve Before Planning` still populated, display:
@@ -331,5 +331,5 @@ Planning is blocked by:
 - [Blocking question 1]
 - [Blocking question 2]
 
-Resume with `/ce:brainstorm` when ready to resolve these before planning.
+Resume with `/brainstorm` when ready to resolve these before planning.
 ```

@@ -1,5 +1,5 @@
 ---
-name: ce:ideate
+name: ideate
 description: "Generate and critically evaluate grounded improvement ideas for the current project. Use when asking what to improve, requesting idea generation, exploring surprising improvements, or wanting the AI to proactively suggest strong project directions before brainstorming one in depth. Triggers on phrases like 'what should I improve', 'give me ideas', 'ideate on this project', 'surprise me with improvements', 'what would you change', or any request for AI-generated project improvement suggestions rather than refining the user's own idea."
 argument-hint: "[optional: feature, focus area, or constraint]"
 ---
@@ -8,11 +8,11 @@ argument-hint: "[optional: feature, focus area, or constraint]"
 
 **Note: The current year is 2026.** Use this when dating ideation documents and checking recent ideation artifacts.
 
-`ce:ideate` precedes `ce:brainstorm`.
+`ideate` precedes `brainstorm`.
 
-- `ce:ideate` answers: "What are the strongest ideas worth exploring?"
-- `ce:brainstorm` answers: "What exactly should one chosen idea mean?"
-- `ce:plan` answers: "How should it be built?"
+- `ideate` answers: "What are the strongest ideas worth exploring?"
+- `brainstorm` answers: "What exactly should one chosen idea mean?"
+- `plan` answers: "How should it be built?"
 
 This workflow produces a ranked ideation artifact in `docs/ideation/`. It does **not** produce requirements, plans, or code.
 
@@ -43,7 +43,7 @@ If no argument is provided, proceed with open-ended ideation.
 4. **Preserve the original prompt mechanism** - Generate many ideas, critique the whole list, then explain only the survivors in detail. Do not let extra process obscure this pattern.
 5. **Use agent diversity to improve the candidate pool** - Parallel sub-agents are a support mechanism for richer idea generation and critique, not the core workflow itself.
 6. **Preserve the artifact early** - Write the ideation document before presenting results so work survives interruptions.
-7. **Route action into brainstorming** - Ideation identifies promising directions; `ce:brainstorm` defines the selected one precisely enough for planning.
+7. **Route action into brainstorming** - Ideation identifies promising directions; `brainstorm` defines the selected one precisely enough for planning.
 
 ## Execution Flow
 
@@ -252,14 +252,14 @@ Allow brief follow-up questions and lightweight clarification before writing the
 Do not write the ideation doc yet unless:
 - the user indicates the candidate set is good enough to preserve
 - the user asks to refine and continue in a way that should be recorded
-- the workflow is about to hand off to `ce:brainstorm`, Proof sharing, or session end
+- the workflow is about to hand off to `brainstorm`, Proof sharing, or session end
 
 ### Phase 5: Write the Ideation Artifact
 
 Write the ideation artifact after the candidate set has been reviewed enough to preserve.
 
 Always write or update the artifact before:
-- handing off to `ce:brainstorm`
+- handing off to `brainstorm`
 - sharing to Proof
 - ending the session
 
@@ -326,7 +326,7 @@ If the user selects an idea:
 - write or update the ideation doc first
 - mark that idea as `Explored`
 - note the brainstorm date in the session log
-- invoke `ce:brainstorm` with the selected idea as the seed
+- invoke `brainstorm` with the selected idea as the seed
 
 Do **not** skip brainstorming and go straight to planning from ideation output.
 
@@ -367,4 +367,4 @@ Before finishing, check:
 - every rejected idea has a reason
 - survivors are materially better than a naive "give me ideas" list
 - the artifact was written before any handoff, sharing, or session end
-- acting on an idea routes to `ce:brainstorm`, not directly to implementation
+- acting on an idea routes to `brainstorm`, not directly to implementation
