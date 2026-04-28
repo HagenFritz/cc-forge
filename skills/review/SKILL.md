@@ -239,9 +239,7 @@ Complete system context map with component interactions
 
 Run the Task cc-forge:review:code-simplicity-reviewer() to see if we can simplify the code.
 
-### 5. Findings Synthesis and Todo Creation Using todo-create Skill
-
-<critical_requirement> ALL findings MUST be stored as todo files using the todo-create skill. Load the `todo-create` skill for the canonical directory path, naming convention, and template. Create todo files immediately after synthesis - do NOT present findings for user approval first. </critical_requirement>
+### 5. Findings Synthesis, Review Document, and Todo Creation
 
 #### Step 1: Synthesize All Findings
 
@@ -262,7 +260,101 @@ Remove duplicates, prioritize by severity and impact.
 
 </synthesis_tasks>
 
-#### Step 2: Create Todo Files Using todo-create Skill
+#### Step 2: Write Review File
+
+**REQUIRED: Write the review file to disk before creating todos or presenting the terminal summary.**
+
+Determine the filename:
+- Create `docs/reviews/` if it does not exist
+- Check existing files for today's date to determine the next sequence number (zero-padded to 3 digits, starting at 001)
+- Format: `docs/reviews/YYYY-MM-DD-NNN-<branch-or-pr-slug>-review.md`
+- Examples: `docs/reviews/2026-04-28-001-feat-add-auth-review.md`, `docs/reviews/2026-04-28-002-pr-42-review.md`
+
+Use the Write tool to save the complete review document following this template:
+
+```markdown
+---
+title: [Review Title]
+target: [PR #NNN | branch-name]
+date: YYYY-MM-DD
+---
+
+# [Review Title]
+
+## Summary
+
+| Priority | Count | Label |
+|----------|-------|-------|
+| P1 | [n] | Critical — fix before merge |
+| P2 | [n] | Important — should fix |
+| P3 | [n] | Nice-to-have |
+| **Total** | [n] | |
+
+### P1 Issues
+[For each P1: `- [ ] **[short title]** — [one sentence description]`]
+
+### P2 Issues
+[For each P2: `- [ ] **[short title]** — [one sentence description]`]
+
+### P3 Issues
+[For each P3: `- [ ] **[short title]** — [one sentence description]`]
+
+---
+
+## Issues
+
+<!-- Each issue is self-contained — copy a section and paste it into Claude Code to fix. -->
+
+### P1-1: [Short Title]
+
+**Status:** `open` <!-- open | in-progress | done | wont-fix -->
+
+**File(s):** `path/to/file.ext` (line NNN if applicable)
+
+**Problem:** [1-3 sentences. What is wrong, why it matters, what could go wrong if left unfixed.]
+
+**Fix:** [Concrete description of the change needed. Specific enough that Claude Code can act on it without re-investigating. Name the method, pattern, or approach to use. Include the expected behavior after the fix.]
+
+**Effort:** Small | Medium | Large
+
+---
+
+### P2-1: [Short Title]
+
+**Status:** `open` <!-- open | in-progress | done | wont-fix -->
+
+**File(s):** `path/to/file.ext`
+
+**Problem:** [1-3 sentences.]
+
+**Fix:** [Concrete description of the change needed.]
+
+**Effort:** Small | Medium | Large
+
+---
+
+### P3-1: [Short Title]
+
+**Status:** `open` <!-- open | in-progress | done | wont-fix -->
+
+**File(s):** `path/to/file.ext`
+
+**Problem:** [1-2 sentences.]
+
+**Fix:** [Concrete description of the change needed.]
+
+**Effort:** Small | Medium | Large
+```
+
+**Issue writing rules:**
+- Each issue must be fully self-contained — a reader with no other context should be able to paste it into Claude Code and get a correct fix
+- **File(s)** must include exact paths; add line numbers when the finding is pinpointed to a specific location
+- **Problem** explains what and why, not just what
+- **Fix** describes the concrete change — not just "fix the bug"
+- Keep issues tight: no alternatives, pros/cons tables, or acceptance criteria
+- Number issues sequentially within each tier: P1-1, P1-2, P2-1, P2-2, P3-1, etc.
+
+#### Step 3: Create Todo Files Using todo-create Skill
 
 <critical_instruction> Use the todo-create skill to create todo files for ALL findings immediately. Do NOT present findings one-by-one asking for user approval. Create all todo files in parallel using the skill, then summarize results to user. </critical_instruction>
 
@@ -381,14 +473,15 @@ Examples:
 
 **Tagging:** Always add `code-review` tag, plus: `security`, `performance`, `architecture`, `rails`, `quality`, etc.
 
-#### Step 3: Summary Report
+#### Step 4: Summary Report
 
-After creating all todo files, present comprehensive summary:
+After writing the review file and creating all todo files, present comprehensive summary:
 
 ````markdown
 ## ✅ Code Review Complete
 
 **Review Target:** PR #XXXX - [PR Title] **Branch:** [branch-name]
+**Review document:** `docs/reviews/[filename]`
 
 ### Findings Summary:
 
