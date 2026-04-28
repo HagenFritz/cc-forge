@@ -1,5 +1,5 @@
 ---
-name: create-issue-from-context
+name: issue-from-context
 description: Generate a GitHub issue from conversation context and add it to a project
 argument-hint: "[optional framing to guide the issue's focus, used alongside conversation and git context]"
 allowed-tools: Bash, AskUserQuestion, Read, TaskCreate, TaskUpdate, TaskList
