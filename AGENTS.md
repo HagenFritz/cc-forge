@@ -36,7 +36,7 @@ Core workflow: brainstorm -> plan -> work -> review -> compound
 
 **GitHub Integration:**
 - `/branch` - Create and checkout a branch from an issue number (auto-detects repo)
-- `/create-issue-from-context` - Create GitHub issues from conversation context (auto-detects repo)
+- `/issue-from-context` - Create GitHub issues from conversation context (auto-detects repo)
 - `/create-initiative` - Publish an initiative as a parent GitHub issue with linked sub-tasks (one-shot publish; for the living working doc, use `/initiative`)
 - `/ship` - Commit changes, push branch, and create a PR (auto-detects repo)
 
