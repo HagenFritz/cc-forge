@@ -31,9 +31,13 @@ Core workflow: brainstorm -> plan -> work -> review -> compound
 - `/git-worktree` - Manage git worktrees
 - `/frontend-design` - Design-quality frontend code
 
+**Strategic:**
+- `/initiative` - Author or maintain a living high-level initiative doc at `docs/initiatives/`. One altitude up from `/plan` (workstreams, not commit-sized units). Two modes: invoke with no path to author a new initiative; invoke with the path to an existing initiative doc to resume — the skill gathers repo evidence since `last_updated` and writes the update back surgically. Composes with `/create-initiative` (which publishes to GitHub). Typical flow: `/initiative` → `/plan` per workstream → `/work` → `/initiative <path>` to log progress.
+
 **GitHub Integration:**
 - `/branch` - Create and checkout a branch from an issue number (auto-detects repo)
 - `/create-issue-from-context` - Create GitHub issues from conversation context (auto-detects repo)
+- `/create-initiative` - Publish an initiative as a parent GitHub issue with linked sub-tasks (one-shot publish; for the living working doc, use `/initiative`)
 - `/ship` - Commit changes, push branch, and create a PR (auto-detects repo)
 
 ## Agent References in Skills

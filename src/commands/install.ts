@@ -53,8 +53,10 @@ Skills added:
   /document-review           Review requirement/plan docs
   /git-worktree              Manage git worktrees
   /frontend-design           Design-quality frontend code
+  /initiative                Author and maintain living initiative docs
   /branch                    Create a branch from an issue number
   /create-issue-from-context Create GitHub issues from context
+  /create-initiative         Publish an initiative to GitHub issues
   /ship                      Commit, push, and create a PR
 
 Agent categories: research, review, workflow
