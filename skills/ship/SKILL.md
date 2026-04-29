@@ -1,9 +1,8 @@
 ---
 name: ship
 description: Commit all changes per-file, push the branch, and create a PR
-disable-model-invocation: true
 user-invocable: true
-allowed-tools: Bash, Read, Grep, Glob
+allowed-tools: Bash, AskUserQuestion, Read, Grep, Glob
 ---
 
 Push the current branch and create a pull request. Also stage and commit any lingering uncommitted changes first.
@@ -50,14 +49,59 @@ Do NOT proceed with any commits or pushes on main/master.
 
 ### Phase 3: Push and create PR
 
-8. Push the branch to the remote with `git push -u origin <branch-name>`.
-9. Detect `<owner>/<repo>` from `git remote get-url origin`.
-10. Create a PR using `gh pr create` with:
-   - A concise title (under 70 chars) summarizing the branch's changes **in the current repo** based on the full diff and commit history
-   - Use the template in [pr-template.md](pr-template.md) for the body format
-   - **Primary Changes**: Only include changes from the current repository
-   - **Related Changes**: If changes were detected in other repositories (from Phase 1 step 4), add a brief note like "Other repos modified: Changes detected in [repo-name] (not included in this PR)". Do NOT include specific file details or change descriptions from other repos.
-   - Use a HEREDOC for the body to ensure correct formatting
+8. Detect `<owner>/<repo>` from `git remote get-url origin`.
+
+9. **Check for an existing open PR on this branch:**
+   Run `gh pr view --json number,url,state 2>/dev/null`. If the command succeeds and `state` is `"OPEN"`:
+   - **Update path (PR already exists):**
+     - Push the branch: `git push -u origin <branch-name>`
+     - Run `git log origin/<branch-name>..HEAD --oneline` to list new commits since the last push.
+     - Run `git diff --stat origin/<branch-name>..HEAD` to summarize changed files.
+     - Generate a concise comment body with:
+       - A short summary sentence describing what was updated
+       - A "New commits" list (from the `git log` output)
+       - A "Changed files" summary (from `git diff --stat`)
+     - Post the comment: `gh pr comment <number> --body "$(cat <<'EOF' ... EOF)"`
+     - Output the existing PR URL and stop.
+   - If the command fails or `state` is not `"OPEN"` (closed or merged PR), treat as no PR and continue to the new PR path below.
+
+10. **New PR path:**
+
+    a. **Parse the issue number** from the branch name: split the branch name on `/` and take the second segment. If it is a positive integer, store it as `<issue-number>`. Otherwise (non-numeric, `no-ref`, or branch has fewer than two `/`-delimited segments), set `<issue-number>` to none.
+
+    b. **Push the branch**: `git push -u origin <branch-name>`
+
+    c. **Generate PR title and body:**
+       - Title: concise (under 70 chars), summarizing the branch's changes in the current repo based on the full diff and commit history.
+       - Body: use the template in [pr-template.md](pr-template.md). Substitute `<issue-number>` where the template instructs. If `<issue-number>` is none, omit the bare `#N` line and write "N/A" for the `### Related Issue` section.
+       - **Primary Changes**: only changes from the current repository.
+       - **Related Changes**: if changes were detected in other repositories (from Phase 1 step 4), add a brief note. Do NOT include specific file or change details from other repos.
+
+    d. **Show confirmation preview** using `AskUserQuestion` with a single question:
+       - Set the `preview` field on the **Confirm** option to show the full draft:
+         ```
+         Title: <title>
+         Branch: <branch-name> → main
+         Issue: #<issue-number>  (or "No linked issue" if none)
+
+         <full PR body>
+         ```
+       - Options:
+         - **Confirm** (description: "Create this PR as shown") — include the full preview on this option
+         - **Cancel** (description: "Abort without creating the PR")
+       - Also allow **Other** (automatic) for free-form input.
+       - **If Confirm:** proceed to step 10e.
+       - **If Cancel:** output "PR creation cancelled. Branch has been pushed to remote." and stop.
+       - **If Other:** treat the free-form input as a revised title and/or body revision notes. Regenerate the title and body accordingly and re-show the preview (loop back to step 10d). Repeat until the user confirms or cancels.
+
+    e. **Create the PR:**
+       ```
+       gh pr create --title "<title>" --body "$(cat <<'EOF'
+       <body>
+       EOF
+       )"
+       ```
+
 11. Output the PR URL.
 
 ## Rules

@@ -1,3 +1,5 @@
+If the branch name contains a numeric issue number (second segment between forward slashes, e.g. `feat/42/some-desc` → `42`), include this line at the very top of the body: `#42`. If the branch uses `no-ref` or the second segment is not a number, omit this line entirely.
+
 ### Related Issue
 Extract the issue number from the branch name (the second segment between forward slashes, e.g. `feat/171/some-desc` → `171`). Detect `<owner>/<repo>` from `git remote get-url origin` and cross-reference the issue as: `<owner>/<repo>#<number>`. If the branch uses `no-ref`, write "N/A".
 
