@@ -174,13 +174,18 @@ This command takes a work document (plan, specification, or todo file) and execu
    # 2. Stage only files related to this logical unit (not `git add .`)
    git add <files related to this logical unit>
 
-   # 3. Commit with conventional message
-   git commit -m "feat(scope): description of this unit"
+   # 3. Commit with conventional message using HEREDOC
+   git commit -m "$(cat <<'EOF'
+   <type>(scope): description of this unit
+
+   Co-Authored-By: Claude <noreply@anthropic.com>
+   EOF
+   )"
    ```
 
-   **Handling merge conflicts:** If conflicts arise during rebasing or merging, resolve them immediately. Incremental commits make conflict resolution easier since each commit is small and focused.
+   Where `<type>` is one of: `feat`, `hotfix`, `bugfix`, `docs` — choose based on the nature of the change. Check `git log --oneline -5` to match the repo's existing commit style.
 
-   **Note:** Incremental commits use clean conventional messages without attribution footers. The final Phase 4 commit/PR includes the full attribution.
+   **Handling merge conflicts:** If conflicts arise during rebasing or merging, resolve them immediately. Incremental commits make conflict resolution easier since each commit is small and focused.
 
 3. **Follow Existing Patterns**
 
@@ -330,52 +335,9 @@ This command takes a work document (plan, specification, or todo file) and execu
 
    **IMPORTANT**: Always include uploaded image URLs in PR description. This provides visual context for reviewers and documents the change.
 
-3. **Create Pull Request**
+3. **Push and Create Pull Request**
 
-   ```bash
-   git push -u origin feature-branch-name
-
-   gh pr create --title "Feature: [Description]" --body "$(cat <<'EOF'
-   ## Summary
-   - What was built
-   - Why it was needed
-   - Key decisions made
-
-   ## Testing
-   - Tests added/modified
-   - Manual testing performed
-
-   ## Post-Deploy Monitoring & Validation
-   - **What to monitor/search**
-     - Logs:
-     - Metrics/Dashboards:
-   - **Validation checks (queries/commands)**
-     - `command or query here`
-   - **Expected healthy behavior**
-     - Expected signal(s)
-   - **Failure signal(s) / rollback trigger**
-     - Trigger + immediate action
-   - **Validation window & owner**
-     - Window:
-     - Owner:
-   - **If no operational impact**
-     - `No additional operational monitoring required: <reason>`
-
-   ## Before / After Screenshots
-   | Before | After |
-   |--------|-------|
-   | ![before](URL) | ![after](URL) |
-
-   ## Figma Design
-   [Link if applicable]
-
-   ---
-
-   [![Compound Engineering v[VERSION]](https://img.shields.io/badge/Compound_Engineering-v[VERSION]-6366f1)](https://github.com/EveryInc/compound-engineering-plugin)
-   🤖 Generated with [MODEL] ([CONTEXT] context, [THINKING]) via [HARNESS](HARNESS_URL)
-   EOF
-   )"
-   ```
+   Use `/ship` to push the branch and open a PR.
 
 4. **Update Plan Status**
 
@@ -464,9 +426,7 @@ Before creating PR, verify:
 - [ ] Figma designs match implementation (if applicable)
 - [ ] Before/after screenshots captured and uploaded (for UI changes)
 - [ ] Commit messages follow conventional format
-- [ ] PR description includes Post-Deploy Monitoring & Validation section (or explicit no-impact rationale)
-- [ ] PR description includes summary, testing notes, and screenshots
-- [ ] PR description includes Compound Engineered badge with accurate model, harness, and version
+- [ ] Run `/ship` to push branch and create PR
 
 ## When to Use Reviewer Agents
 
