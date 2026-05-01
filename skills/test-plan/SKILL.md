@@ -192,9 +192,19 @@ Progress: X / N tests completed (pass or skip count toward completion; fail and 
 
 ---
 
-## Step 4: Present Summary
+## Step 4: Critic Pass
 
-After writing the file, present a brief summary:
+After writing the file, spawn the `cc-forge:test:test-plan-critic` agent. Pass it:
+- The absolute path to the test plan file you just wrote
+- The full git diff output collected in Step 1.2 (unstaged + staged + branch commits)
+
+The critic will annotate each test case in-place with a `**Viability:**` score and append a Drop List. Wait for it to complete before presenting the summary.
+
+---
+
+## Step 5: Present Summary
+
+After the critic completes, present a brief summary:
 
 ```
 ## Test Plan Created
@@ -212,9 +222,18 @@ After writing the file, present a brief summary:
 | Stress / Load | N |
 | API / CLI | N |
 
+| Viability | Count |
+|-----------|-------|
+| Critical | N |
+| High | N |
+| Medium | N |
+| Low | N |
+| Negligible | N |
+
+**Recommended to drop:** N cases (see Drop List at bottom of file)
 **Automated test candidates flagged:** N
 
-Open the file, work through the cases, and update the Status field for each one as you go.
+Open the file, review the Drop List first, delete any cases you agree with, then work through the remaining cases and update the Status field as you go.
 For any GCP commands or API calls in the plan, paste the test case here and I can help you run or interpret it.
 ```
 
