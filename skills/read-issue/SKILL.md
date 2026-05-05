@@ -1,13 +1,13 @@
 ---
 name: read-issue
-description: Fetch a GitHub issue from ro-compass-web by number and present a structured digest
+description: Fetch a GitHub issue from the current repo by number and present a structured digest
 disable-model-invocation: false
 user-invocable: true
 argument-hint: "<issue-number>"
 allowed-tools: Bash
 ---
 
-Fetch a GitHub issue from the `rogers-obrien-rad/ro-compass-web` repo and present a structured, easy-to-scan digest.
+Fetch a GitHub issue from the current repository and present a structured, easy-to-scan digest.
 
 ## Steps
 
@@ -15,12 +15,18 @@ Fetch a GitHub issue from the `rogers-obrien-rad/ro-compass-web` repo and presen
    - The argument is the issue number (e.g., `564`).
    - If no argument is provided, STOP and ask the user for an issue number.
 
-2. **Fetch the issue.**
+2. **Detect the current repo.**
    ```bash
-   gh issue view <issue-number> --repo rogers-obrien-rad/ro-compass-web --json title,body,labels,assignees,state,milestone,comments
+   gh repo view --json nameWithOwner -q .nameWithOwner
+   ```
+   - If the command fails (not a GitHub repo or no remote), STOP and report the error clearly.
+
+3. **Fetch the issue.**
+   ```bash
+   gh issue view <issue-number> --repo <detected-repo> --json title,body,labels,assignees,state,milestone,comments
    ```
 
-3. **Present a digest** with this structure:
+4. **Present a digest** with this structure:
    - **Title** (as a heading)
    - **Metadata line:** Status | Assigned to | Labels | Milestone (if any) | Blocked by (if mentioned)
    - **What:** 1-3 sentence plain-language summary of the issue
@@ -29,9 +35,9 @@ Fetch a GitHub issue from the `rogers-obrien-rad/ro-compass-web` repo and presen
    - **Expected outcome:** What "done" looks like
    - **Comments:** Summarize any comments if present; omit section if none
 
-4. **Keep it concise.** The digest should be scannable in under 30 seconds. Don't parrot the issue body verbatim — synthesize it.
+5. **Keep it concise.** The digest should be scannable in under 30 seconds. Don't parrot the issue body verbatim — synthesize it.
 
 ## Rules
-- Always target repo: `rogers-obrien-rad/ro-compass-web`.
+- Always detect the repo from the current working directory — never hardcode a repo name.
 - If the issue doesn't exist or the `gh` command fails, report the error clearly.
 - Do not modify, comment on, or take any action on the issue — read only.

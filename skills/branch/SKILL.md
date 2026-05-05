@@ -1,13 +1,13 @@
 ---
 name: branch
-description: Create and checkout a new branch from an issue number
+description: Create and checkout a new branch from an issue number or conversation context
 disable-model-invocation: true
 user-invocable: true
-argument-hint: <issue-number>
+argument-hint: "[issue-number]"
 allowed-tools: Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList, Skill
 ---
 
-Create and checkout a new git branch following the naming convention: `{prefix}/{issue-number}/{short-description}`
+Create and checkout a new git branch following the naming convention: `{prefix}/{issue-number}/{short-description}` (or `{prefix}/{short-description}` when no issue number is available).
 
 ## Progress Tracking
 
@@ -15,7 +15,7 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
 
 1. "Check current branch" (activeForm: "Checking branch...")
 2. "Sync with remote" (activeForm: "Syncing...")
-3. "Fetch issue details" (activeForm: "Fetching issue...")
+3. "Resolve branch context" (activeForm: "Resolving context...")
 4. "Construct branch name" (activeForm: "Building branch name...")
 5. "Create and checkout branch" (activeForm: "Checking out...")
 
@@ -34,16 +34,11 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
    - Run `git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null` to check if the current branch has an upstream. If it errors or returns nothing, skip this step.
    - If upstream exists, run `git pull`.
 
-3. **Parse the argument.** `$ARGUMENTS` is the issue number.
-   - If no argument is provided or it's empty, STOP and tell the user:
-     > "An issue number is required. Usage: /branch <issue-number>"
+3. **Resolve branch context.** `$ARGUMENTS` may or may not contain an issue number.
+   - **If an issue number is provided:** detect `<owner>/<repo>` from `git remote get-url origin`, then run `gh issue view $ARGUMENTS --repo <owner>/<repo>` to get the issue title and description. Use this to determine the **prefix** and **short description**.
+   - **If no argument is provided:** derive the **prefix** and **short description** from conversation context (what the user is working on, recent discussion, file changes, etc.). The branch name will use the format `{prefix}/{short-description}` (no issue number segment). Skip step 11 (no issue comment to post).
 
-4. **Fetch the issue.**
-   - Detect `<owner>/<repo>` from `git remote get-url origin`.
-   - Run `gh issue view $ARGUMENTS --repo <owner>/<repo>` to get the issue title and description.
-   - Use this to determine the **prefix** and **short description** (2–4 words, kebab-case).
-
-5. **Determine the prefix** based on the nature of the work:
+4. **Determine the prefix** based on the nature of the work:
    - `feat/` — new feature or enhancement
    - `bugfix/` — non-urgent bug fix
    - `hotfix/` — urgent production fix
@@ -52,9 +47,10 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
    - `test/` — adding or updating tests
    - `docs/` — documentation only
 
-6. **Construct the branch name:** `{prefix}/{issue-number}/{short-description}`
+6. **Construct the branch name:**
+   - With issue: `{prefix}/{issue-number}/{short-description}` (e.g. `feat/171/committed-actions`)
+   - Without issue: `{prefix}/{short-description}` (e.g. `feat/read-issue-auto-repo`)
    - The description must be 2–4 words, lowercase, hyphen-separated
-   - Example: `feat/171/committed-actions`
 
 7. **Check for stale branch.**
    - Run `git branch --list {branch-name}` to see if a branch with that name already exists locally.
@@ -80,7 +76,7 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
 10. **Rename the session** to match the branch name using the `/rename` built-in command:
     - Invoke `/rename {branch-name}` so the session is identifiable when resuming later.
 
-11. **Post a comment on the GitHub issue** with the branch name:
+11. **Post a comment on the GitHub issue** (only if an issue number was provided):
     ```bash
     gh issue comment $ARGUMENTS --repo <owner>/<repo> --body "Branch created: \`{branch-name}\`"
     ```
