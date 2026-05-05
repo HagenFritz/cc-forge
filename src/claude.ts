@@ -25,11 +25,30 @@ export function copySkills(packageRoot: string): string[] {
     throw new Error(`Skills directory not found at ${skillsSource}`)
   }
 
+  const sourceSkills = new Set(
+    fs.readdirSync(skillsSource).filter(name =>
+      fs.statSync(path.join(skillsSource, name)).isDirectory()
+    )
+  )
+
+  // Prune installed skills that no longer exist in source
+  if (fs.existsSync(SKILLS_DIR)) {
+    for (const name of fs.readdirSync(SKILLS_DIR)) {
+      const installed = path.join(SKILLS_DIR, name)
+      if (!fs.statSync(installed).isDirectory()) continue
+      const marker = path.join(installed, '.cc-forge')
+      if (fs.existsSync(marker) && !sourceSkills.has(name)) {
+        fs.rmSync(installed, { recursive: true })
+      }
+    }
+  }
+
   const copied: string[] = []
-  for (const name of fs.readdirSync(skillsSource)) {
+  for (const name of sourceSkills) {
     const src = path.join(skillsSource, name)
-    if (!fs.statSync(src).isDirectory()) continue
-    copyDirRecursive(src, path.join(SKILLS_DIR, name))
+    const dest = path.join(SKILLS_DIR, name)
+    copyDirRecursive(src, dest)
+    fs.writeFileSync(path.join(dest, '.cc-forge'), '')
     copied.push(name)
   }
   return copied
@@ -51,16 +70,19 @@ export function copyAgents(packageRoot: string): string[] {
   return copied
 }
 
-export function removeSkills(): string[] {
-  const skillNames = [
-    'branch', 'brainstorm', 'compound', 'create-issue-from-context', 'deepen-plan',
-    'document-review', 'frontend-design', 'git-worktree', 'ideate', 'plan',
-    'review', 'ship', 'sync-github-config', 'work',
-  ]
+export function removeSkills(packageRoot?: string): string[] {
   const removed: string[] = []
-  for (const name of skillNames) {
+  if (!fs.existsSync(SKILLS_DIR)) return removed
+
+  for (const name of fs.readdirSync(SKILLS_DIR)) {
     const dir = path.join(SKILLS_DIR, name)
-    if (fs.existsSync(dir)) {
+    if (!fs.statSync(dir).isDirectory()) continue
+    const marker = path.join(dir, '.cc-forge')
+    // Remove if marker present, or if name matches source skills (legacy installs)
+    const inSource = packageRoot
+      ? fs.existsSync(path.join(packageRoot, 'skills', name))
+      : false
+    if (fs.existsSync(marker) || inSource) {
       fs.rmSync(dir, { recursive: true })
       removed.push(name)
     }
