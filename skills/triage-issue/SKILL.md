@@ -126,7 +126,9 @@ Determine **confidence**: High / Medium / Low
 
 ## Step 5: Write the Triage Document
 
-Ensure `docs/triage/` exists. Determine the filename:
+Ensure `docs/triage/` exists. If it does not exist, create it and add `docs/triage/` to `.gitignore` (appending if the file exists, creating it if not) — triage docs are local investigation artifacts and should not be committed.
+
+Determine the filename:
 - Check existing files for today's date to find the next sequence number (zero-padded to 3 digits, starting at 001)
 - Format: `docs/triage/YYYY-MM-DD-NNN-issue-<N>-<slug>.md`
 - Example: `docs/triage/2026-05-11-001-issue-42-null-pointer-on-checkout.md`
