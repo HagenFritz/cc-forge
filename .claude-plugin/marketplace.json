@@ -1,0 +1,10 @@
+{
+  "name": "cc-forge-local",
+  "owner": { "name": "Hagen Fritz" },
+  "plugins": [
+    {
+      "name": "cc-forge",
+      "source": "./"
+    }
+  ]
+}
