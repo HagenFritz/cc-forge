@@ -31,6 +31,7 @@ Core workflow: brainstorm -> plan -> work -> review -> compound
 - `/git-worktree` - Manage git worktrees
 - `/frontend-design` - Design-quality frontend code
 - `/deprecate` - Plan-only safe removal of a named concept (parallel research agents, leaves-first plan, compat-risk flags; hand off to `/work`)
+- `/review-walk` - Guided execution of a `/review` document. Walks issues group-by-group with a plain-English teach moment per group, then per-issue **implement / defer / skip / explain more**. Updates `Status:` inline in the review doc — durable, resumable. Auto-discovers the latest `docs/reviews/*.md` if no path is given. Falls back to issue-by-issue order on pre-enrichment review docs.
 
 **Strategic:**
 - `/initiative` - Author or maintain a living high-level initiative doc at `docs/initiatives/`. One altitude up from `/plan` (workstreams, not commit-sized units). Two modes: invoke with no path to author a new initiative; invoke with the path to an existing initiative doc to resume — the skill gathers repo evidence since `last_updated` and writes the update back surgically. Composes with `/create-initiative` (which publishes to GitHub). Typical flow: `/initiative` → `/plan` per workstream → `/work` → `/initiative <path>` to log progress.

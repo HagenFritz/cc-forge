@@ -253,12 +253,50 @@ Remove duplicates, prioritize by severity and impact.
 - [ ] Collect findings from all parallel agents
 - [ ] Surface learnings-researcher results: if past solutions are relevant, flag them as "Known Pattern" with links to docs/solutions/ files
 - [ ] Discard any findings that recommend deleting or gitignoring files in `docs/brainstorms/`, `docs/plans/`, or `docs/solutions/` (see Protected Artifacts above)
-- [ ] Categorize by type: security, performance, architecture, quality, etc.
-- [ ] Assign severity levels: 🔴 CRITICAL (P1), 🟡 IMPORTANT (P2), 🔵 NICE-TO-HAVE (P3)
 - [ ] Remove duplicate or overlapping findings
+- [ ] Assign severity levels: 🔴 CRITICAL (P1), 🟡 IMPORTANT (P2), 🔵 NICE-TO-HAVE (P3)
 - [ ] Estimate effort for each finding (Small/Medium/Large)
+- [ ] **Assign a Category** to each finding from the fixed list (see Category vocabulary below)
+- [ ] **Assign Confidence + rationale** to each finding (see Confidence vocabulary below). Default missing confidence to `medium` with rationale `"not stated by reviewer"` so the doc shape is uniform.
+- [ ] **Compose Plain English** for each finding (1–3 sentences, non-jargon, must reference at least one concrete code location from the finding's File(s))
+- [ ] **Form Groups** across P-levels (see Grouping rules below). Single-issue clusters are not written as groups.
 
 </synthesis_tasks>
+
+##### Category vocabulary (fixed list)
+
+Pick exactly one per finding:
+
+- `security` — auth, authz, secrets, injection, sensitive data
+- `correctness` — logic bugs, wrong behavior, broken contracts
+- `performance` — N+1s, hot paths, memory, latency
+- `architecture` — boundary violations, layering, coupling, abstractions
+- `duplication` — copy-paste, near-duplicate logic, missing reuse
+- `maintainability` — naming, readability, complexity, dead code
+- `testing` — missing coverage, weak assertions, flaky tests
+- `docs` — missing or wrong documentation, comments, READMEs
+
+##### Confidence vocabulary
+
+- `high` — reviewer verified the issue from the code shown (e.g., read the function, traced the call, confirmed the bug)
+- `medium` — strong pattern match but not verified end-to-end (e.g., looks like an N+1, but eager-loading upstream wasn't checked)
+- `low` — heuristic flag; likely needs human judgment (e.g., "this name is confusing", "this might be too coupled")
+
+Every finding gets a one-line `Confidence rationale:` stating what was or wasn't verified.
+
+##### Plain English rule
+
+1–3 sentences, no jargon-only descriptions. Must mention at least one concrete file/line from the finding's `File(s)`. If the underlying concept needs a term of art (e.g., "race condition"), follow it with a plain-language gloss tied to the code.
+
+##### Grouping rules
+
+Form a group when **two or more issues** share at least one of:
+
+- A common root cause (same bug expressed in multiple places)
+- The same module, file, or tight path cluster
+- An explicit fix-order dependency (fixing one changes the right answer for another)
+
+Groups can — and should — span P-levels. Do not write single-issue "groups." Every group includes a required `Cascade:` note. If no cascade exists, write `Cascade: independent fixes — no ordering dependency.`
 
 #### Step 2: Write Review File
 
@@ -301,17 +339,45 @@ date: YYYY-MM-DD
 
 ---
 
+## Groups
+
+<!--
+Clusters of related issues that span P-levels. Walk-through tools (e.g. /review-walk)
+read this section to drive a group-first execution flow. If no groups were formed,
+write a single line: `_None — issues are independent._`
+-->
+
+### G1: [Group Name]
+
+**Issues:** P1-1, P2-3, P3-2
+
+**Why grouped:** [1–2 sentences naming the shared root cause, module, or fix-order dependency.]
+
+**Suggested order:** P1-1 → P2-3 → P3-2
+
+**Cascade:** [How fixing one member affects the others. If none, write: `independent fixes — no ordering dependency.`]
+
+---
+
 ## Issues
 
 <!-- Each issue is self-contained — copy a section and paste it into Claude Code to fix. -->
 
 ### P1-1: [Short Title]
 
-**Status:** `open` <!-- open | in-progress | done | wont-fix -->
+**Status:** `open` <!-- open | in-progress | done | deferred | wont-fix -->
+
+**Category:** [one of: security | correctness | performance | architecture | duplication | maintainability | testing | docs]
+
+**Confidence:** [high | medium | low]
+
+**Confidence rationale:** [One line: what was or wasn't verified.]
 
 **File(s):** `path/to/file.ext` (line NNN if applicable)
 
-**Problem:** [1-3 sentences. What is wrong, why it matters, what could go wrong if left unfixed.]
+**Plain English:** [1–3 sentences, non-jargon, referencing the actual code location. E.g., "Your code at `auth.rb:42` trusts the session header without re-validating it, which means a forged header would bypass the check."]
+
+**Problem:** [1–3 sentences. What is wrong, why it matters, what could go wrong if left unfixed.]
 
 **Fix:** [Concrete description of the change needed. Specific enough that Claude Code can act on it without re-investigating. Name the method, pattern, or approach to use. Include the expected behavior after the fix.]
 
@@ -321,9 +387,17 @@ date: YYYY-MM-DD
 
 ### P2-1: [Short Title]
 
-**Status:** `open` <!-- open | in-progress | done | wont-fix -->
+**Status:** `open`
+
+**Category:** [category]
+
+**Confidence:** [high | medium | low]
+
+**Confidence rationale:** [One line.]
 
 **File(s):** `path/to/file.ext`
+
+**Plain English:** [1–3 sentences, non-jargon, referencing the actual code location.]
 
 **Problem:** [1-3 sentences.]
 
@@ -335,9 +409,17 @@ date: YYYY-MM-DD
 
 ### P3-1: [Short Title]
 
-**Status:** `open` <!-- open | in-progress | done | wont-fix -->
+**Status:** `open`
+
+**Category:** [category]
+
+**Confidence:** [high | medium | low]
+
+**Confidence rationale:** [One line.]
 
 **File(s):** `path/to/file.ext`
+
+**Plain English:** [1–3 sentences, non-jargon, referencing the actual code location.]
 
 **Problem:** [1-2 sentences.]
 
@@ -348,11 +430,15 @@ date: YYYY-MM-DD
 
 **Issue writing rules:**
 - Each issue must be fully self-contained — a reader with no other context should be able to paste it into Claude Code and get a correct fix
+- **Category** is required and must come from the fixed list above
+- **Confidence** + **Confidence rationale** are required on every issue (default to `medium` / `"not stated by reviewer"` if the originating agent didn't supply one)
+- **Plain English** is required: 1–3 sentences, non-jargon, with a concrete code reference
 - **File(s)** must include exact paths; add line numbers when the finding is pinpointed to a specific location
 - **Problem** explains what and why, not just what
 - **Fix** describes the concrete change — not just "fix the bug"
 - Keep issues tight: no alternatives, pros/cons tables, or acceptance criteria
 - Number issues sequentially within each tier: P1-1, P1-2, P2-1, P2-2, P3-1, etc.
+- `Status` extends to include `deferred` (for issues a human chose to punt — typically written by `/review-walk`, not by `/review` itself, which always emits `open`)
 
 #### Step 3: Create Todo Files Using todo-create Skill
 
