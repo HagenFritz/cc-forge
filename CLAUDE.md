@@ -1,6 +1,6 @@
 # CC Forge - Agent Instructions
 
-Personal development workflow plugin with Toggl and GitHub integration.
+Personal development workflow plugin with GitHub integration.
 
 ## Structure
 
@@ -20,26 +20,23 @@ skills/           Slash commands (SKILL.md files)
 
 Core workflow: brainstorm -> plan -> work -> review -> compound
 
-- `/ce-brainstorm` - Explore requirements and approaches
-- `/ce-plan` - Create implementation plans
-- `/ce-work` - Execute work plans
-- `/ce-review` - Multi-agent code review
-- `/ce-compound` - Document learnings
-- `/ce-ideate` - Generate improvement ideas
+- `/brainstorm` - Explore requirements and approaches
+- `/plan` - Create implementation plans
+- `/work` - Execute work plans
+- `/review` - Multi-agent code review
+- `/compound` - Document learnings
+- `/ideate` - Generate improvement ideas
 - `/deepen-plan` - Enhance plans with research
 - `/document-review` - Review requirement/plan docs
-- `/git-worktree` - Manage git worktrees
-- `/frontend-design` - Design-quality frontend code
 - `/deprecate` - Plan-only safe removal of a named concept (parallel research agents, leaves-first plan, compat-risk flags; hand off to `/work`)
 - `/review-walk` - Guided execution of a `/review` document. Walks issues group-by-group with a plain-English teach moment per group, then per-issue **implement / defer / skip / explain more**. Updates `Status:` inline in the review doc — durable, resumable. Auto-discovers the latest `docs/reviews/*.md` if no path is given. Falls back to issue-by-issue order on pre-enrichment review docs.
 
 **Strategic:**
-- `/initiative` - Author or maintain a living high-level initiative doc at `docs/initiatives/`. One altitude up from `/plan` (workstreams, not commit-sized units). Two modes: invoke with no path to author a new initiative; invoke with the path to an existing initiative doc to resume — the skill gathers repo evidence since `last_updated` and writes the update back surgically. Composes with `/create-initiative` (which publishes to GitHub). Typical flow: `/initiative` → `/plan` per workstream → `/work` → `/initiative <path>` to log progress.
+- `/initiative` - Author, maintain, and optionally publish a living high-level initiative doc at `docs/initiatives/`. One altitude up from `/plan` (workstreams, not commit-sized units). Two modes: invoke with no path to author a new initiative; invoke with the path to an existing initiative doc to resume — the skill gathers repo evidence since `last_updated` and writes the update back surgically. After either mode, offers to publish to GitHub as a parent issue with linked sub-tasks. Typical flow: `/initiative` → `/plan` per workstream → `/work` → `/initiative <path>` to log progress.
 
 **GitHub Integration:**
 - `/branch` - Create and checkout a branch from an issue number (auto-detects repo)
 - `/issue-from-context` - Create GitHub issues from conversation context (auto-detects repo)
-- `/create-initiative` - Publish an initiative as a parent GitHub issue with linked sub-tasks (one-shot publish; for the living working doc, use `/initiative`)
 - `/ship` - Commit changes, push branch, and create a PR (auto-detects repo)
 
 ## Development Workflow

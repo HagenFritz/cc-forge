@@ -1,6 +1,6 @@
 # cc-forge
 
-Personal development workflow plugin for Claude Code with Toggl and GitHub integration.
+Personal development workflow plugin for Claude Code with GitHub integration.
 
 ## Installation
 
@@ -25,7 +25,7 @@ node dist/cli.mjs doctor      # Check installation health
 npm run build && node dist/cli.mjs install
 ```
 
-Changes in `skills/` or `agents/` are not live until install runs. The install command copies them to `~/.claude/skills/` and `~/.claude/agents/`.
+Changes in `skills/` or `agents/` are not live until install runs.
 
 ## Skills
 
@@ -37,33 +37,48 @@ Changes in `skills/` or `agents/` are not live until install runs. The install c
 | `/plan` | Create implementation plans |
 | `/work` | Execute work plans |
 | `/review` | Multi-agent code review |
+| `/review-walk` | Interactively walk through a review doc issue-by-issue |
 | `/compound` | Document learnings |
 | `/ideate` | Generate improvement ideas |
 | `/deepen-plan` | Stress-test plans with targeted research |
 | `/document-review` | Review requirement/plan docs |
-| `/git-worktree` | Manage git worktrees |
-| `/frontend-design` | Design-quality frontend code |
+| `/deprecate` | Safely plan removal of a named concept |
+| `/test-plan` | Generate a manual test plan from branch diffs |
 
 ### Strategic
 
 | Skill | Description |
 |---|---|
-| `/initiative` | Author and maintain a living high-level initiative doc at `docs/initiatives/`. Two modes: no argument drafts a new initiative; passing an existing initiative path resumes it — gathers evidence (commits, sub-plans, PR/issue activity) since last update and writes back surgically. Composes with `/create-initiative`. |
+| `/initiative` | Author, maintain, and optionally publish a living initiative doc at `docs/initiatives/`. Two modes: no argument drafts a new initiative; passing an existing path resumes it. Offers GitHub publish (parent issue + linked sub-tasks) after either mode. |
 
 ### GitHub integration
 
 | Skill | Description |
 |---|---|
 | `/branch` | Create and checkout a branch from an issue number |
-| `/create-issue-from-context` | Create GitHub issues from conversation context |
-| `/create-initiative` | Publish an initiative as a parent GitHub issue with linked sub-tasks |
+| `/issue-from-context` | Create a GitHub issue from conversation context |
+| `/read-issue` | Fetch and digest a GitHub issue by number |
+| `/triage-issue` | Investigate whether a GitHub issue is still present in the codebase |
 | `/ship` | Commit, push, and create a PR |
+
+### Git utilities
+
+| Skill | Description |
+|---|---|
+| `/commit-all` | Stage and commit all changes with per-file messages |
+
+### Project tracking
+
+| Skill | Description |
+|---|---|
+| `/side-quest` | Track out-of-scope tasks discovered during execution |
+| `/stand-up` | Summarize the past 28h of commits, PRs, and issues |
 
 ## Typical flows
 
 **Feature development:**
 ```
-/brainstorm → /plan → /work → /review → /ship
+/brainstorm → /plan → /work → /review → /review-walk → /ship
 ```
 
 **Multi-feature initiative:**
@@ -73,7 +88,6 @@ Changes in `skills/` or `agents/` are not live until install runs. The install c
   → /work                            # implement it
   → /initiative docs/initiatives/…  # log progress back to the doc
   → repeat per workstream
-  → /create-initiative               # optionally publish to GitHub
 ```
 
 **GitHub workflow:**

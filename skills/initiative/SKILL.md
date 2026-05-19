@@ -1,6 +1,6 @@
 ---
 name: initiative
-description: "Author and maintain a high-altitude living initiative document at docs/initiatives/. Sibling to /plan but one altitude up — workstreams and milestones rather than commit-sized units. The doc is the durable record of a multi-feature effort: it survives compaction (a fresh agent can resume by reading the file) and accrues progress over time. Two modes: invoke with no path to **author** a new initiative, or invoke with the path to an existing initiative doc to **resume** — the skill gathers evidence (commits, new sub-plans, PR/issue activity) since last_updated and writes the update back into the doc surgically. Use when the user says 'start an initiative', 'track this initiative', 'log progress on the initiative', 'update the initiative doc', or hands you the path to an existing initiative file."
+description: "Author, maintain, and optionally publish a high-altitude living initiative document at docs/initiatives/. Sibling to /plan but one altitude up — workstreams and milestones rather than commit-sized units. The doc is the durable record of a multi-feature effort: it survives compaction (a fresh agent can resume by reading the file) and accrues progress over time. Two modes: invoke with no path to **author** a new initiative, or invoke with the path to an existing initiative doc to **resume** — the skill gathers evidence (commits, new sub-plans, PR/issue activity) since last_updated and writes the update back into the doc surgically. After authoring or resuming, optionally publish to GitHub as a parent issue with linked sub-tasks. Use when the user says 'start an initiative', 'track this initiative', 'log progress on the initiative', 'update the initiative doc', 'publish this initiative', or hands you the path to an existing initiative file."
 argument-hint: "[optional path/slug of existing initiative doc, OR free-text framing for a new initiative]"
 ---
 
@@ -31,7 +31,7 @@ Ask one question at a time. Prefer concise single-select choices when natural op
 3. **Living record, not a snapshot.** The Progress Log is append-only and reverse-chronological. Every successful write-back produces at least one Progress Log entry, even when the primary edit was elsewhere.
 4. **Evidence-grounded updates.** In resume mode, don't transcribe what the user says — collect repo evidence (commits, new sub-plans, PR/issue activity) and present it alongside their framing before writing.
 5. **High altitude.** Workstreams are coarse-grained — each is potentially weeks of work and likely spawns its own `/plan`. Surface area is described by directory or component, not exact file paths.
-6. **Stay separate from `/create-initiative`.** That skill publishes; this one authors and maintains. Cross-link in handoff options. Adopt `parent_issue` if it's already been published.
+6. **Publish is optional.** After authoring or resuming, offer to publish to GitHub as a parent issue with linked sub-tasks. Record `parent_issue` in frontmatter once published; use it to pull GitHub activity on subsequent resumes.
 7. **No external research phase.** Initiatives are shaped by product/strategic intent. Research belongs to the per-step `/plan` invocations.
 
 ## Workflow
@@ -227,16 +227,144 @@ After a successful write (either mode), use the platform's blocking question too
 **Author Mode just finished:**
 1. **Open in editor** — open the file using the platform's open mechanism (`open` on macOS, `xdg-open` on Linux, IDE API).
 2. **Start `/plan` on Workstream 1** — invoke `/plan` with the first workstream's goal, surface area, and success criteria as input.
-3. **Publish via `/create-initiative`** — hand off to `/create-initiative` to publish a parent GitHub issue + sub-issues. Once published, record the parent issue in this doc's frontmatter as `parent_issue: owner/repo#NNN` on the next resume.
+3. **Publish to GitHub** — run Phase P below to create a parent issue + linked sub-tasks.
 4. **Done** — exit cleanly.
 
 **Resume Mode just finished:**
 1. **Open in editor**.
 2. **Start `/plan` on next pending workstream** — pick the next unchecked workstream whose dependencies are satisfied.
-3. **Mark initiative complete** — set frontmatter `status: completed`, regenerate Current State as a closing summary, and append a final Progress Log entry. Subsequent resumes are still allowed but the skill warns the initiative is closed.
-4. **Done** — exit cleanly.
+3. **Publish to GitHub** — run Phase P below (only if `parent_issue` is not already set in frontmatter; if it is, skip this option).
+4. **Mark initiative complete** — set frontmatter `status: completed`, regenerate Current State as a closing summary, and append a final Progress Log entry. Subsequent resumes are still allowed but the skill warns the initiative is closed.
+5. **Done** — exit cleanly.
 
 The "Other" option is automatically available for free-text revisions in either mode; loop back to options after handling.
+
+---
+
+## Phase P: Publish to GitHub
+
+Only runs when the user selects "Publish to GitHub" from the Phase H handoff.
+
+### P1: Detect Repo & Auth
+
+```bash
+git remote get-url origin   # parse owner/repo
+gh auth status
+```
+
+If either fails, report the error and return to Phase H options.
+
+### P2: Fetch Labels and Issue Types
+
+Run in parallel:
+```bash
+gh label list --repo <owner>/<repo> --json name,description --limit 100
+```
+```bash
+gh api graphql -f query='
+{
+  repository(owner: "<owner>", name: "<repo>") {
+    issueTypes(first: 20) {
+      nodes { id name description }
+    }
+  }
+}'
+```
+
+Use `AskUserQuestion` to prompt:
+- **Parent issue type** — show available types; suggest "Initiative" if it exists.
+- **Sub-task label and type** — what label and type to apply to each workstream sub-task.
+
+### P3: Create Parent Issue
+
+Read the final initiative doc. Extract the title, Overview, and Goals sections for the parent issue body.
+
+```bash
+gh issue create \
+  --repo <owner>/<repo> \
+  --title "<initiative title>" \
+  --label "initiative" \
+  --body "$(cat <<'EOF'
+<overview paragraph>
+
+## Goals
+<goals list>
+
+### Workstreams
+<task list placeholder — populated in P4>
+EOF
+)"
+```
+
+Capture the parent issue number. Set issue type via GraphQL:
+```bash
+gh api graphql -f query='
+mutation {
+  updateIssue(input: { id: "<node-id>", issueTypeId: "<type-id>" }) {
+    issue { number title }
+  }
+}'
+```
+
+### P4: Create Sub-task Issues
+
+For each workstream in the initiative doc, create a sub-task issue:
+
+```bash
+gh issue create \
+  --repo <owner>/<repo> \
+  --title "<workstream name>" \
+  --label "<user-selected label>" \
+  --body "$(cat <<'EOF'
+Part of #<parent_issue_number>
+
+**Goal:** <workstream goal>
+**Surface area:** <workstream surface area>
+**Success criteria:** <workstream success criteria>
+EOF
+)"
+```
+
+Capture each sub-task number. Set issue type via GraphQL.
+
+### P5: Link Sub-tasks to Parent
+
+Update the parent issue body to include a task list:
+
+```bash
+gh issue edit <parent_number> --repo <owner>/<repo> --body "$(cat <<'EOF'
+<original body>
+
+### Workstreams
+- [ ] #<sub1>
+- [ ] #<sub2>
+...
+EOF
+)"
+```
+
+### P6: Update Frontmatter
+
+Use Edit to set `parent_issue: owner/repo#NNN` in the initiative doc's frontmatter.
+
+### P7: Add to Project (Optional)
+
+```bash
+gh project list --owner <owner> --format json --limit 20
+```
+
+If projects exist, ask which to add the parent issue to. Include a "Skip" option. If selected, run:
+```bash
+gh project item-add <project-number> --owner <owner> --url "<parent issue url>"
+```
+
+### P8: Output
+
+```
+Published initiative #<parent_number>: <title>
+Sub-tasks: #<n1>, #<n2>, ...
+<parent issue url>
+```
 
 ---
 
