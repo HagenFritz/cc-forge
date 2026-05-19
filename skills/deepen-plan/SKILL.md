@@ -298,7 +298,7 @@ If a direct-mode agent starts producing bulky or repetitive output, stop and swi
 
 #### 4.2 Artifact-Backed Mode
 
-Use a per-run scratch directory under `.context/compound-engineering/deepen-plan/`, for example `.context/compound-engineering/deepen-plan/<run-id>/` or `.context/compound-engineering/deepen-plan/<plan-filename-stem>/`.
+Use a per-run scratch directory under `.context/cc-forge/deepen-plan/`, for example `.context/cc-forge/deepen-plan/<run-id>/` or `.context/cc-forge/deepen-plan/<plan-filename-stem>/`.
 
 Use the scratch directory only for the current deepening pass.
 

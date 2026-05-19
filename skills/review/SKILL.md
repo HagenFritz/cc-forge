@@ -51,7 +51,7 @@ Ensure that the code is ready for analysis (either in worktree or on current bra
 #### Protected Artifacts
 
 <protected_artifacts>
-The following paths are compound-engineering pipeline artifacts and must never be flagged for deletion, removal, or gitignore by any review agent:
+The following paths must never be flagged for deletion, removal, or gitignore by any review agent:
 
 - `docs/brainstorms/*-requirements.md` — Requirements documents created by `/brainstorm`. These are the product-definition artifacts that planning depends on.
 - `docs/plans/*.md` — Plan files created by `/plan`. These are living documents that track implementation progress (checkboxes are checked off by `/work`).
@@ -62,7 +62,7 @@ If a review agent flags any file in these directories for cleanup or removal, di
 
 #### Load Review Agents
 
-Read `compound-engineering.local.md` in the project root. If found, use `review_agents` from YAML frontmatter. If the markdown body contains review context, pass it to each agent as additional instructions.
+Read `cc-forge.local.md` in the project root. If found, use `review_agents` from YAML frontmatter. If the markdown body contains review context, pass it to each agent as additional instructions.
 
 If no settings file exists, invoke the `setup` skill to create one. Then read the newly created file and continue.
 
@@ -611,7 +611,7 @@ After writing the review file and creating all todo files, present comprehensive
 
 2. **Triage All Todos**:
    ```bash
-   ls .context/compound-engineering/todos/*-pending-*.md todos/*-pending-*.md 2>/dev/null  # View all pending todos
+   ls .context/cc-forge/todos/*-pending-*.md todos/*-pending-*.md 2>/dev/null  # View all pending todos
    /todo-triage             # Use slash command for interactive triage
    ```
 

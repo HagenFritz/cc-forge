@@ -29,7 +29,7 @@ Ask one question at a time. Prefer concise single-select choices when natural op
 Interpret any provided argument as optional context. It may be:
 
 - a concept such as `DX improvements`
-- a path such as `plugins/compound-engineering/skills/`
+- a path such as `plugins/cc-forge/skills/`
 - a constraint such as `low-complexity quick wins`
 - a volume hint such as `top 3`, `100 ideas`, or `raise the bar`
 
