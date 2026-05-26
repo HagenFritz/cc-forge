@@ -9,7 +9,8 @@
   "files": [
     "dist/",
     "skills/",
-    "agents/"
+    "agents/",
+    "hooks/"
   ],
   "scripts": {
     "build": "tsdown",
