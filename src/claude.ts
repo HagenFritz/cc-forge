@@ -4,6 +4,9 @@ import os from 'os'
 
 const SKILLS_DIR = path.join(os.homedir(), '.claude', 'skills')
 const AGENTS_DIR = path.join(os.homedir(), '.claude', 'agents')
+const HOOKS_DIR = path.join(os.homedir(), '.claude', 'hooks')
+
+const HOOK_PREFIX = 'cc-forge-'
 
 function copyDirRecursive(src: string, dest: string): void {
   fs.mkdirSync(dest, { recursive: true })
@@ -101,4 +104,47 @@ export function removeAgents(): string[] {
     }
   }
   return removed
+}
+
+export function copyHooks(packageRoot: string): string[] {
+  const hooksSource = path.join(packageRoot, 'hooks')
+  if (!fs.existsSync(hooksSource)) return []
+
+  fs.mkdirSync(HOOKS_DIR, { recursive: true })
+  const copied: string[] = []
+  for (const name of fs.readdirSync(hooksSource)) {
+    if (!name.startsWith(HOOK_PREFIX)) continue
+    const src = path.join(hooksSource, name)
+    if (!fs.statSync(src).isFile()) continue
+    const dest = path.join(HOOKS_DIR, name)
+    fs.copyFileSync(src, dest)
+    fs.chmodSync(dest, 0o755)
+    copied.push(name)
+  }
+  return copied
+}
+
+export function removeHooks(): string[] {
+  if (!fs.existsSync(HOOKS_DIR)) return []
+  const removed: string[] = []
+  for (const name of fs.readdirSync(HOOKS_DIR)) {
+    if (!name.startsWith(HOOK_PREFIX)) continue
+    const file = path.join(HOOKS_DIR, name)
+    if (!fs.statSync(file).isFile()) continue
+    fs.unlinkSync(file)
+    removed.push(name)
+  }
+  return removed
+}
+
+export function hookPath(name: string): string {
+  return path.join(HOOKS_DIR, name)
+}
+
+export const CLAUDE_DIR = path.join(os.homedir(), '.claude')
+
+export const CAVEMAN_HOOK_FILE = 'cc-forge-caveman-mode-tracker.cjs'
+
+export function packageRoot(distDirOfThisModule: string): string {
+  return path.resolve(distDirOfThisModule, '..')
 }

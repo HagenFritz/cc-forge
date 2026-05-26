@@ -13,9 +13,46 @@ This copies all skills and agents to `~/.claude/`. Restart Claude Code after ins
 ### Other commands
 
 ```bash
-node dist/cli.mjs uninstall   # Remove installed skills and agents
-node dist/cli.mjs doctor      # Check installation health
+node dist/cli.mjs install --dry-run   # Print planned changes without writing
+node dist/cli.mjs install --yes       # Skip interactive confirms
+node dist/cli.mjs uninstall           # Remove installed files and settings entries
+node dist/cli.mjs uninstall --dry-run # Print planned removals without touching anything
+node dist/cli.mjs doctor              # Check installation health
 ```
+
+`install` also copies any cc-forge hooks into `~/.claude/hooks/` and (on first install) patches `~/.claude/settings.json` to register them. Ownership of every cc-forge-written settings.json entry is tracked in `~/.claude/.cc-forge-manifest.json` so `uninstall` removes exactly what install added — nothing more.
+
+### Manifest format
+
+`~/.claude/.cc-forge-manifest.json` is a stable, agent-readable record of everything cc-forge owns in your `~/.claude/settings.json`. Schema:
+
+```json
+{
+  "version": 1,
+  "entries": [
+    {
+      "uuid": "b68b6ab2-cfea-4916-ab37-4ae87acbe561",
+      "kind": "settings-hook",
+      "event": "UserPromptSubmit",
+      "commandPath": "/Users/you/.claude/hooks/cc-forge-caveman-mode-tracker.cjs",
+      "createdAt": "2026-05-22T17:23:42.875Z"
+    }
+  ]
+}
+```
+
+Agents may read this file to inspect what cc-forge has installed; do not modify it directly. Use `cc-forge doctor --json` for a structured health report that combines manifest state with settings.json wiring and hook state.
+
+### Agent interface
+
+cc-forge exposes machine-friendly surfaces for non-interactive use:
+
+| Action | Command / file |
+|---|---|
+| Install non-interactively | `cc-forge install --yes` |
+| Preview install changes | `cc-forge install --dry-run` |
+| Inspect health as JSON | `cc-forge doctor --json` (exit non-zero on failure) |
+| Toggle caveman mode | Write `lite\|full\|ultra` to `~/.claude/.caveman-active`; `rm` to disable (see `skills/caveman/SKILL.md` for full contract) |
 
 ## After making changes
 
@@ -44,6 +81,7 @@ Changes in `skills/` or `agents/` are not live until install runs.
 | `/document-review` | Review requirement/plan docs |
 | `/deprecate` | Safely plan removal of a named concept |
 | `/test-plan` | Generate a manual test plan from branch diffs |
+| `/caveman` | Ultra-terse response mode (lite/full/ultra). Persists across turns via a `UserPromptSubmit` hook. Off by default; activate with `/caveman <level>`, deactivate with `/caveman off` or "stop caveman". |
 
 ### Strategic
 
@@ -112,3 +150,7 @@ npm run build      # Compile TypeScript
 npm run typecheck  # Type-check without emitting
 npm run dev        # Watch mode
 ```
+
+## Credits
+
+The `/caveman` skill prompt is adapted from [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) under the MIT license. The persistence hook (`hooks/cc-forge-caveman-mode-tracker.cjs`) is an original cc-forge implementation that lifts the symlink-safe flag-file primitives from upstream. The flag file path (`~/.claude/.caveman-active`) is shared between cc-forge and upstream caveman, so installing both will coexist on the same state with cc-forge using a strict `{lite, full, ultra}` whitelist.

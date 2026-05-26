@@ -8,6 +8,7 @@ Personal development workflow plugin with GitHub integration.
 .claude-plugin/   Plugin metadata
 agents/           Specialized subagents (research, review, workflow)
 skills/           Slash commands (SKILL.md files)
+hooks/            Claude Code hook scripts (.cjs, copied to ~/.claude/hooks/)
 ```
 
 ## Agents
@@ -30,6 +31,7 @@ Core workflow: brainstorm -> plan -> work -> review -> compound
 - `/document-review` - Review requirement/plan docs
 - `/deprecate` - Plan-only safe removal of a named concept (parallel research agents, leaves-first plan, compat-risk flags; hand off to `/work`)
 - `/review-walk` - Guided execution of a `/review` document. Walks issues group-by-group with a plain-English teach moment per group, then per-issue **implement / defer / skip / explain more**. Updates `Status:` inline in the review doc — durable, resumable. Auto-discovers the latest `docs/reviews/*.md` if no path is given. Falls back to issue-by-issue order on pre-enrichment review docs.
+- `/caveman` - Ultra-terse response mode (lite/full/ultra). Persists across turns via a `UserPromptSubmit` hook that re-injects a reminder when active. Off by default. Activate with `/caveman <level>`; deactivate with `/caveman off`, "stop caveman", or "normal mode".
 
 **Strategic:**
 - `/initiative` - Author, maintain, and optionally publish a living high-level initiative doc at `docs/initiatives/`. One altitude up from `/plan` (workstreams, not commit-sized units). Two modes: invoke with no path to author a new initiative; invoke with the path to an existing initiative doc to resume — the skill gathers repo evidence since `last_updated` and writes the update back surgically. After either mode, offers to publish to GitHub as a parent issue with linked sub-tasks. Typical flow: `/initiative` → `/plan` per workstream → `/work` → `/initiative <path>` to log progress.
@@ -56,9 +58,13 @@ Always run `npm run build && node dist/cli.mjs install` after modifying any skil
 ### Commands
 
 - `npm run build` — compile TypeScript to `dist/`
-- `node dist/cli.mjs install` — copy skills + agents to `~/.claude/`
-- `node dist/cli.mjs uninstall` — remove installed skills + agents
-- `node dist/cli.mjs doctor` — check installation health
+- `node dist/cli.mjs install [--dry-run] [--yes]` — copy skills + agents + hooks; patch `~/.claude/settings.json`
+- `node dist/cli.mjs uninstall [--dry-run]` — manifest-driven removal of everything install created
+- `node dist/cli.mjs doctor` — check installation health (skills, agents, hooks, settings.json wiring, caveman state)
+
+### Hook ownership
+
+`install` writes a manifest at `~/.claude/.cc-forge-manifest.json` recording every entry it adds to `settings.json` (UUID-keyed). `uninstall` consults this manifest to remove exactly those entries — never substring-matches. If you add a new cc-forge hook in the future, register it via the `settings-patcher.ts` module so the manifest stays the canonical ownership record.
 
 ## Agent References in Skills
 
