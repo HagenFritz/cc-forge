@@ -29,6 +29,7 @@ This skill does not implement code. It explores, clarifies, and documents decisi
 2. **Prefer single-select multiple choice** - Use single-select when choosing one direction, one priority, or one next step.
 3. **Use multi-select rarely and intentionally** - Use it only for compatible sets such as goals, constraints, non-goals, or success criteria that can all coexist. If prioritization matters, follow up by asking which selected item is primary.
 4. **Use the platform's question tool when available** - When asking the user a question, prefer the platform's blocking question tool if one exists (`AskUserQuestion` in Claude Code, `request_user_input` in Codex, `ask_user` in Gemini). Otherwise, present numbered options in chat and wait for the user's reply before proceeding.
+5. **Never self-certify readiness** - Before writing a requirements document, always ask at least one confirming question and receive a reply. Self-assessed clarity — no matter how detailed the description — is not sufficient to conclude intent is understood.
 
 ## Output Guidance
 
@@ -62,7 +63,7 @@ If the user references an existing brainstorm topic or document, or there is an 
 - Constrained, well-defined scope
 
 **If requirements are already clear:**
-Keep the interaction brief. Confirm understanding and present concise next-step options rather than forcing a long brainstorm. Only write a short requirements document when a durable handoff to planning or later review would be valuable. Skip Phase 1.1 and 1.2 entirely — go straight to Phase 1.3 or Phase 3.
+Keep the interaction brief. Confirm understanding and present concise next-step options rather than forcing a long brainstorm. Only write a short requirements document when a durable handoff to planning or later review would be valuable. Skip Phase 1.1 and 1.2 entirely — go straight to Phase 1.3. Do not skip Phase 1.3; a confirming question is always required before writing the requirements doc (see Interaction Rule 5).
 
 #### 0.3 Assess Scope
 
@@ -127,7 +128,7 @@ Use the platform's blocking question tool when available (see Interaction Rules)
 - Resolve product decisions here; leave technical implementation choices for planning
 - Bring ideas, alternatives, and challenges instead of only interviewing
 
-**Exit condition:** Continue until the idea is clear OR the user explicitly wants to proceed.
+**Exit condition:** Continue until the user has confirmed their understanding of the intent OR explicitly indicates they want to proceed. The skill must not exit based on its own assessment that the idea is clear — a user reply confirming intent is required.
 
 ### Phase 2: Explore Approaches
 
