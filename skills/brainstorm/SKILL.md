@@ -178,6 +178,7 @@ The requirements document is for product definition and scope control. Do **not*
 ```markdown
 ---
 date: YYYY-MM-DD
+sequence: NNN
 topic: <kebab-case-topic>
 ---
 
@@ -233,7 +234,7 @@ Before finalizing, check:
 
 If planning would need to invent product behavior, scope boundaries, or success criteria, the brainstorm is not complete yet.
 
-Ensure `docs/brainstorms/` directory exists before writing.
+Ensure `docs/brainstorms/` directory exists before writing. Build the filename following the convention `YYYY-MM-DD-NNN-<topic>-requirements.md` — check existing files for today's date to determine the next sequence number (zero-padded to 3 digits, starting at 001).
 
 If a document contains outstanding questions:
 - Use `Resolve Before Planning` only for questions that truly block planning
@@ -283,7 +284,7 @@ Immediately run `/work` in the current session using the finalized brainstorm ou
 **If user selects "Share to Proof":**
 
 ```bash
-CONTENT=$(cat docs/brainstorms/YYYY-MM-DD-<topic>-requirements.md)
+CONTENT=$(cat docs/brainstorms/YYYY-MM-DD-NNN-<topic>-requirements.md)
 TITLE="Requirements: <topic title>"
 RESPONSE=$(curl -s -X POST https://www.proofeditor.ai/share/markdown \
   -H "Content-Type: application/json" \
@@ -312,7 +313,7 @@ When complete and ready for planning, display:
 ```text
 Brainstorm complete!
 
-Requirements doc: docs/brainstorms/YYYY-MM-DD-<topic>-requirements.md  # if one was created
+Requirements doc: docs/brainstorms/YYYY-MM-DD-NNN-<topic>-requirements.md  # if one was created
 
 Key decisions:
 - [Decision 1]
@@ -326,7 +327,7 @@ If the user pauses with `Resolve Before Planning` still populated, display:
 ```text
 Brainstorm paused.
 
-Requirements doc: docs/brainstorms/YYYY-MM-DD-<topic>-requirements.md  # if one was created
+Requirements doc: docs/brainstorms/YYYY-MM-DD-NNN-<topic>-requirements.md  # if one was created
 
 Planning is blocked by:
 - [Blocking question 1]
