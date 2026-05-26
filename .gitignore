@@ -3,4 +3,6 @@ dist/
 *.js.map
 .DS_Store
 docs/initiatives/
+docs/plans/
+docs/brainstorms/
 .windsurf/
