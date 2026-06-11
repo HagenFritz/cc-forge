@@ -32,7 +32,7 @@ const SKILL_DESCRIPTIONS: Record<string, string> = {
   'read-issue': 'Fetch and digest a GitHub issue',
   'triage-issue': 'Investigate whether an issue still exists',
   ship: 'Commit, push, and create a PR',
-  land: 'Stamp merged-PR context into a directory CLAUDE.md',
+  land: 'Stamp PR context into a directory CLAUDE.md before merge',
   'commit-all': 'Stage and commit all changes per-file',
   'side-quest': 'Track out-of-scope tasks discovered during execution',
   'stand-up': 'Summarize the past 28h of work',
