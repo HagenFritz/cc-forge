@@ -71,3 +71,7 @@ Always run `npm run build && node dist/cli.mjs install` after modifying any skil
 
 When referencing agents from within SKILL.md files, use fully-qualified names:
 `cc-forge:<category>:<agent-name>` (e.g., `cc-forge:research:best-practices-researcher`)
+
+## Related
+
+- **PR #32**: add /land — a pre-merge skill that stamps a capped PR→plan→summary provenance trail into a directory's CLAUDE.md and commits it onto the open PR — [plan](docs/plans/2026-06-11-001-feat-land-skill-plan.md)
