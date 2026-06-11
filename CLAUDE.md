@@ -40,6 +40,7 @@ Core workflow: brainstorm -> plan -> work -> review -> compound
 - `/branch` - Create and checkout a branch from an issue number (auto-detects repo)
 - `/issue-from-context` - Create GitHub issues from conversation context (auto-detects repo)
 - `/ship` - Commit changes, push branch, and create a PR (auto-detects repo)
+- `/land` - Manual post-merge step. Resolves the merged PR (defaults to the most recently merged PR — branches are auto-deleted on merge, so it picks by recency, not branch name — or pass a PR number), lets you pick the directory it most affected, prepends a capped (newest-10, FIFO) provenance entry — PR link + plan link + a one-line summary it writes — to that directory's `CLAUDE.md` `## Related` section, and refreshes the body prose to match the merge. Lands as reviewable uncommitted edits; never commits or pushes.
 
 ## Development Workflow
 
