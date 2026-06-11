@@ -98,6 +98,7 @@ Changes in `skills/` or `agents/` are not live until install runs.
 | `/read-issue` | Fetch and digest a GitHub issue by number |
 | `/triage-issue` | Investigate whether a GitHub issue is still present in the codebase |
 | `/ship` | Commit, push, and create a PR |
+| `/land` | Before merging an open PR, stamp a capped provenance entry (PR + plan + summary) into the affected directory's `CLAUDE.md`, refresh its prose, and commit+push it onto the PR's branch |
 
 ### Git utilities
 

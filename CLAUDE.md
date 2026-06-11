@@ -40,6 +40,7 @@ Core workflow: brainstorm -> plan -> work -> review -> compound
 - `/branch` - Create and checkout a branch from an issue number (auto-detects repo)
 - `/issue-from-context` - Create GitHub issues from conversation context (auto-detects repo)
 - `/ship` - Commit changes, push branch, and create a PR (auto-detects repo)
+- `/land` - Pre-merge step run on an open PR. Resolves the open PR for the current branch (or pass a PR number), lets you pick the directory it most affected, prepends a capped (newest-10, FIFO) provenance entry — PR link + plan link + a one-line summary it writes — to that directory's `CLAUDE.md` `## Related` section, refreshes the body prose, then commits and pushes the update onto the PR's branch so the doc change merges with the same PR. Run it just before merging; never merges the PR itself.
 
 ## Development Workflow
 
@@ -70,3 +71,7 @@ Always run `npm run build && node dist/cli.mjs install` after modifying any skil
 
 When referencing agents from within SKILL.md files, use fully-qualified names:
 `cc-forge:<category>:<agent-name>` (e.g., `cc-forge:research:best-practices-researcher`)
+
+## Related
+
+- **PR #32**: add /land — a pre-merge skill that stamps a capped PR→plan→summary provenance trail into a directory's CLAUDE.md and commits it onto the open PR — [plan](docs/plans/2026-06-11-001-feat-land-skill-plan.md)
