@@ -179,4 +179,6 @@ docs/            Plans, brainstorms, reviews, initiatives generated at runtime
 
 ## Credits
 
+cc-forge was originally scaffolded from [EveryInc/compound-engineering-plugin](https://github.com/EveryInc/compound-engineering-plugin) by [Every Inc](https://every.to) (Kieran Klaassen, T.M. Chow), MIT-licensed. The core `brainstorm → plan → work → review → compound` workflow, the research/review/workflow agent categories, and several skills derive from that project; cc-forge adapts and extends them for personal use. Credit and thanks to the compound-engineering authors for the foundation.
+
 The `/caveman` skill prompt is adapted from [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) under the MIT license. The persistence hook (`hooks/cc-forge-caveman-mode-tracker.cjs`) is an original cc-forge implementation that lifts the symlink-safe flag-file primitives from upstream. The flag file path (`~/.claude/.caveman-active`) is shared between cc-forge and upstream caveman, so installing both will coexist on the same state, with cc-forge using a strict `{lite, full, ultra}` whitelist.
