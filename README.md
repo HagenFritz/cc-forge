@@ -44,8 +44,8 @@ Restart Claude Code after copying. Skills become available as `/<name>` slash co
 | `/plan` | Turns a feature description or requirements doc into a structured implementation plan grounded in repo patterns | Requirements are roughly defined and you need a technical approach broken into units |
 | `/deepen-plan` | Stress-tests an existing plan and selectively strengthens weak sections with targeted research | A Standard/Deep or high-risk plan needs more confidence around decisions, sequencing, or risk |
 | `/work` | Executes a work plan unit-by-unit, following repo patterns and testing as it goes | You have a plan and want it implemented |
-| `/review` | Exhaustive multi-agent code review using worktrees | Complex, risky, or large changes that warrant deep review |
-| `/review-walk` | Walks a `/review` document interactively, group-by-group, with implement/defer/skip per issue; updates `Status:` inline so it's resumable | You have a `docs/reviews/*.md` and want to act on it methodically |
+| `/deep-review` | Exhaustive multi-agent code review using worktrees; writes a structured review doc | Complex, risky, or large changes that warrant deep review |
+| `/review-walk` | Walks a `/deep-review` document interactively, group-by-group, with implement/defer/skip per issue; updates `Status:` inline so it's resumable | You have a `docs/reviews/*.md` and want to act on it methodically |
 | `/compound` | Documents a recently solved problem so the knowledge compounds | Right after solving something non-obvious worth recording |
 | `/ideate` | Generates and critically evaluates grounded improvement ideas for the project | "What should I improve?" — you want AI-generated directions before brainstorming one |
 | `/document-review` | Reviews a requirements or plan doc with parallel persona agents | A requirements/plan doc exists and you want role-specific critique |
