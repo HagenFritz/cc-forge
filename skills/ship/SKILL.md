@@ -13,7 +13,7 @@ Push the current branch and create a pull request. Also stage and commit any lin
 2. Run `git branch --show-current` to get the current branch name.
 
 **If the current branch is `main` or `master`, STOP immediately** and tell the user:
-> "You're on the main branch. Please check out a feature branch first before using /ship. Try using /branch"
+> "You're on the main branch. Please check out a feature branch first before using /ship. Try using /branch-from-issue"
 
 Do NOT proceed with any commits or pushes on main/master.
 

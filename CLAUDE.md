@@ -39,7 +39,7 @@ Core workflow: brainstorm -> plan -> work -> review -> compound
 - `/initiative` - Author, maintain, and optionally publish a living high-level initiative doc at `docs/initiatives/`. One altitude up from `/plan` (workstreams, not commit-sized units). Two modes: invoke with no path to author a new initiative; invoke with the path to an existing initiative doc to resume — the skill gathers repo evidence since `last_updated` and writes the update back surgically. After either mode, offers to publish to GitHub as a parent issue with linked sub-tasks. Typical flow: `/initiative` → `/plan` per workstream → `/work` → `/initiative <path>` to log progress.
 
 **GitHub Integration:**
-- `/branch` - Create and checkout a branch from an issue number (auto-detects repo)
+- `/branch-from-issue` - Create and checkout a git branch from an issue number (auto-detects repo)
 - `/issue-from-context` - Create GitHub issues from conversation context (auto-detects repo)
 - `/ship` - Commit changes, push branch, and create a PR (auto-detects repo)
 - `/land` - Pre-merge step run on an open PR. Resolves the open PR for the current branch (or pass a PR number), lets you pick the directory it most affected, prepends a capped (newest-10, FIFO) provenance entry — PR link + plan link + a one-line summary it writes — to that directory's `CLAUDE.md` `## Related` section, refreshes the body prose, then commits and pushes the update onto the PR's branch so the doc change merges with the same PR. Run it just before merging; never merges the PR itself.
