@@ -65,7 +65,7 @@ Typical flow: `/initiative` → `/plan` per workstream → `/work` → `/initiat
 
 | Skill | What it does | When to use |
 |---|---|---|
-| `/branch` | Creates and checks out a branch from an issue number or conversation context | Starting work tied to an issue |
+| `/branch-from-issue` | Creates and checks out a git branch from an issue number or conversation context | Starting work tied to an issue |
 | `/issue-from-context` | Generates a GitHub issue from conversation context and adds it to a project | Something worth tracking surfaced mid-conversation |
 | `/read-issue` | Fetches a GitHub issue by number and presents a structured digest | You want an issue's content summarized in-session |
 | `/triage-issue` | Fetches an issue and investigates the codebase to determine if it's still present, fixed, or needs more digging; writes to `docs/triage/` | Verifying whether a reported issue still reproduces |
@@ -164,7 +164,7 @@ Restart Claude Code. The hook reads a flag file at `~/.claude/.caveman-active` (
 
 **GitHub workflow:**
 ```
-/branch <issue-number> → /work → /ship → /land
+/branch-from-issue <issue-number> → /work → /ship → /land
 ```
 
 ## Structure

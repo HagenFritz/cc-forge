@@ -1,6 +1,6 @@
 ---
-name: branch
-description: Create and checkout a new branch from an issue number or conversation context
+name: branch-from-issue
+description: Create and checkout a new git branch from an issue number or conversation context
 disable-model-invocation: true
 user-invocable: true
 argument-hint: "[issue-number]"
