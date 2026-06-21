@@ -44,8 +44,8 @@ Restart Claude Code after copying. Skills become available as `/<name>` slash co
 | `/plan` | Turns a feature description or requirements doc into a structured implementation plan grounded in repo patterns | Requirements are roughly defined and you need a technical approach broken into units |
 | `/deepen-plan` | Stress-tests an existing plan and selectively strengthens weak sections with targeted research | A Standard/Deep or high-risk plan needs more confidence around decisions, sequencing, or risk |
 | `/work` | Executes a work plan unit-by-unit, following repo patterns and testing as it goes | You have a plan and want it implemented |
-| `/review` | Exhaustive multi-agent code review using worktrees | Complex, risky, or large changes that warrant deep review |
-| `/review-walk` | Walks a `/review` document interactively, group-by-group, with implement/defer/skip per issue; updates `Status:` inline so it's resumable | You have a `docs/reviews/*.md` and want to act on it methodically |
+| `/deep-review` | Exhaustive multi-agent code review using worktrees; writes a structured review doc | Complex, risky, or large changes that warrant deep review |
+| `/review-walk` | Walks a `/deep-review` document interactively, group-by-group, with implement/defer/skip per issue; updates `Status:` inline so it's resumable | You have a `docs/reviews/*.md` and want to act on it methodically |
 | `/compound` | Documents a recently solved problem so the knowledge compounds | Right after solving something non-obvious worth recording |
 | `/ideate` | Generates and critically evaluates grounded improvement ideas for the project | "What should I improve?" — you want AI-generated directions before brainstorming one |
 | `/document-review` | Reviews a requirements or plan doc with parallel persona agents | A requirements/plan doc exists and you want role-specific critique |
@@ -65,7 +65,7 @@ Typical flow: `/initiative` → `/plan` per workstream → `/work` → `/initiat
 
 | Skill | What it does | When to use |
 |---|---|---|
-| `/branch` | Creates and checks out a branch from an issue number or conversation context | Starting work tied to an issue |
+| `/branch-from-issue` | Creates and checks out a git branch from an issue number or conversation context | Starting work tied to an issue |
 | `/issue-from-context` | Generates a GitHub issue from conversation context and adds it to a project | Something worth tracking surfaced mid-conversation |
 | `/read-issue` | Fetches a GitHub issue by number and presents a structured digest | You want an issue's content summarized in-session |
 | `/triage-issue` | Fetches an issue and investigates the codebase to determine if it's still present, fixed, or needs more digging; writes to `docs/triage/` | Verifying whether a reported issue still reproduces |
@@ -164,7 +164,7 @@ Restart Claude Code. The hook reads a flag file at `~/.claude/.caveman-active` (
 
 **GitHub workflow:**
 ```
-/branch <issue-number> → /work → /ship → /land
+/branch-from-issue <issue-number> → /work → /ship → /land
 ```
 
 ## Structure
@@ -178,5 +178,7 @@ docs/            Plans, brainstorms, reviews, initiatives generated at runtime
 ```
 
 ## Credits
+
+cc-forge was originally scaffolded from [EveryInc/compound-engineering-plugin](https://github.com/EveryInc/compound-engineering-plugin) by [Every Inc](https://every.to) (Kieran Klaassen, T.M. Chow), MIT-licensed. The core `brainstorm → plan → work → review → compound` workflow, the research/review/workflow agent categories, and several skills derive from that project; cc-forge adapts and extends them for personal use. Credit and thanks to the compound-engineering authors for the foundation.
 
 The `/caveman` skill prompt is adapted from [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) under the MIT license. The persistence hook (`hooks/cc-forge-caveman-mode-tracker.cjs`) is an original cc-forge implementation that lifts the symlink-safe flag-file primitives from upstream. The flag file path (`~/.claude/.caveman-active`) is shared between cc-forge and upstream caveman, so installing both will coexist on the same state, with cc-forge using a strict `{lite, full, ultra}` whitelist.

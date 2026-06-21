@@ -1,6 +1,6 @@
 ---
-name: review
-description: Perform exhaustive code reviews using multi-agent analysis, ultra-thinking, and worktrees
+name: deep-review
+description: Perform exhaustive multi-agent code reviews with ultra-thinking and worktrees, producing a structured review document
 argument-hint: "[PR number, GitHub URL, branch name, or latest] [--serial]"
 ---
 
