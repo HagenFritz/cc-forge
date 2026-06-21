@@ -5,10 +5,10 @@ Personal reference collection of Claude Code skills, agents, and hooks with GitH
 ## Structure
 
 ```
-.claude-plugin/   Plugin + marketplace metadata (optional one-command install path)
+.claude-plugin/   Plugin + marketplace metadata (one-command install path)
 agents/           Specialized subagents (research, review, workflow, test)
 skills/           Slash commands (SKILL.md files)
-hooks/            Claude Code hook scripts (.cjs; copied manually to ~/.claude/hooks/)
+hooks/            Hook scripts (.cjs) + hooks.json (auto-wires hooks on /plugin install)
 docs/             Plans, brainstorms, reviews, initiatives generated at runtime
 ```
 
@@ -48,16 +48,18 @@ Core workflow: brainstorm -> plan -> work -> review -> compound
 
 This is a reference repo, not a package — there's no build step or install CLI. Skills and agents are plain Markdown that Claude Code loads from `~/.claude/skills/` and `~/.claude/agents/`.
 
-To apply an edit to a skill or agent, copy the changed folder into `~/.claude/` and restart Claude Code:
+Two install paths (see README):
+- **Plugin** (`/plugin install cc-forge`) — installs all skills, agents, and the caveman hook (the hook is auto-wired via `hooks/hooks.json`). Recommended.
+- **Cherry-pick** — copy individual folders into `~/.claude/`:
 
 ```bash
 cp -r skills/<name> ~/.claude/skills/
 cp -r agents/<category> ~/.claude/agents/
 ```
 
-Editing a file in this repo does **not** make it live — it must be copied into `~/.claude/`. (Alternatively, load the whole set via the plugin path in `.claude-plugin/`; see README.)
+Editing a file in this repo does **not** make it live — apply it by re-running the plugin install or copying the changed folder into `~/.claude/`.
 
-The `/caveman` skill additionally needs a `UserPromptSubmit` hook wired into `~/.claude/settings.json`. That's a one-time manual copy-paste documented in the README ("Caveman hook setup") — there is no installer to do it automatically.
+The `/caveman` hook is wired automatically by the plugin path via `hooks/hooks.json`. Only the cherry-pick route needs the manual `settings.json` paste documented in the README ("Caveman hook setup"). When adding a new hook in the future, add its script to `hooks/` and declare it in `hooks/hooks.json` (using `${CLAUDE_PLUGIN_ROOT}` for the path) so plugin installs pick it up automatically.
 
 ## Agent References in Skills
 

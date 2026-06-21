@@ -6,39 +6,33 @@ This repo is meant to be **referenced and cherry-picked**, not installed as a pa
 
 ## How to use it
 
-Skills and agents are plain Markdown. Claude Code loads them from `~/.claude/skills/` and `~/.claude/agents/`. To use one, copy its folder into place and restart Claude Code.
+Two ways: install the whole set as a plugin (one command, everything wired), or cherry-pick individual skills by copying folders.
 
-**Copy a single skill:**
+### Install everything (recommended)
 
-```bash
-cp -r skills/plan ~/.claude/skills/
+Clone the repo, then point Claude Code's plugin system at your local checkout:
+
+```text
+/plugin marketplace add /path/to/your/clone/cc-forge
+/plugin install cc-forge
 ```
 
-**Copy a single agent category:**
+This installs **all skills, all agents, and the caveman hook** — the hook is wired automatically via `hooks/hooks.json`, so there's no `settings.json` editing. Restart Claude Code and you're done.
+
+(The marketplace is named `cc-forge-local` with `source: "./"`, so add it by the **path to your clone**, not a remote `owner/repo` reference.)
+
+### Cherry-pick individual pieces
+
+Skills and agents are plain Markdown that Claude Code loads from `~/.claude/skills/` and `~/.claude/agents/`. To grab just one, copy its folder:
 
 ```bash
-cp -r agents/research ~/.claude/agents/
-```
-
-**Copy everything:**
-
-```bash
-cp -r skills/* ~/.claude/skills/
-cp -r agents/* ~/.claude/agents/
+cp -r skills/plan ~/.claude/skills/        # one skill
+cp -r agents/research ~/.claude/agents/    # one agent category
 ```
 
 Restart Claude Code after copying. Skills become available as `/<name>` slash commands; agents are dispatchable via the Task tool.
 
-> The `/caveman` skill needs one extra manual step (a hook) — see [Caveman hook setup](#caveman-hook-setup).
-
-**Optional — install the whole set as a plugin.** This repo also ships Claude Code plugin metadata (`.claude-plugin/`). If you'd rather load everything at once without copying:
-
-```text
-/plugin marketplace add HagenFritz/cc-forge
-/plugin install cc-forge
-```
-
-The plugin path loads skills and agents directly from the repo. It does **not** wire the caveman hook — that's still a manual step.
+> Copying the `/caveman` skill this way gets the prompt but **not** its persistence hook — that needs one manual step ([Caveman hook setup](#caveman-hook-setup)). The plugin install above wires it for you; this manual step is only for the cherry-pick route.
 
 ## Skills
 
@@ -117,7 +111,9 @@ Skills reference agents by fully-qualified name (`cc-forge:<category>:<agent>`),
 
 ## Caveman hook setup
 
-`/caveman` persists its mode by re-injecting a reminder on every prompt via a `UserPromptSubmit` hook. This is the one piece that needs more than a folder copy. Two one-time steps:
+> **Skip this if you installed via the plugin** (`/plugin install cc-forge`) — the hook is already wired by `hooks/hooks.json`. This section is only for the cherry-pick route, where you copied the `/caveman` skill folder by hand.
+
+`/caveman` persists its mode by re-injecting a reminder on every prompt via a `UserPromptSubmit` hook. When you copy the skill folder manually, the hook isn't wired — do these two one-time steps:
 
 **Step 1 — copy the hook script:**
 
@@ -147,6 +143,8 @@ chmod +x ~/.claude/hooks/cc-forge-caveman-mode-tracker.cjs
 Restart Claude Code. The hook reads a flag file at `~/.claude/.caveman-active` (contents = active level, absent = off) and is safe to leave installed — it does nothing unless caveman mode is active.
 
 **To remove it:** delete `~/.claude/hooks/cc-forge-caveman-mode-tracker.cjs` and remove the entry you added from the `UserPromptSubmit` array.
+
+> **Migrating from the old CLI?** Earlier versions of cc-forge shipped an installer that wrote `~/.claude/.cc-forge-manifest.json`. Nothing reads that file anymore — you can safely `rm ~/.claude/.cc-forge-manifest.json`.
 
 ## Typical flows
 

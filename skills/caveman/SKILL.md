@@ -14,7 +14,7 @@ ACTIVE EVERY RESPONSE. No revert after many turns. No filler drift. Still active
 
 Default: **full**. Switch: `/caveman lite|full|ultra`.
 
-The cc-forge persistence hook re-injects a short reminder of this mode on every `UserPromptSubmit`. Flag file at `~/.claude/.caveman-active`. If the mode appears to drift, check that the hook is wired in `~/.claude/settings.json` (see the README for the one-time manual wiring).
+The cc-forge persistence hook re-injects a short reminder of this mode on every `UserPromptSubmit`. Flag file at `~/.claude/.caveman-active`. The `/plugin install` path wires this hook automatically (`hooks/hooks.json`); a manual cherry-pick install wires it via `~/.claude/settings.json` (see the README). If the mode appears to drift, check that the hook is registered.
 
 ## Rules
 
