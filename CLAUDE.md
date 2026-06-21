@@ -1,21 +1,23 @@
 # CC Forge - Agent Instructions
 
-Personal development workflow plugin with GitHub integration.
+Personal reference collection of Claude Code skills, agents, and hooks with GitHub integration. Not a package — people clone it and copy what they want into `~/.claude/`.
 
 ## Structure
 
 ```
-.claude-plugin/   Plugin metadata
-agents/           Specialized subagents (research, review, workflow)
+.claude-plugin/   Plugin + marketplace metadata (one-command install path)
+agents/           Specialized subagents (research, review, workflow, test)
 skills/           Slash commands (SKILL.md files)
-hooks/            Claude Code hook scripts (.cjs, copied to ~/.claude/hooks/)
+hooks/            Hook scripts (.cjs) + hooks.json (auto-wires hooks on /plugin install)
+docs/             Plans, brainstorms, reviews, initiatives generated at runtime
 ```
 
 ## Agents
 
-- `research/` - Code research, docs lookup, git history, best practices
+- `research/` - Code research, docs lookup, git history, issue analysis, learnings, best practices
 - `review/` - Code review specialists (architecture, security, performance, patterns, simplicity, TypeScript, Python)
 - `workflow/` - Bug reproduction, linting, PR comments, spec analysis
+- `test/` - Test-plan critique (viability scoring + drop list)
 
 ## Skills
 
@@ -42,30 +44,22 @@ Core workflow: brainstorm -> plan -> work -> review -> compound
 - `/ship` - Commit changes, push branch, and create a PR (auto-detects repo)
 - `/land` - Pre-merge step run on an open PR. Resolves the open PR for the current branch (or pass a PR number), lets you pick the directory it most affected, prepends a capped (newest-10, FIFO) provenance entry — PR link + plan link + a one-line summary it writes — to that directory's `CLAUDE.md` `## Related` section, refreshes the body prose, then commits and pushes the update onto the PR's branch so the doc change merges with the same PR. Run it just before merging; never merges the PR itself.
 
-## Development Workflow
+## Applying changes
 
-This is a Claude Code plugin distributed as an npm package. Skills live in `skills/` and agents in `agents/`. The CLI in `src/` copies them to `~/.claude/` on install.
+This is a reference repo, not a package — there's no build step or install CLI. Skills and agents are plain Markdown that Claude Code loads from `~/.claude/skills/` and `~/.claude/agents/`.
 
-### After changing skills or agents, you MUST install to apply changes
+Two install paths (see README):
+- **Plugin** (`/plugin install cc-forge`) — installs all skills, agents, and the caveman hook (the hook is auto-wired via `hooks/hooks.json`). Recommended.
+- **Cherry-pick** — copy individual folders into `~/.claude/`:
 
 ```bash
-npm run build && node dist/cli.mjs install
+cp -r skills/<name> ~/.claude/skills/
+cp -r agents/<category> ~/.claude/agents/
 ```
 
-Do NOT assume skills are live just because files exist on disk. The install command copies `skills/` and `agents/` to `~/.claude/skills/` and `~/.claude/agents/`. Without running install, changes are only in the working tree and not available to Claude Code.
+Editing a file in this repo does **not** make it live — apply it by re-running the plugin install or copying the changed folder into `~/.claude/`.
 
-Always run `npm run build && node dist/cli.mjs install` after modifying any skill or agent file, then tell the user to restart Claude Code for changes to take effect.
-
-### Commands
-
-- `npm run build` — compile TypeScript to `dist/`
-- `node dist/cli.mjs install [--dry-run] [--yes]` — copy skills + agents + hooks; patch `~/.claude/settings.json`
-- `node dist/cli.mjs uninstall [--dry-run]` — manifest-driven removal of everything install created
-- `node dist/cli.mjs doctor` — check installation health (skills, agents, hooks, settings.json wiring, caveman state)
-
-### Hook ownership
-
-`install` writes a manifest at `~/.claude/.cc-forge-manifest.json` recording every entry it adds to `settings.json` (UUID-keyed). `uninstall` consults this manifest to remove exactly those entries — never substring-matches. If you add a new cc-forge hook in the future, register it via the `settings-patcher.ts` module so the manifest stays the canonical ownership record.
+The `/caveman` hook is wired automatically by the plugin path via `hooks/hooks.json`. Only the cherry-pick route needs the manual `settings.json` paste documented in the README ("Caveman hook setup"). When adding a new hook in the future, add its script to `hooks/` and declare it in `hooks/hooks.json` (using `${CLAUDE_PLUGIN_ROOT}` for the path) so plugin installs pick it up automatically.
 
 ## Agent References in Skills
 
@@ -74,4 +68,5 @@ When referencing agents from within SKILL.md files, use fully-qualified names:
 
 ## Related
 
+- **Reframe as reference repo** (2026-06-20): dropped the npm package + TypeScript CLI installer (`src/`, `dist/`, `package.json`, manifest, settings-patcher); the repo is now clone-and-copy. Skills/agents apply by `cp -r` into `~/.claude/`; the caveman hook is wired by a documented manual paste — [plan](docs/plans/2026-06-20-001-refactor-reframe-as-reference-repo-plan.md)
 - **PR #32**: add /land — a pre-merge skill that stamps a capped PR→plan→summary provenance trail into a directory's CLAUDE.md and commits it onto the open PR — [plan](docs/plans/2026-06-11-001-feat-land-skill-plan.md)
