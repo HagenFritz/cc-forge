@@ -2,7 +2,7 @@
 name: review-walk
 description: >
   Walk through a code-review document interactively. Reads a review file produced by
-  /review, presents related issues group-by-group with a plain-English teach moment
+  /deep-review, presents related issues group-by-group with a plain-English teach moment
   per group, then steps through each member issue offering implement / defer / skip /
   explain more. Updates `Status:` inline in the doc so progress is durable and
   resumable. Triggers on phrases like "walk the review", "step through the review",
@@ -19,7 +19,7 @@ For each group, teach the underlying concept in plain English before stepping in
 specific fixes. The review document is the source of truth — `Status:` updates live
 in the doc, so walks resume cleanly across sessions.
 
-This skill **consumes** review docs produced by `/review`. It does not run reviewers
+This skill **consumes** review docs produced by `/deep-review`. It does not run reviewers
 or produce new findings.
 
 ## Step 1: Resolve the Doc Path
@@ -35,7 +35,7 @@ or produce new findings.
   sort picks the most recent doc deterministically (no `mtime` ambiguity if the file
   was edited mid-walk).
 
-- If no review docs exist, STOP and tell the user to run `/review` first.
+- If no review docs exist, STOP and tell the user to run `/deep-review` first.
 - Confirm the resolved path back to the user before continuing:
   > "Walking review: `docs/reviews/<file>.md`. Proceed?"
   Use `AskUserQuestion` with Yes / Cancel.
@@ -268,7 +268,7 @@ When running in fallback mode (no `## Groups` section or no enriched fields):
   "defer").
 - The review doc is the source of truth. If the user manually edits the doc
   between turns, re-read it before the next action so changes are picked up.
-- Respect the Protected Artifacts rule from `/review`: never apply a fix that would
+- Respect the Protected Artifacts rule from `/deep-review`: never apply a fix that would
   delete or gitignore files under `docs/brainstorms/`, `docs/plans/`, or
   `docs/solutions/`. If such an issue slipped through, treat it as automatic
   `wont-fix` and warn the user.
