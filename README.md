@@ -1,117 +1,152 @@
 # cc-forge
 
-Personal development workflow plugin for Claude Code with GitHub integration.
+A personal reference collection of Claude Code skills, agents, and hooks for structured development workflows, code review, and research automation.
 
-## Installation
+This repo is meant to be **referenced and cherry-picked**, not installed as a package. Browse the skills and agents below, copy the ones you want into your own `~/.claude/`, and adapt them. The whole thing is built around a `brainstorm → plan → work → review → compound` loop with GitHub integration on top.
 
-```bash
-npm run build && node dist/cli.mjs install
-```
+## How to use it
 
-This copies all skills and agents to `~/.claude/`. Restart Claude Code after installing.
+Skills and agents are plain Markdown. Claude Code loads them from `~/.claude/skills/` and `~/.claude/agents/`. To use one, copy its folder into place and restart Claude Code.
 
-### Other commands
+**Copy a single skill:**
 
 ```bash
-node dist/cli.mjs install --dry-run   # Print planned changes without writing
-node dist/cli.mjs install --yes       # Skip interactive confirms
-node dist/cli.mjs uninstall           # Remove installed files and settings entries
-node dist/cli.mjs uninstall --dry-run # Print planned removals without touching anything
-node dist/cli.mjs doctor              # Check installation health
+cp -r skills/plan ~/.claude/skills/
 ```
 
-`install` also copies any cc-forge hooks into `~/.claude/hooks/` and (on first install) patches `~/.claude/settings.json` to register them. Ownership of every cc-forge-written settings.json entry is tracked in `~/.claude/.cc-forge-manifest.json` so `uninstall` removes exactly what install added — nothing more.
-
-### Manifest format
-
-`~/.claude/.cc-forge-manifest.json` is a stable, agent-readable record of everything cc-forge owns in your `~/.claude/settings.json`. Schema:
-
-```json
-{
-  "version": 1,
-  "entries": [
-    {
-      "uuid": "b68b6ab2-cfea-4916-ab37-4ae87acbe561",
-      "kind": "settings-hook",
-      "event": "UserPromptSubmit",
-      "commandPath": "/Users/you/.claude/hooks/cc-forge-caveman-mode-tracker.cjs",
-      "createdAt": "2026-05-22T17:23:42.875Z"
-    }
-  ]
-}
-```
-
-Agents may read this file to inspect what cc-forge has installed; do not modify it directly. Use `cc-forge doctor --json` for a structured health report that combines manifest state with settings.json wiring and hook state.
-
-### Agent interface
-
-cc-forge exposes machine-friendly surfaces for non-interactive use:
-
-| Action | Command / file |
-|---|---|
-| Install non-interactively | `cc-forge install --yes` |
-| Preview install changes | `cc-forge install --dry-run` |
-| Inspect health as JSON | `cc-forge doctor --json` (exit non-zero on failure) |
-| Toggle caveman mode | Write `lite\|full\|ultra` to `~/.claude/.caveman-active`; `rm` to disable (see `skills/caveman/SKILL.md` for full contract) |
-
-## After making changes
-
-**Any time you edit a skill or agent file, re-run install to apply changes:**
+**Copy a single agent category:**
 
 ```bash
-npm run build && node dist/cli.mjs install
+cp -r agents/research ~/.claude/agents/
 ```
 
-Changes in `skills/` or `agents/` are not live until install runs.
+**Copy everything:**
+
+```bash
+cp -r skills/* ~/.claude/skills/
+cp -r agents/* ~/.claude/agents/
+```
+
+Restart Claude Code after copying. Skills become available as `/<name>` slash commands; agents are dispatchable via the Task tool.
+
+> The `/caveman` skill needs one extra manual step (a hook) — see [Caveman hook setup](#caveman-hook-setup).
+
+**Optional — install the whole set as a plugin.** This repo also ships Claude Code plugin metadata (`.claude-plugin/`). If you'd rather load everything at once without copying:
+
+```text
+/plugin marketplace add HagenFritz/cc-forge
+/plugin install cc-forge
+```
+
+The plugin path loads skills and agents directly from the repo. It does **not** wire the caveman hook — that's still a manual step.
 
 ## Skills
 
 ### Core workflow
 
-| Skill | Description |
-|---|---|
-| `/brainstorm` | Explore requirements and approaches |
-| `/plan` | Create implementation plans |
-| `/work` | Execute work plans |
-| `/review` | Multi-agent code review |
-| `/review-walk` | Interactively walk through a review doc issue-by-issue |
-| `/compound` | Document learnings |
-| `/ideate` | Generate improvement ideas |
-| `/deepen-plan` | Stress-test plans with targeted research |
-| `/document-review` | Review requirement/plan docs |
-| `/deprecate` | Safely plan removal of a named concept |
-| `/test-plan` | Generate a manual test plan from branch diffs |
-| `/caveman` | Ultra-terse response mode (lite/full/ultra). Persists across turns via a `UserPromptSubmit` hook. Off by default; activate with `/caveman <level>`, deactivate with `/caveman off` or "stop caveman". |
+| Skill | What it does | When to use |
+|---|---|---|
+| `/brainstorm` | Explores requirements and approaches through dialogue, then writes a right-sized requirements doc | A vague or ambitious feature idea; you want to think through options before committing to scope |
+| `/plan` | Turns a feature description or requirements doc into a structured implementation plan grounded in repo patterns | Requirements are roughly defined and you need a technical approach broken into units |
+| `/deepen-plan` | Stress-tests an existing plan and selectively strengthens weak sections with targeted research | A Standard/Deep or high-risk plan needs more confidence around decisions, sequencing, or risk |
+| `/work` | Executes a work plan unit-by-unit, following repo patterns and testing as it goes | You have a plan and want it implemented |
+| `/review` | Exhaustive multi-agent code review using worktrees | Complex, risky, or large changes that warrant deep review |
+| `/review-walk` | Walks a `/review` document interactively, group-by-group, with implement/defer/skip per issue; updates `Status:` inline so it's resumable | You have a `docs/reviews/*.md` and want to act on it methodically |
+| `/compound` | Documents a recently solved problem so the knowledge compounds | Right after solving something non-obvious worth recording |
+| `/ideate` | Generates and critically evaluates grounded improvement ideas for the project | "What should I improve?" — you want AI-generated directions before brainstorming one |
+| `/document-review` | Reviews a requirements or plan doc with parallel persona agents | A requirements/plan doc exists and you want role-specific critique |
+| `/deprecate` | Plan-only safe removal of a named concept: parallel research agents find every reference, output a leaves-first plan with compat-risk flags | "Rip out X" / "retire X" — hand the resulting plan to `/work` |
+
+**Dependencies:** these skills are self-contained Markdown. Some dispatch the agents in `agents/` (see [Agents](#agents)) — copy those too if you want the full behavior.
 
 ### Strategic
 
-| Skill | Description |
-|---|---|
-| `/initiative` | Author, maintain, and optionally publish a living initiative doc at `docs/initiatives/`. Two modes: no argument drafts a new initiative; passing an existing path resumes it. Offers GitHub publish (parent issue + linked sub-tasks) after either mode. |
+| Skill | What it does | When to use |
+|---|---|---|
+| `/initiative` | Authors, maintains, and optionally publishes a high-altitude living initiative doc at `docs/initiatives/` — one altitude up from `/plan` (workstreams, not commit-sized units). Two modes: no path **authors** a new initiative; passing an existing path **resumes** it by gathering evidence since `last_updated`. Optionally publishes to GitHub as a parent issue with linked sub-tasks | Multi-feature efforts that span many plans and need a durable record that survives compaction |
+
+Typical flow: `/initiative` → `/plan` per workstream → `/work` → `/initiative <path>` to log progress.
 
 ### GitHub integration
 
-| Skill | Description |
-|---|---|
-| `/branch` | Create and checkout a branch from an issue number |
-| `/issue-from-context` | Create a GitHub issue from conversation context |
-| `/read-issue` | Fetch and digest a GitHub issue by number |
-| `/triage-issue` | Investigate whether a GitHub issue is still present in the codebase |
-| `/ship` | Commit, push, and create a PR |
-| `/land` | Before merging an open PR, stamp a capped provenance entry (PR + plan + summary) into the affected directory's `CLAUDE.md`, refresh its prose, and commit+push it onto the PR's branch |
+| Skill | What it does | When to use |
+|---|---|---|
+| `/branch` | Creates and checks out a branch from an issue number or conversation context | Starting work tied to an issue |
+| `/issue-from-context` | Generates a GitHub issue from conversation context and adds it to a project | Something worth tracking surfaced mid-conversation |
+| `/read-issue` | Fetches a GitHub issue by number and presents a structured digest | You want an issue's content summarized in-session |
+| `/triage-issue` | Fetches an issue and investigates the codebase to determine if it's still present, fixed, or needs more digging; writes to `docs/triage/` | Verifying whether a reported issue still reproduces |
+| `/ship` | Commits all changes per-file, pushes the branch, and creates a PR | Work is done and you want it shipped |
+| `/land` | Just before merging an open PR, stamps a capped provenance entry (PR + plan link + one-line summary) into the affected directory's `CLAUDE.md` `## Related` section, refreshes the prose, and commits it onto the PR's branch so the doc update rides the same PR | Right before merge — never merges the PR itself |
+
+**Dependency note:** the GitHub skills shell out to the `gh` CLI; have it installed and authenticated.
 
 ### Git utilities
 
-| Skill | Description |
-|---|---|
-| `/commit-all` | Stage and commit all changes with per-file messages |
+| Skill | What it does | When to use |
+|---|---|---|
+| `/commit-all` | Stages and commits all unstaged changes with per-file commit messages | You want granular commits without hand-staging each file |
 
 ### Project tracking
 
-| Skill | Description |
-|---|---|
-| `/side-quest` | Track out-of-scope tasks discovered during execution |
-| `/stand-up` | Summarize the past 28h of commits, PRs, and issues |
+| Skill | What it does | When to use |
+|---|---|---|
+| `/side-quest` | Documents out-of-scope tasks or tech debt discovered during execution and ties them to the current issue | You hit something worth tracking but out of scope for the current task |
+| `/stand-up` | Summarizes the past 28h of commits, PRs, and linked issues | A daily catch-up on what moved |
+| `/test-plan` | Generates a manual test plan from current branch diffs (unstaged, staged, committed); saves a living doc to `docs/tests/` with pass/fail you update | You want a structured manual-testing pass over a branch's changes |
+
+### Response mode
+
+| Skill | What it does | When to use |
+|---|---|---|
+| `/caveman` | Ultra-compressed response mode (`lite` / `full` / `ultra`) — cuts token usage by dropping articles/filler/pleasantries while keeping full technical accuracy. Persists across turns via a `UserPromptSubmit` hook. Off by default | You want terse output. Activate with `/caveman <level>`; deactivate with `/caveman off`, "stop caveman", or "normal mode" |
+
+**Dependency:** persistence requires a hook — see [Caveman hook setup](#caveman-hook-setup). Without it the skill still works, but the mode may drift back to normal prose over a long session; just re-run `/caveman <level>` if it does.
+
+## Agents
+
+Specialized subagents live in `agents/`, grouped by category. Copy a category folder (`cp -r agents/<category> ~/.claude/agents/`) to make them dispatchable.
+
+| Category | Agents | Purpose |
+|---|---|---|
+| `research/` | best-practices-researcher, framework-docs-researcher, git-history-analyzer, issue-intelligence-analyst, learnings-researcher, repo-research-analyst | Code research, external docs, git archaeology, issue analysis, institutional learnings, repo conventions |
+| `review/` | architecture-strategist, code-simplicity-reviewer, kieran-python-reviewer, kieran-typescript-reviewer, pattern-recognition-specialist, performance-oracle, security-sentinel | Code-review specialists across architecture, simplicity, language idioms, patterns, performance, and security |
+| `workflow/` | bug-reproduction-validator, lint, pr-comment-resolver, spec-flow-analyzer | Bug reproduction, linting, PR-comment resolution, spec/flow analysis |
+| `test/` | test-plan-critic | Annotates a test plan with viability scores and a drop list |
+
+Skills reference agents by fully-qualified name (`cc-forge:<category>:<agent>`), so if you copy a skill that dispatches agents, copy the referenced agent category too.
+
+## Caveman hook setup
+
+`/caveman` persists its mode by re-injecting a reminder on every prompt via a `UserPromptSubmit` hook. This is the one piece that needs more than a folder copy. Two one-time steps:
+
+**Step 1 — copy the hook script:**
+
+```bash
+mkdir -p ~/.claude/hooks
+cp hooks/cc-forge-caveman-mode-tracker.cjs ~/.claude/hooks/
+chmod +x ~/.claude/hooks/cc-forge-caveman-mode-tracker.cjs
+```
+
+**Step 2 — register it in `~/.claude/settings.json`.** Add this entry to the `UserPromptSubmit` array (replace `<HOME>` with your home directory, e.g. `/Users/you`):
+
+```json
+{
+  "matcher": "",
+  "hooks": [
+    {
+      "type": "command",
+      "command": "<HOME>/.claude/hooks/cc-forge-caveman-mode-tracker.cjs",
+      "timeout": 10
+    }
+  ]
+}
+```
+
+> **Append — don't replace.** `UserPromptSubmit` is an array. If you already have hooks there, add this as a new element; do not overwrite existing entries. If `hooks.UserPromptSubmit` doesn't exist yet, create it as an array containing this one entry. If the file doesn't exist, create it as `{ "hooks": { "UserPromptSubmit": [ <the entry above> ] } }`.
+
+Restart Claude Code. The hook reads a flag file at `~/.claude/.caveman-active` (contents = active level, absent = off) and is safe to leave installed — it does nothing unless caveman mode is active.
+
+**To remove it:** delete `~/.claude/hooks/cc-forge-caveman-mode-tracker.cjs` and remove the entry you added from the `UserPromptSubmit` array.
 
 ## Typical flows
 
@@ -122,36 +157,28 @@ Changes in `skills/` or `agents/` are not live until install runs.
 
 **Multi-feature initiative:**
 ```
-/initiative                          # draft initiative doc
-  → /plan <workstream>               # plan one workstream
-  → /work                            # implement it
-  → /initiative docs/initiatives/…  # log progress back to the doc
+/initiative                        # draft initiative doc
+  → /plan <workstream>             # plan one workstream
+  → /work                          # implement it
+  → /initiative docs/initiatives/… # log progress back to the doc
   → repeat per workstream
 ```
 
 **GitHub workflow:**
 ```
-/branch <issue-number> → /work → /ship
+/branch <issue-number> → /work → /ship → /land
 ```
 
 ## Structure
 
 ```
-src/          CLI source (TypeScript)
-skills/       Slash commands (SKILL.md files, copied to ~/.claude/skills/)
-agents/       Subagents (copied to ~/.claude/agents/)
-.claude-plugin/  Plugin metadata
-docs/         Plans, brainstorms, initiatives generated at runtime
-```
-
-## Development
-
-```bash
-npm run build      # Compile TypeScript
-npm run typecheck  # Type-check without emitting
-npm run dev        # Watch mode
+skills/          Slash commands (one SKILL.md per skill)
+agents/          Subagents grouped by category (research/review/workflow/test)
+hooks/           Hook scripts (currently just the caveman mode tracker)
+.claude-plugin/  Plugin + marketplace metadata (optional one-command install path)
+docs/            Plans, brainstorms, reviews, initiatives generated at runtime
 ```
 
 ## Credits
 
-The `/caveman` skill prompt is adapted from [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) under the MIT license. The persistence hook (`hooks/cc-forge-caveman-mode-tracker.cjs`) is an original cc-forge implementation that lifts the symlink-safe flag-file primitives from upstream. The flag file path (`~/.claude/.caveman-active`) is shared between cc-forge and upstream caveman, so installing both will coexist on the same state with cc-forge using a strict `{lite, full, ultra}` whitelist.
+The `/caveman` skill prompt is adapted from [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) under the MIT license. The persistence hook (`hooks/cc-forge-caveman-mode-tracker.cjs`) is an original cc-forge implementation that lifts the symlink-safe flag-file primitives from upstream. The flag file path (`~/.claude/.caveman-active`) is shared between cc-forge and upstream caveman, so installing both will coexist on the same state, with cc-forge using a strict `{lite, full, ultra}` whitelist.

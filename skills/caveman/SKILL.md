@@ -14,7 +14,7 @@ ACTIVE EVERY RESPONSE. No revert after many turns. No filler drift. Still active
 
 Default: **full**. Switch: `/caveman lite|full|ultra`.
 
-The cc-forge persistence hook re-injects a short reminder of this mode on every `UserPromptSubmit`. Flag file at `~/.claude/.caveman-active`. If the mode appears to drift, check that the hook is wired with `cc-forge doctor`.
+The cc-forge persistence hook re-injects a short reminder of this mode on every `UserPromptSubmit`. Flag file at `~/.claude/.caveman-active`. If the mode appears to drift, check that the hook is wired in `~/.claude/settings.json` (see the README for the one-time manual wiring).
 
 ## Rules
 
@@ -63,7 +63,7 @@ Example — destructive op:
 
 ## Boundaries
 
-Code/commits/PRs: write normal. "stop caveman" or "normal mode": revert. Level persists across turns via the cc-forge `UserPromptSubmit` hook until changed or removed by `cc-forge uninstall`.
+Code/commits/PRs: write normal. "stop caveman" or "normal mode": revert. Level persists across turns via the cc-forge `UserPromptSubmit` hook until changed, or until the hook is removed from `~/.claude/settings.json`.
 
 ## Programmatic control
 
@@ -73,7 +73,7 @@ Agents may toggle caveman mode by writing the flag file directly — no chat rou
 |---|---|
 | Enable `lite` / `full` / `ultra` | Write the level (trimmed-lowercase ASCII) to `~/.claude/.caveman-active` |
 | Disable | `rm ~/.claude/.caveman-active` |
-| Inspect current state | `cc-forge doctor --json` and read `caveman.mode` / `caveman.level` |
+| Inspect current state | Read `~/.claude/.caveman-active` directly (its contents are the active level, or the file is absent when off) |
 
 Validation rules enforced by the hook (`hooks/cc-forge-caveman-mode-tracker.cjs`):
 
