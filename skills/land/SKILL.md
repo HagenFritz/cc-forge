@@ -54,7 +54,7 @@ Typical flow: open the PR with `/ship` → run `/land` → answer the confirm pr
     - A plan path referenced in the PR body.
     - If none found, fall back to the issue link (parse the issue from the PR body's `Closes #N` / `Fixes #N`).
     - Never link a review document.
-11. **Draft the one-line summary** from the PR title plus the diff stat (`gh pr diff <N> --stat`). Keep it to one line describing what changed and why.
+11. **Draft the one-line summary** from the PR title plus the diff stat (`git diff --stat main...HEAD`; `gh pr diff` has no `--stat` flag). Keep it to one line describing what changed and why.
 12. **Compose the entry** as a single Markdown list item, newest-first:
     - With a plan: `- **PR #<N>**: <summary> — [plan](<plan-path>)`
     - Without a plan: `- **PR #<N>**: <summary> — closes #<issue>` (omit the trailing clause entirely if there's no issue either).
