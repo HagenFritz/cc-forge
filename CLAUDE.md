@@ -68,5 +68,6 @@ When referencing agents from within SKILL.md files, use fully-qualified names:
 
 ## Related
 
+- **PR #39** (2026-06-23): /land now verifies CI and merges — after stamping CLAUDE.md it runs local tests, watches Actions, fixes failures with confirmed re-commits (max 3), squash-merges, and syncs main — [plan](docs/plans/2026-06-23-001-feat-land-merge-flow-plan.md)
 - **Reframe as reference repo** (2026-06-20): dropped the npm package + TypeScript CLI installer (`src/`, `dist/`, `package.json`, manifest, settings-patcher); the repo is now clone-and-copy. Skills/agents apply by `cp -r` into `~/.claude/`; the caveman hook is wired by a documented manual paste — [plan](docs/plans/2026-06-20-001-refactor-reframe-as-reference-repo-plan.md)
 - **PR #32**: add /land — a pre-merge skill that stamps a capped PR→plan→summary provenance trail into a directory's CLAUDE.md and commits it onto the open PR — [plan](docs/plans/2026-06-11-001-feat-land-skill-plan.md)
