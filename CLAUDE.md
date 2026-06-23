@@ -42,7 +42,7 @@ Core workflow: brainstorm -> plan -> work -> review -> compound
 - `/branch-from-issue` - Create and checkout a git branch from an issue number (auto-detects repo)
 - `/issue-from-context` - Create GitHub issues from conversation context (auto-detects repo)
 - `/ship` - Commit changes, push branch, and create a PR (auto-detects repo)
-- `/land` - Pre-merge step run on an open PR. Resolves the open PR for the current branch (or pass a PR number), lets you pick the directory it most affected, prepends a capped (newest-10, FIFO) provenance entry — PR link + plan link + a one-line summary it writes — to that directory's `CLAUDE.md` `## Related` section, refreshes the body prose, then commits and pushes the update onto the PR's branch so the doc change merges with the same PR. Run it just before merging; never merges the PR itself.
+- `/land` - Takes an open PR all the way to merged. Resolves the open PR for the current branch (or pass a PR number), lets you pick the directory it most affected, prepends a capped (newest-10, FIFO) provenance entry — PR link + plan link + a one-line summary it writes — to that directory's `CLAUDE.md` `## Related` section, refreshes the body prose, and commits + pushes it onto the PR's branch so the doc change rides the same PR. Then runs the local test suite (skips with a note if none is detected), waits on GitHub Actions via `gh pr checks --watch`, and on CI failure proposes fixes one **user-confirmed** re-commit at a time (max 3 rounds — never unattended). Finally squash-merges + deletes the branch (asks only to override) and syncs `main`. Only claims "merged" after the merge actually succeeds.
 
 ## Applying changes
 
@@ -68,5 +68,6 @@ When referencing agents from within SKILL.md files, use fully-qualified names:
 
 ## Related
 
+- **PR #39** (2026-06-23): /land now verifies CI and merges — after stamping CLAUDE.md it runs local tests, watches Actions, fixes failures with confirmed re-commits (max 3), squash-merges, and syncs main — [plan](docs/plans/2026-06-23-001-feat-land-merge-flow-plan.md)
 - **Reframe as reference repo** (2026-06-20): dropped the npm package + TypeScript CLI installer (`src/`, `dist/`, `package.json`, manifest, settings-patcher); the repo is now clone-and-copy. Skills/agents apply by `cp -r` into `~/.claude/`; the caveman hook is wired by a documented manual paste — [plan](docs/plans/2026-06-20-001-refactor-reframe-as-reference-repo-plan.md)
 - **PR #32**: add /land — a pre-merge skill that stamps a capped PR→plan→summary provenance trail into a directory's CLAUDE.md and commits it onto the open PR — [plan](docs/plans/2026-06-11-001-feat-land-skill-plan.md)
