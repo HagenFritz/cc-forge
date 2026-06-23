@@ -104,6 +104,7 @@ Typical flow: open the PR with `/ship` → run `/land` → answer the confirm pr
 
 25. **Block-poll CI** for the resolved PR `<N>` (from Phase 1): `gh pr checks <N> --watch`, streaming status to the user as checks resolve. (If the installed `gh` lacks `--watch`, fall back to a clear message and poll `gh pr checks <N>` on a fixed interval — e.g. every 30s, capped at ~20 minutes — then stop and report if still unresolved; never silently busy-loop.)
 26. When checks resolve:
+    - **No checks reported** (`gh pr checks <N>` exits non-zero with "no checks reported" — the repo has no CI on this branch): note "No CI checks on this PR — nothing to wait on." and proceed to Phase 9 (merge). There is no gate to enforce.
     - **All green** → proceed to Phase 9 (merge).
     - **Any failed** → proceed to Phase 8 (fix loop).
 
