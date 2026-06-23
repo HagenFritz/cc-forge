@@ -70,7 +70,7 @@ Typical flow: `/initiative` → `/plan` per workstream → `/work` → `/initiat
 | `/read-issue` | Fetches a GitHub issue by number and presents a structured digest | You want an issue's content summarized in-session |
 | `/triage-issue` | Fetches an issue and investigates the codebase to determine if it's still present, fixed, or needs more digging; writes to `docs/triage/` | Verifying whether a reported issue still reproduces |
 | `/ship` | Commits all changes per-file, pushes the branch, and creates a PR | Work is done and you want it shipped |
-| `/land` | Just before merging an open PR, stamps a capped provenance entry (PR + plan link + one-line summary) into the affected directory's `CLAUDE.md` `## Related` section, refreshes the prose, and commits it onto the PR's branch so the doc update rides the same PR | Right before merge — never merges the PR itself |
+| `/land` | Takes an open PR to merged: stamps a capped provenance entry (PR + plan link + one-line summary) into the affected directory's `CLAUDE.md` and commits it onto the PR's branch, runs local tests, waits on GitHub Actions, fixes CI failures one confirmed re-commit at a time (max 3), squash-merges + deletes the branch, then syncs `main` | When a PR is ready to merge — closes the loop in one command |
 
 **Dependency note:** the GitHub skills shell out to the `gh` CLI; have it installed and authenticated.
 

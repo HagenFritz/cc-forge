@@ -1,24 +1,26 @@
 ---
 name: land
-description: "Stamp PR context into a directory-level CLAUDE.md and commit it onto the open PR's branch — run just before you merge, so the doc update rides the same PR. Resolves the open PR for the current branch, lets you pick the directory it most affected, prepends a capped provenance entry (PR + plan link + a one-line summary it writes) to that directory's CLAUDE.md Related section, refreshes the body prose, then commits and pushes to the branch. Use when the user says 'land this', 'land the docs', 'stamp the PR', 'update the CLAUDE.md before merge', 'land the CLAUDE.md', or invokes /land. Runs on an open PR before merge, not after."
+description: "Take an open PR all the way to merged: stamp a CLAUDE.md provenance entry onto its branch, run the local test suite, wait for GitHub Actions, fix failures (one confirmed re-commit at a time, up to 3 rounds), squash-merge the PR, then sync main. The CLAUDE.md stamp rides the same PR. Use when the user says 'land this', 'land the PR', 'merge this PR', 'land and merge', 'stamp the PR', 'update the CLAUDE.md before merge', or invokes /land. Runs on an open PR."
 argument-hint: "[optional PR number]"
 allowed-tools: Bash, AskUserQuestion, Read, Edit, Write, Grep, Glob
 ---
 
-# Land — Pre-Merge Directory Context Stamper
+# Land — Stamp, Verify, and Merge an Open PR
 
 **Note: The current year is 2026.**
 
-`/land` runs on an **open PR, just before you merge it**. It records why a directory looks the way it does by stamping a bounded provenance trail (PR → plan → one-line summary) into that directory's `CLAUDE.md` `## Related` section, refreshing the file's body prose to match the change, then **committing and pushing the update to the PR's branch** so the doc change merges as part of the same PR — no orphaned follow-up PR.
+`/land` takes an **open PR** from "ready" to "merged and synced." In order it: stamps a provenance trail (PR → plan → one-line summary) into the affected directory's `CLAUDE.md` and pushes it onto the PR branch so the doc lands atomically with the code; runs the local test suite; waits for GitHub Actions; on CI failure, proposes a fix and re-commits **one confirmed fix at a time** (up to 3 rounds); squash-merges the PR; and checks out and pulls `main`.
 
-Typical flow: open the PR with `/ship` → run tests, push fixes → when you're ready to merge, run `/land` to fold the CLAUDE.md update into the PR → merge in the GitHub UI.
+Typical flow: open the PR with `/ship` → run `/land` → answer the confirm prompts → done: merged, branch deleted, on a fresh `main`.
 
 ## Core Principles
 
 1. **The CLAUDE.md is the state.** A botched parse corrupts the only record. Always show the diff and confirm before committing; prefer surgical `Edit` over full `Write`. Never partial-write on a failure path — stop with a clear message instead.
 2. **One directory per run.** A PR may touch many directories; you stamp exactly one, chosen deliberately by the user. Changes outside it do not force extra stamps.
 3. **The summary is the carried context.** The one-line summary matters more than the links. Draft it from the PR, but let the user edit it before it lands.
-4. **The doc rides the PR.** The whole point is to commit the update onto the open PR's branch before merge, so it lands atomically with the code it describes.
+4. **The doc rides the PR.** Commit the stamp onto the open PR's branch before merge, so it lands atomically with the code it describes.
+5. **No unattended fixes.** When CI fails, you diagnose and propose, but every re-commit is confirmed by the user first. Never push an AI fix to a PR you're about to merge without an explicit OK. A masked failure is worse than a red PR.
+6. **Report the real outcome.** Tests red, CI red, push failed, merge blocked — say so plainly with the output. Only claim "merged" after the merge actually succeeds.
 
 ## Workflow
 
@@ -87,17 +89,60 @@ Typical flow: open the PR with `/ship` → run tests, push fixes → when you're
       )"
       ```
     - Push to the PR's branch: `git push origin HEAD`.
-    - **Report the actual outcome.** Only on a successful push: "Stamped CLAUDE.md and pushed to PR #<N>. Merge when ready." If the push fails, do **not** claim success — report: "Committed locally but the push failed — the stamp is NOT on PR #<N> yet. Resolve the push (e.g. `git pull --rebase origin <headRefName>`) and `git push`, or `git reset --soft HEAD~1` to undo the commit."
-21. **Stop.** Do not merge the PR — the user merges in the UI when ready.
+    - **Report the actual outcome.** Only on a successful push: "Stamped CLAUDE.md and pushed to PR #<N>." If the push fails, do **not** claim success — report: "Committed locally but the push failed — the stamp is NOT on PR #<N> yet. Resolve the push (e.g. `git pull --rebase origin <headRefName>`) and `git push`, or `git reset --soft HEAD~1` to undo the commit." **Stop here on a failed push** — nothing downstream runs.
+21. On a successful push, **proceed to Phase 6**.
+
+### Phase 6: Run the local test suite
+
+22. **Detect a local test command** conservatively from the repo root — check, in order, for an obvious project test entry point (e.g. `package.json` `scripts.test`, a `Makefile` `test` target, `pytest`/`pyproject.toml`/`tox.ini`, `go.mod` for `go test ./...`, `Cargo.toml` for `cargo test`, a Gemfile/Rakefile `test` task). Stay conservative — a missed detection is safe (it degrades to skip); running the wrong command is worse.
+23. **If no command is detected** (e.g. a docs- or Markdown-only repo like this one): print "No local test suite detected, skipping to CI." and **continue to Phase 7**. Do not block.
+24. **If a command is detected:** run it.
+    - **Green** → proceed to Phase 7.
+    - **Red** → **stop** and report the failing output. Do not touch CI or merge. The user fixes locally and re-runs `/land`.
+
+### Phase 7: Wait on GitHub Actions
+
+25. **Block-poll CI** for the resolved PR `<N>` (from Phase 1): `gh pr checks <N> --watch`, streaming status to the user as checks resolve. (If the installed `gh` lacks `--watch`, fall back to a clear message and poll `gh pr checks <N>` on a fixed interval — e.g. every 30s, capped at ~20 minutes — then stop and report if still unresolved; never silently busy-loop.)
+26. When checks resolve:
+    - **All green** → proceed to Phase 9 (merge).
+    - **Any failed** → proceed to Phase 8 (fix loop).
+
+### Phase 8: CI fix loop (max 3 rounds)
+
+27. This loop is **human-gated** — never commit a fix without explicit confirmation.
+28. For each round (cap at **3**):
+    - **Surface the failure:** find the failing run id — `gh run list --branch <headRefName> --limit 1 --json databaseId,conclusion` (or take the run id from the failing check's URL in the Phase 7 output) — then pull the log: `gh run view <run-id> --log-failed`. Show the user the failing check and the relevant log excerpt.
+    - **Propose a fix** in plain English plus the concrete edit you intend to make.
+    - **Confirm with `AskUserQuestion`** before any commit. Options: **Apply fix** (edit + commit + push) / **Skip this round** (re-watch CI without changes — e.g. a flaky check the user wants to re-run) / **Abort** (stop `/land`, leave the PR open and unmerged).
+    - **On Apply fix:**
+      - **Pre-flight the push** exactly as the stamp push does: `git fetch origin <headRefName>`; if the local branch is behind, **stop before committing** with "The PR branch advanced on the remote. Run `git pull --rebase origin <headRefName>`, then re-run /land." Never force-push.
+      - Make the edit, stage only the changed files (never `git add -A` blindly; never `--no-verify`), commit with a HEREDOC message scoped to the fix, and `git push origin HEAD`.
+      - **Re-run the local test suite** (the detected command from Phase 6) on the fixed tree. If it's now **red**, that's another failure for **this same round** — surface it and loop back to the start of this round's confirm step; do **not** fall through to Phase 6's hard-stop (that only applies to the initial pre-CI run, not to in-loop re-runs). If **green** (or no command detected), **re-enter Phase 7** to re-watch CI.
+    - **On Skip this round:** re-enter Phase 7 without committing.
+29. **If CI is still red after 3 rounds:** stop and report the remaining failures. Do **not** merge. The PR stays open for the user to take over.
+
+### Phase 9: Merge the PR
+
+30. **Confirm the merge** with `AskUserQuestion`, defaulting to **squash + delete branch**. Options: **Squash & delete branch** (default) / **Override** (let the user pick merge / rebase, and whether to keep the branch) / **Cancel** (leave the PR open, stop).
+31. On confirm: `gh pr merge <N> --squash --delete-branch` (or the chosen method / `--delete-branch` omitted if the user keeps the branch).
+32. **Verify the merge actually happened.** Only on success: report "Merged PR #<N> (squash) and deleted the branch." If `gh pr merge` fails — branch protection, required reviews, conflicts, not mergeable — do **not** claim success; report the exact reason and stop. The PR stays open.
+
+### Phase 10: Sync main
+
+33. After a successful merge, return to the default branch and pull: `git checkout main && git pull` (use `master` if that's the repo's default).
+34. Report the final state: merged, branch deleted, now on a fresh `main`.
 
 ## Rules
 
 - Manual only — `/land` is never wired to a git or CI hook.
-- Stamps an **open** PR before merge; refuse closed/merged PRs (those would orphan into a follow-up PR — the exact problem this avoids).
+- Operates on an **open** PR; refuse closed/merged PRs.
 - Exactly one target directory per run.
 - No review-document links in entries; `## Related` is capped at 10, newest-first.
-- Commit only the single CLAUDE.md file — never `git add -A`/`.`, never `--no-verify`. Push to the current branch only; never merge.
-- Do not push to `main`/`master`; only ever push the feature branch.
+- The **stamp** commit contains only the single CLAUDE.md file — never `git add -A`/`.`, never `--no-verify`. CI-fix commits stage only the files they change. Push to the feature branch only.
+- Do not push to `main`/`master`; only ever push the feature branch. The only `main` operation is the final `git checkout main && git pull` after merge.
+- **No unattended fixes** — every CI-fix commit is confirmed by the user first. The fix loop is capped at 3 rounds; still-red after 3 means stop without merging.
+- **Merge is squash + delete branch by default**; only ask to override. Only claim "merged" after `gh pr merge` succeeds; on a blocked/failed merge, report the reason and leave the PR open.
+- Local tests: detect conservatively; **skip with a note** when no command is found (never block); **stop** when tests are red.
 - Depends on `gh`; if `gh` is unavailable, stop and say so rather than guessing.
-- On any failure (no open PR, no touched dirs, scaffold declined), stop with a clear message — never leave a `CLAUDE.md` partially written or a half-made commit.
+- On any failure (no open PR, no touched dirs, scaffold declined, red tests, CI red after 3 rounds, blocked merge, failed push), stop with a clear message — never leave a `CLAUDE.md` partially written, a half-made commit, or a false "merged" claim.
 - Plan links live under `docs/plans/` (gitignored in some repos) and may be local-only; record the path regardless.
