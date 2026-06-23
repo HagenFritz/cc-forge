@@ -13,6 +13,13 @@ If there are no related changes, omit this section entirely.
 ---
 
 ### Test Plan
-- [ ] Bulleted checklist of how to verify the changes
+
+**Pre-merge Tests**
+*(Actionable tests that Claude Code can run via CLI before merge, e.g., `pytest path/to/test.py`, `npm run playwright`, etc.)*
+- [ ] 
+
+**Post-merge Tests**
+*(Manual verifications or tests that require a merged state, e.g., production deployment checks)*
+- [ ] 
 
 Generated with [Claude Code](https://claude.com/claude-code)
