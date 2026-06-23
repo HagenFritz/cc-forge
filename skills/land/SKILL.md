@@ -58,7 +58,7 @@ Typical flow: open the PR with `/ship` → run `/land` → answer the confirm pr
 12. **Compose the entry** as a single Markdown list item, newest-first:
     - With a plan: `- **PR #<N>**: <summary> — [plan](<plan-path>)`
     - Without a plan: `- **PR #<N>**: <summary> — closes #<issue>` (omit the trailing clause entirely if there's no issue either).
-13. Show the drafted entry to the user and let them edit the summary inline before it lands.
+13. **Confirm the entry** with `AskUserQuestion`, showing the full drafted entry in a `preview` on the first option. Options: **Use as-is** (lands the drafted summary) / **Edit summary** (the user supplies a revised one-line summary via free-form input; recompose the entry and re-confirm). Do not proceed until the user picks.
 
 ### Phase 4: Update the CLAUDE.md
 
