@@ -103,8 +103,8 @@ Specialized subagents live in `agents/`, grouped by category. Copy a category fo
 | Category | Agents | Purpose |
 |---|---|---|
 | `research/` | best-practices-researcher, framework-docs-researcher, git-history-analyzer, issue-intelligence-analyst, learnings-researcher, repo-research-analyst | Code research, external docs, git archaeology, issue analysis, institutional learnings, repo conventions |
-| `review/` | architecture-strategist, code-simplicity-reviewer, kieran-python-reviewer, kieran-typescript-reviewer, pattern-recognition-specialist, performance-oracle, security-sentinel | Code-review specialists across architecture, simplicity, language idioms, patterns, performance, and security |
-| `workflow/` | bug-reproduction-validator, lint, pr-comment-resolver, spec-flow-analyzer | Bug reproduction, linting, PR-comment resolution, spec/flow analysis |
+| `review/` | adversarial-reviewer, architecture-strategist, code-simplicity-reviewer, correctness-auditor, data-integrity-guardian, pattern-recognition-specialist, performance-oracle-{python,typescript}, python-reviewer, reliability-engineer, security-sentinel-{python,typescript}, test-coverage-reviewer, typescript-reviewer | Code-review specialists across correctness, security, performance, architecture, reliability, data integrity, simplicity, patterns, tests, and language idioms |
+| `workflow/` | lint, spec-flow-analyzer | Linting and spec/flow analysis |
 | `test/` | test-plan-critic | Annotates a test plan with viability scores and a drop list |
 
 Skills reference agents by fully-qualified name (`cc-forge:<category>:<agent>`), so if you copy a skill that dispatches agents, copy the referenced agent category too.
