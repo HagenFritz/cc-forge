@@ -257,7 +257,7 @@ Structure your findings as:
 ## Integration Points
 
 This agent is designed to be invoked by:
-- `/ce:plan` - To inform planning with institutional knowledge
+- `/plan` - To inform planning with institutional knowledge
 - `/deepen-plan` - To add depth with relevant learnings
 - Manual invocation before starting work on a feature
 

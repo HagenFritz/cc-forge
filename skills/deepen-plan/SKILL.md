@@ -234,17 +234,15 @@ Use fully-qualified agent names inside Task calls.
 **System-Wide Impact**
 - `cc-forge:review:architecture-strategist` for cross-boundary effects, interface surfaces, and architectural knock-on impact
 - Add the specific specialist that matches the risk:
-  - `cc-forge:review:performance-oracle` for scalability, latency, throughput, and resource-risk analysis
-  - `cc-forge:review:security-sentinel` for auth, validation, exploit surfaces, and security boundary review
+  - `cc-forge:review:performance-oracle-python` / `cc-forge:review:performance-oracle-typescript` for scalability, latency, throughput, and resource-risk analysis
+  - `cc-forge:review:security-sentinel-python` / `cc-forge:review:security-sentinel-typescript` for auth, validation, exploit surfaces, and security boundary review
   - `cc-forge:review:data-integrity-guardian` for migrations, persistent state safety, consistency, and data lifecycle risks
 
 **Risks & Dependencies / Operational Notes**
 - Use the specialist that matches the actual risk:
-  - `cc-forge:review:security-sentinel` for security, auth, privacy, and exploit risk
-  - `cc-forge:review:data-integrity-guardian` for persistent data safety, constraints, and transaction boundaries
-  - `cc-forge:review:data-migration-expert` for migration realism, backfills, and production data transformation risk
-  - `cc-forge:review:deployment-verification-agent` for rollout checklists, rollback planning, and launch verification
-  - `cc-forge:review:performance-oracle` for capacity, latency, and scaling concerns
+  - `cc-forge:review:security-sentinel-python` / `cc-forge:review:security-sentinel-typescript` for security, auth, privacy, and exploit risk
+  - `cc-forge:review:data-integrity-guardian` for persistent data safety, constraints, transaction boundaries, migrations, and backfills
+  - `cc-forge:review:performance-oracle-python` / `cc-forge:review:performance-oracle-typescript` for capacity, latency, and scaling concerns
 
 #### 3.2 Agent Prompt Shape
 

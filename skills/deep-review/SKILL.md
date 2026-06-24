@@ -110,7 +110,9 @@ For each agent in review_agents:
 ```
 
 Always run these last regardless of mode:
-- Task cc-forge:review:agent-native-reviewer(PR content) - Verify new features are agent-accessible
+- Task cc-forge:review:correctness-auditor(PR content) - Trace logic, boundaries, and contracts for behavior that doesn't match its claim
+- Task cc-forge:review:reliability-engineer(PR content) - Check error handling, timeouts, retries, and partial-failure safety
+- Task cc-forge:review:test-coverage-reviewer(PR content) - Judge whether shipped tests would catch a regression of this change
 - Task cc-forge:research:learnings-researcher(PR content) - Search docs/solutions/ for past issues related to this PR's modules and patterns
 
 </parallel_tasks>
@@ -121,22 +123,15 @@ Always run these last regardless of mode:
 
 These agents are run ONLY when the PR matches specific criteria. Check the PR files list to determine if they apply:
 
-**MIGRATIONS: If PR contains database migrations, schema.rb, or data backfills:**
+**ADVERSARIAL: If the diff is ≥50 lines OR touches shared state, concurrency, auth, or value-bearing operations (payments, credits, redemptions, voting):**
 
-- Task cc-forge:review:schema-drift-detector(PR content) - Detects unrelated schema.rb changes by cross-referencing against included migrations (run FIRST)
-- Task cc-forge:review:data-migration-expert(PR content) - Validates ID mappings match production, checks for swapped values, verifies rollback safety
-- Task cc-forge:review:deployment-verification-agent(PR content) - Creates Go/No-Go deployment checklist with SQL verification queries
+- Task cc-forge:review:adversarial-reviewer(PR content) - Hunt for abuse cases, race conditions, and cascade failures
 
 **When to run:**
-- PR includes files matching `db/migrate/*.rb` or `db/schema.rb`
-- PR modifies columns that store IDs, enums, or mappings
-- PR includes data backfill scripts or rake tasks
-- PR title/body mentions: migration, backfill, data transformation, ID mapping
-
-**What these agents check:**
-- `schema-drift-detector`: Cross-references schema.rb changes against PR migrations to catch unrelated columns/indexes from local database state
-- `data-migration-expert`: Verifies hard-coded mappings match production reality (prevents swapped IDs), checks for orphaned associations, validates dual-write patterns
-- `deployment-verification-agent`: Produces executable pre/post-deploy checklists with SQL queries, rollback procedures, and monitoring plans
+- Diff is 50+ lines
+- PR touches caching, locks, queues, background jobs, or any shared mutable state
+- PR modifies authentication, authorization, or ownership checks
+- PR handles money, quotas, rate limits, or any limited/consumable resource
 
 </conditional_agents>
 
@@ -594,11 +589,13 @@ After writing the review file and creating all todo files, present comprehensive
 
 ### Review Agents Used:
 
-- kieran-rails-reviewer
-- security-sentinel
-- performance-oracle
+- security-sentinel-python / security-sentinel-typescript
+- performance-oracle-python / performance-oracle-typescript
 - architecture-strategist
-- agent-native-reviewer
+- correctness-auditor
+- reliability-engineer
+- test-coverage-reviewer
+- adversarial-reviewer (if applicable)
 - [other agents]
 
 ### Next Steps:
