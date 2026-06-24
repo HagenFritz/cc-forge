@@ -12,10 +12,10 @@ assistant: "I'll use the issue-intelligence-analyst agent to fetch and cluster y
 <commentary>The user wants a high-level view of their issue landscape, so use the issue-intelligence-analyst agent to fetch, cluster, and synthesize issue themes.</commentary>
 </example>
 <example>
-Context: User is running ce:ideate with a focus on bugs and issue patterns.
-user: "/ce:ideate bugs"
+Context: User is running ideate with a focus on bugs and issue patterns.
+user: "/ideate bugs"
 assistant: "I'll dispatch the issue-intelligence-analyst agent to analyze your GitHub issues for recurring patterns that can ground the ideation."
-<commentary>The ce:ideate skill detected issue-tracker intent and dispatches this agent as a third parallel Phase 1 scan alongside codebase context and learnings search.</commentary>
+<commentary>The ideate skill detected issue-tracker intent and dispatches this agent as a third parallel Phase 1 scan alongside codebase context and learnings search.</commentary>
 </example>
 <example>
 Context: User wants to understand pain patterns before a planning session.
@@ -223,7 +223,7 @@ Every theme MUST include ALL of the following fields. Do not skip fields, merge 
 ## Integration Points
 
 This agent is designed to be invoked by:
-- `ce:ideate` — as a third parallel Phase 1 scan when issue-tracker intent is detected
+- `ideate` — as a third parallel Phase 1 scan when issue-tracker intent is detected
 - Direct user dispatch — for standalone issue landscape analysis
 - Other skills or workflows — any context where understanding issue patterns is valuable
 
