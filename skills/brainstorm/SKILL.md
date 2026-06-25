@@ -264,7 +264,6 @@ If `Resolve Before Planning` contains any items:
 Present only the options that apply:
 - **Proceed to planning (Recommended)** - Run `/plan` for structured implementation planning
 - **Proceed directly to work** - Only offer this when scope is lightweight, success criteria are clear, scope boundaries are clear, and no meaningful technical or research questions remain
-- **Review and refine** - Offer this only when a requirements document exists and can be improved through structured review
 - **Ask more questions** - Continue clarifying scope, preferences, or edge cases
 - **Share to Proof** - Offer this only when a requirements document exists
 - **Done for now** - Return later
@@ -297,12 +296,6 @@ Display the URL prominently: `View & collaborate in Proof: <PROOF_URL>`
 If the curl fails, skip silently. Then return to the Phase 4 options.
 
 **If user selects "Ask more questions":** Return to Phase 1.3 (Collaborative Dialogue) and continue asking the user questions one at a time to further refine the design. Probe deeper into edge cases, constraints, preferences, or areas not yet explored. Continue until the user is satisfied, then return to Phase 4. Do not show the closing summary yet.
-
-**If user selects "Review and refine":**
-
-Load the `document-review` skill and apply it to the requirements document.
-
-When document-review returns "Review complete", return to the normal Phase 4 options and present only the options that still apply. Do not show the closing summary yet.
 
 #### 4.3 Closing Summary
 

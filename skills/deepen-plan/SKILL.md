@@ -1,6 +1,6 @@
 ---
 name: deepen-plan
-description: "Stress-test an existing implementation plan and selectively strengthen weak sections with targeted research. Use when a plan needs more confidence around decisions, sequencing, system-wide impact, risks, or verification. Best for Standard or Deep plans, or high-risk topics such as auth, payments, migrations, external APIs, and security. For structural or clarity improvements, prefer document-review instead."
+description: "Stress-test an existing implementation plan and selectively strengthen weak sections with targeted research. Use when a plan needs more confidence around decisions, sequencing, system-wide impact, risks, or verification. Best for Standard or Deep plans, or high-risk topics such as auth, payments, migrations, external APIs, and security."
 argument-hint: "[path to plan file]"
 ---
 
@@ -16,9 +16,7 @@ Use this skill when the plan already exists and the question is not "Is this doc
 
 This skill does **not** turn plans into implementation scripts. It identifies weak sections, runs targeted research only for those sections, and strengthens the plan in place.
 
-`document-review` and `deepen-plan` are different:
-- Use the `document-review` skill when the document needs clarity, simplification, completeness, or scope control
-- Use `deepen-plan` when the document is structurally sound but still needs stronger rationale, sequencing, risk treatment, or system-wide thinking
+Use `deepen-plan` when the plan is structurally sound but still needs stronger rationale, sequencing, risk treatment, or system-wide thinking.
 
 ## Interaction Method
 
@@ -390,18 +388,16 @@ If substantive changes were made, present next steps using the platform's blocki
 
 **Options:**
 1. **View diff** - Show what changed
-2. **Run `document-review` skill** - Improve the updated plan through structured document review
-3. **Start `work` skill** - Begin implementing the plan
-4. **Deepen specific sections further** - Run another targeted deepening pass on named sections
+2. **Start `work` skill** - Begin implementing the plan
+3. **Deepen specific sections further** - Run another targeted deepening pass on named sections
 
 Based on selection:
 - **View diff** -> Show the important additions and changed sections
-- **`document-review` skill** -> Load the `document-review` skill with the plan path
 - **Start `work` skill** -> Call the `work` skill with the plan path
 - **Deepen specific sections further** -> Ask which sections still feel weak and run another targeted pass only for those sections
 
 If no substantive changes were warranted:
 - Say that the plan already appears sufficiently grounded
-- Offer the `document-review` skill or `/work` as the next step instead
+- Offer `/work` as the next step
 
 NEVER CODE! Research, challenge, and strengthen the plan.
