@@ -21,6 +21,13 @@ This installs **all skills, all agents, and the caveman hook** — the hook is w
 
 (The marketplace is named `cc-forge-local` with `source: "./"`, so add it by the **path to your clone**, not a remote `owner/repo` reference.)
 
+> **Reinstalling after renamed or deleted files?** The plugin cache overlays new files but doesn't prune removed ones. If a reinstall picks up stale agents or skills, clear the cache first:
+>
+> ```bash
+> rm -rf ~/.claude/plugins/cache/cc-forge-local/
+> /plugin install cc-forge
+> ```
+
 ### Cherry-pick individual pieces
 
 Skills and agents are plain Markdown that Claude Code loads from `~/.claude/skills/` and `~/.claude/agents/`. To grab just one, copy its folder:
@@ -48,7 +55,6 @@ Restart Claude Code after copying. Skills become available as `/<name>` slash co
 | `/review-walk` | Walks a `/deep-review` document interactively, group-by-group, with implement/defer/skip per issue; updates `Status:` inline so it's resumable | You have a `docs/reviews/*.md` and want to act on it methodically |
 | `/compound` | Documents a recently solved problem so the knowledge compounds | Right after solving something non-obvious worth recording |
 | `/ideate` | Generates and critically evaluates grounded improvement ideas for the project | "What should I improve?" — you want AI-generated directions before brainstorming one |
-| `/document-review` | Reviews a requirements or plan doc with parallel persona agents | A requirements/plan doc exists and you want role-specific critique |
 | `/deprecate` | Plan-only safe removal of a named concept: parallel research agents find every reference, output a leaves-first plan with compat-risk flags | "Rip out X" / "retire X" — hand the resulting plan to `/work` |
 
 **Dependencies:** these skills are self-contained Markdown. Some dispatch the agents in `agents/` (see [Agents](#agents)) — copy those too if you want the full behavior.

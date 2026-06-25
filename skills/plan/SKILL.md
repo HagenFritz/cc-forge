@@ -597,16 +597,14 @@ After writing the plan file, present the options using the platform's blocking q
 **Options:**
 1. **Open plan in editor** - Open the plan file for review
 2. **Run `/deepen-plan`** - Stress-test weak sections with targeted research when the plan needs more confidence
-3. **Run `document-review` skill** - Improve the plan through structured document review
-4. **Share to Proof** - Upload the plan for collaborative review and sharing
-5. **Start `/work`** - Begin implementing this plan in the current environment
-6. **Start `/work` in another session** - Begin implementing in a separate agent session when the current platform supports it
-7. **Create Issue** - Create an issue in the configured tracker
+3. **Share to Proof** - Upload the plan for collaborative review and sharing
+4. **Start `/work`** - Begin implementing this plan in the current environment
+5. **Start `/work` in another session** - Begin implementing in a separate agent session when the current platform supports it
+6. **Create Issue** - Create an issue in the configured tracker
 
 Based on selection:
 - **Open plan in editor** → Open `docs/plans/<plan_filename>.md` using the current platform's file-open or editor mechanism (e.g., `open` on macOS, `xdg-open` on Linux, or the IDE's file-open API)
 - **`/deepen-plan`** → Call `/deepen-plan` with the plan path
-- **`document-review` skill** → Load the `document-review` skill with the plan path
 - **Share to Proof** → Upload the plan:
   ```bash
   CONTENT=$(cat docs/plans/<plan_filename>.md)
