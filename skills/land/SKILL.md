@@ -57,7 +57,7 @@ Typical flow: open the PR with `/ship` → run `/land` → answer the confirm pr
 11. **Draft the one-line summary** from the PR title plus the diff stat (`git diff --stat main...HEAD`; `gh pr diff` has no `--stat` flag). Keep it to one line describing what changed and why.
 12. **Compose the entry** as a single Markdown list item, newest-first:
     - With a plan: `- **PR #<N>**: <summary> — [plan](<plan-path>)`
-    - Without a plan: `- **PR #<N>**: <summary> — closes #<issue>` (omit the trailing clause entirely if there's no issue either).
+    - Without a plan: `- **PR #<N>**: <summary> — #<issue>` (omit the trailing clause entirely if there's no issue either).
 13. **Confirm the entry** with `AskUserQuestion`, showing the full drafted entry in a `preview` on the first option. Options: **Use as-is** (lands the drafted summary) / **Edit summary** (the user supplies a revised one-line summary via free-form input; recompose the entry and re-confirm). Do not proceed until the user picks.
 
 ### Phase 4: Update the CLAUDE.md
