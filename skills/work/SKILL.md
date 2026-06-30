@@ -34,49 +34,20 @@ This command takes a work document (plan, specification, or todo file) and execu
    - Get user approval to proceed
    - **Do not skip this** - better to ask questions now than build the wrong thing
 
-2. **Setup Environment**
-
-   First, check the current branch:
+2. **Verify Feature Branch**
 
    ```bash
    current_branch=$(git branch --show-current)
    default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-
-   # Fallback if remote HEAD isn't set
    if [ -z "$default_branch" ]; then
      default_branch=$(git rev-parse --verify origin/main >/dev/null 2>&1 && echo "main" || echo "master")
    fi
    ```
 
-   **If already on a feature branch** (not the default branch):
-   - Ask: "Continue working on `[current_branch]`, or create a new branch?"
-   - If continuing, proceed to step 3
-   - If creating new, follow Option A or B below
+   **If on the default branch**, STOP and tell the user:
+   > You're on `[default_branch]`. Create a feature branch before running `/work`. Use `/branch-from-issue <number>` to branch from a GitHub issue, or `git checkout -b <branch-name>`.
 
-   **If on the default branch**, choose how to proceed:
-
-   **Option A: Create a new branch**
-   ```bash
-   git pull origin [default_branch]
-   git checkout -b feature-branch-name
-   ```
-   Use a meaningful name based on the work (e.g., `feat/user-authentication`, `fix/email-validation`).
-
-   **Option B: Use a worktree (recommended for parallel development)**
-   ```bash
-   skill: git-worktree
-   # The skill will create a new branch from the default branch in an isolated worktree
-   ```
-
-   **Option C: Continue on the default branch**
-   - Requires explicit user confirmation
-   - Only proceed after user explicitly says "yes, commit to [default_branch]"
-   - Never commit directly to the default branch without explicit permission
-
-   **Recommendation**: Use worktree if:
-   - You want to work on multiple features simultaneously
-   - You want to keep the default branch clean while experimenting
-   - You plan to switch between branches frequently
+   **If on a feature branch**, ask: "Continue working on `[current_branch]`?" and proceed to step 3.
 
 3. **Create Todo List**
    - Use your available task tracking tool (e.g., TodoWrite, task lists) to break the plan into actionable tasks
@@ -192,7 +163,7 @@ This command takes a work document (plan, specification, or todo file) and execu
    - The plan should reference similar code - read those files first
    - Match naming conventions exactly
    - Reuse existing components where possible
-   - Follow project coding standards (see AGENTS.md; use CLAUDE.md only if the repo still keeps a compatibility shim)
+   - Follow project coding standards (see CLAUDE.md)
    - When in doubt, grep for similar implementations
 
 4. **Test Continuously**
@@ -209,16 +180,7 @@ This command takes a work document (plan, specification, or todo file) and execu
 
    Don't simplify after every single unit — early patterns may look duplicated but diverge intentionally in later units. Wait for a natural phase boundary or when you notice accumulated complexity.
 
-   If a `/simplify` skill or equivalent is available, use it. Otherwise, review the changed files yourself for reuse and consolidation opportunities.
-
-6. **Figma Design Sync** (if applicable)
-
-   For UI work with Figma designs:
-
-   - Implement components following design specs
-   - Use figma-design-sync agent iteratively to compare
-   - Fix visual differences identified
-   - Repeat until implementation matches design
+   Use `/simplify` to review the changed files for reuse and consolidation opportunities.
 
 6. **Track Progress**
    - Keep the task list updated as you complete tasks
@@ -236,13 +198,13 @@ This command takes a work document (plan, specification, or todo file) and execu
    # Run full test suite (use project's test command)
    # Examples: bin/rails test, npm test, pytest, go test, etc.
 
-   # Run linting (per AGENTS.md)
+   # Run linting (per CLAUDE.md)
    # Use linting-agent before pushing to origin
    ```
 
 2. **Consider Reviewer Agents** (Optional)
 
-   Use for complex, risky, or large changes. Read agents from `cc-forge.local.md` frontmatter (`review_agents`). If no settings file, invoke the `setup` skill to create one.
+   Use for complex, risky, or large changes. Read agents from `cc-forge.local.md` frontmatter (`review_agents`). If no settings file exists, skip — `/deep-review` will use its default agent set.
 
    Run configured agents in parallel with Task tool. Present findings and address critical issues.
 
@@ -251,106 +213,41 @@ This command takes a work document (plan, specification, or todo file) and execu
    - All tests pass
    - Linting passes
    - Code follows existing patterns
-   - Figma designs match (if applicable)
    - No console errors or warnings
    - If the plan has a `Requirements Trace`, verify each requirement is satisfied by the completed work
    - If any `Deferred to Implementation` questions were noted, confirm they were resolved during execution
 
-4. **Prepare Operational Validation Plan** (REQUIRED)
-   - Add a `## Post-Deploy Monitoring & Validation` section to the PR description for every change.
-   - Include concrete:
-     - Log queries/search terms
-     - Metrics or dashboards to watch
-     - Expected healthy signals
-     - Failure signals and rollback/mitigation trigger
-     - Validation window and owner
-   - If there is truly no production/runtime impact, still include the section with: `No additional operational monitoring required` and a one-line reason.
+### Phase 4: Wrap Up
 
-### Phase 4: Ship It
-
-1. **Create Commit**
-
-   ```bash
-   git add .
-   git status  # Review what's being committed
-   git diff --staged  # Check the changes
-
-   # Commit with conventional format
-   git commit -m "$(cat <<'EOF'
-   feat(scope): description of what and why
-
-   Brief explanation if needed.
-
-   🤖 Generated with [MODEL] via [HARNESS](HARNESS_URL) + Compound Engineering v[VERSION]
-
-   Co-Authored-By: [MODEL] ([CONTEXT] context, [THINKING]) <noreply@anthropic.com>
-   EOF
-   )"
-   ```
-
-   **Fill in at commit/PR time:**
-
-   | Placeholder | Value | Example |
-   |-------------|-------|---------|
-   | Placeholder | Value | Example |
-   |-------------|-------|---------|
-   | `[MODEL]` | Model name | Claude Opus 4.6, GPT-5.4 |
-   | `[CONTEXT]` | Context window (if known) | 200K, 1M |
-   | `[THINKING]` | Thinking level (if known) | extended thinking |
-   | `[HARNESS]` | Tool running you | Claude Code, Codex, Gemini CLI |
-   | `[HARNESS_URL]` | Link to that tool | `https://claude.com/claude-code` |
-   | `[VERSION]` | `plugin.json` → `version` | 2.40.0 |
-
-   Subagents creating commits/PRs are equally responsible for accurate attribution.
-
-2. **Capture and Upload Screenshots for UI Changes** (REQUIRED for any UI work)
-
-   For **any** design changes, new views, or UI modifications, you MUST capture and upload screenshots:
-
-   **Step 1: Start dev server** (if not running)
-   ```bash
-   bin/dev  # Run in background
-   ```
-
-   **Step 2: Capture screenshots with agent-browser CLI**
-   ```bash
-   agent-browser open http://localhost:3000/[route]
-   agent-browser snapshot -i
-   agent-browser screenshot output.png
-   ```
-   See the `agent-browser` skill for detailed usage.
-
-   **Step 3: Upload using imgup skill**
-   ```bash
-   skill: imgup
-   # Then upload each screenshot:
-   imgup -h pixhost screenshot.png  # pixhost works without API key
-   # Alternative hosts: catbox, imagebin, beeimg
-   ```
-
-   **What to capture:**
-   - **New screens**: Screenshot of the new UI
-   - **Modified screens**: Before AND after screenshots
-   - **Design implementation**: Screenshot showing Figma design match
-
-   **IMPORTANT**: Always include uploaded image URLs in PR description. This provides visual context for reviewers and documents the change.
-
-3. **Push and Create Pull Request**
-
-   Use `/ship` to push the branch and open a PR.
-
-4. **Update Plan Status**
+1. **Update Plan Status**
 
    If the input document has YAML frontmatter with a `status` field, update it to `completed`:
    ```
    status: active  →  status: completed
    ```
 
-5. **Notify User**
-   - Summarize what was completed
-   - Link to PR
-   - Note any follow-up work needed
-   - Suggest next steps if applicable
+2. **Display Work Summary**
+
+   Run `git diff --stat` (against the branch point or last commit before `/work` started) and present a summary table:
+
+   | File | +/- | Unit | Tests | Summary |
+   |------|-----|------|-------|---------|
+   | [`path/to/file.ts`](path/to/file.ts) | +45 / -12 | Auth middleware | pass | Added token refresh logic |
+
+   **Column definitions:**
+   - **File** — relative path, hyperlinked to open in the user's editor
+   - **+/-** — insertions and deletions for that file
+   - **Unit** — which plan implementation unit the change maps to (or "—" if not from a plan)
+   - **Tests** — pass / fail / no tests (whether tests covering this file were run and their result)
+   - **Summary** — one-line description of what changed in that file
+
+   After the table, show the total: `N files changed, X insertions(+), Y deletions(-)`.
+
+   If any follow-up work was discovered during execution, list it under a **Follow-ups** heading.
+
+3. **Suggest Next Steps**
+   - Run `/ship` to commit, push, and open a PR
+   - Run `/deep-review` if the change is large or risky
 
 ---
 
@@ -369,7 +266,7 @@ For genuinely large plans where agents need to communicate with each other, chal
 | 10+ tasks with complex cross-cutting coordination | 3-8 tasks with clear dependency chains |
 | User explicitly requests "swarm mode" or "agent teams" | Default for most plans |
 
-Most plans should use subagent dispatch from standard mode. Agent teams add significant token cost and coordination overhead — use them when the inter-agent communication genuinely improves the outcome.
+Most plans should use subagent dispatch from standard mode. Agent teams consume 4-15x more tokens than single-agent execution due to coordination overhead and parallel context windows. Only use them when the inter-agent communication genuinely improves the outcome — weigh the token cost against the complexity of the plan before opting in.
 
 ### Agent Teams Workflow
 
@@ -423,8 +320,6 @@ Before creating PR, verify:
 - [ ] Tests pass (run project's test command)
 - [ ] Linting passes (use linting-agent)
 - [ ] Code follows existing patterns
-- [ ] Figma designs match implementation (if applicable)
-- [ ] Before/after screenshots captured and uploaded (for UI changes)
 - [ ] Commit messages follow conventional format
 - [ ] Run `/ship` to push branch and create PR
 
