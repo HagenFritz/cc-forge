@@ -49,7 +49,8 @@ Do not proceed until you have a feature description from the user.
 
 #### 0.1 Resume Existing Work When Appropriate
 
-If the user references an existing brainstorm topic or document, or there is an obvious recent matching `*-requirements.md` file in `docs/brainstorms/`:
+If the user references an existing brainstorm topic or document, or there is a matching `*-requirements.md` file in `docs/brainstorms/`:
+- Use the most recent match by filename date. If the most recent match is older than 30 days, ask the user whether it is still relevant before resuming.
 - Read the document
 - Confirm with the user before resuming: "Found an existing requirements doc for [topic]. Should I continue from this, or start fresh?"
 - If resuming, summarize the current state briefly, continue from its existing decisions and outstanding questions, and update the existing document instead of creating a duplicate
@@ -84,7 +85,7 @@ Scan the repo before substantive brainstorming. Match depth to scope:
 
 **Standard and Deep** — Two passes:
 
-*Constraint Check* — Check project instruction files (`AGENTS.md`, and `CLAUDE.md` only if retained as compatibility context) for workflow, product, or scope constraints that affect the brainstorm. If these add nothing, move on.
+*Constraint Check* — Check project instruction files (`CLAUDE.md`) for workflow, product, or scope constraints that affect the brainstorm. If these add nothing, move on.
 
 *Topic Scan* — Search for relevant terms. Read the most relevant existing artifact if one exists (brainstorm, plan, spec, skill, feature doc). Skim adjacent examples covering similar behavior.
 
@@ -255,7 +256,7 @@ If `Resolve Before Planning` contains any items:
 - Ask the blocking questions now, one at a time, by default
 - If the user explicitly wants to proceed anyway, first convert each remaining item into an explicit decision, assumption, or `Deferred to Planning` question
 - If the user chooses to pause instead, present the handoff as paused or blocked rather than complete
-- Do not offer `Proceed to planning` or `Proceed directly to work` while `Resolve Before Planning` remains non-empty
+- Do not offer `Proceed to planning` while `Resolve Before Planning` remains non-empty
 
 **Question when no blocking questions remain:** "Brainstorm complete. What would you like to do next?"
 
@@ -263,37 +264,14 @@ If `Resolve Before Planning` contains any items:
 
 Present only the options that apply:
 - **Proceed to planning (Recommended)** - Run `/plan` for structured implementation planning
-- **Proceed directly to work** - Only offer this when scope is lightweight, success criteria are clear, scope boundaries are clear, and no meaningful technical or research questions remain
 - **Ask more questions** - Continue clarifying scope, preferences, or edge cases
-- **Share to Proof** - Offer this only when a requirements document exists
 - **Done for now** - Return later
-
-If the direct-to-work gate is not satisfied, omit that option entirely.
 
 #### 4.2 Handle the Selected Option
 
 **If user selects "Proceed to planning (Recommended)":**
 
 Immediately run `/plan` in the current session. Pass the requirements document path when one exists; otherwise pass a concise summary of the finalized brainstorm decisions. Do not print the closing summary first.
-
-**If user selects "Proceed directly to work":**
-
-Immediately run `/work` in the current session using the finalized brainstorm output as context. If a compact requirements document exists, pass its path. Do not print the closing summary first.
-
-**If user selects "Share to Proof":**
-
-```bash
-CONTENT=$(cat docs/brainstorms/YYYY-MM-DD-NNN-<topic>-requirements.md)
-TITLE="Requirements: <topic title>"
-RESPONSE=$(curl -s -X POST https://www.proofeditor.ai/share/markdown \
-  -H "Content-Type: application/json" \
-  -d "$(jq -n --arg title "$TITLE" --arg markdown "$CONTENT" --arg by "ai:compound" '{title: $title, markdown: $markdown, by: $by}')")
-PROOF_URL=$(echo "$RESPONSE" | jq -r '.tokenUrl')
-```
-
-Display the URL prominently: `View & collaborate in Proof: <PROOF_URL>`
-
-If the curl fails, skip silently. Then return to the Phase 4 options.
 
 **If user selects "Ask more questions":** Return to Phase 1.3 (Collaborative Dialogue) and continue asking the user questions one at a time to further refine the design. Probe deeper into edge cases, constraints, preferences, or areas not yet explored. Continue until the user is satisfied, then return to Phase 4. Do not show the closing summary yet.
 
