@@ -64,7 +64,7 @@ If a review agent flags any file in these directories for cleanup or removal, di
 
 Read `cc-forge.local.md` in the project root. If found, use `review_agents` from YAML frontmatter. If the markdown body contains review context, pass it to each agent as additional instructions.
 
-If no settings file exists, invoke the `setup` skill to create one. Then read the newly created file and continue.
+If no settings file exists, use the default agent set (correctness, reliability, test-coverage, learnings-researcher) plus conditional agents (adversarial on large/sensitive diffs).
 
 #### Choose Execution Mode
 
