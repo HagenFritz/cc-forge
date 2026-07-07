@@ -28,6 +28,7 @@ Core workflow: brainstorm -> plan -> work -> review -> compound
 - `/work` - Execute work plans
 - `/deep-review` - Multi-agent code review (writes a review doc)
 - `/compound` - Document learnings
+- `/compact-prep` - Prepare a compaction handoff. Gathers objective state (git + session), asks what the next session should focus on (and confirms ambiguous state), then writes a fresh-agent-ready doc to `docs/handoff/` and prints the `@`-reference to paste after `/compact`. Always interactive; does not run `/compact` itself.
 - `/ideate` - Generate improvement ideas
 - `/deepen-plan` - Enhance plans with research
 - `/deprecate` - Plan-only safe removal of a named concept (parallel research agents, leaves-first plan, compat-risk flags; hand off to `/work`)
