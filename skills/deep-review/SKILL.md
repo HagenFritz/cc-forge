@@ -57,7 +57,7 @@ The following paths must never be flagged for deletion, removal, or gitignore by
 - `docs/plans/*.md` — Plan files created by `/plan`. These are living documents that track implementation progress (checkboxes are checked off by `/work`).
 - `docs/solutions/*.md` — Solution documents created during the pipeline.
 
-If a review agent flags any file in these directories for cleanup or removal, discard that finding during synthesis. Do not create a todo for it.
+If a review agent flags any file in these directories for cleanup or removal, the review-synthesizer discards that finding during synthesis — always pass this list in its dispatch.
 </protected_artifacts>
 
 #### Load Review Agents
@@ -137,7 +137,7 @@ These agents are run ONLY when the PR matches specific criteria. Check the PR fi
 
 ### 2. Ultra-Thinking Deep Dive Phases
 
-<ultrathink_instruction> For each phase below, spend maximum cognitive effort. Think step by step. Consider all angles. Question assumptions. And bring all reviews in a synthesis to the user.</ultrathink_instruction>
+<ultrathink_instruction> For each phase below, spend maximum cognitive effort. Think step by step. Consider all angles. Question assumptions. Then hand every review to the synthesizer agent.</ultrathink_instruction>
 
 <deliverable>
 Complete system context map with component interactions
@@ -234,329 +234,52 @@ Complete system context map with component interactions
 
 Run the Task cc-forge:review:code-simplicity-reviewer() to see if we can simplify the code.
 
-### 5. Findings Synthesis, Review Document, and Todo Creation
+### 5. Findings Synthesis and Review Document
 
-#### Step 1: Synthesize All Findings
+#### Step 1: Dispatch the Review Synthesizer
 
-<thinking>
-Consolidate all agent reports into a categorized list of findings.
-Remove duplicates, prioritize by severity and impact.
-</thinking>
-
-<synthesis_tasks>
-
-- [ ] Collect findings from all parallel agents
-- [ ] Surface learnings-researcher results: if past solutions are relevant, flag them as "Known Pattern" with links to docs/solutions/ files
-- [ ] Discard any findings that recommend deleting or gitignoring files in `docs/brainstorms/`, `docs/plans/`, or `docs/solutions/` (see Protected Artifacts above)
-- [ ] Remove duplicate or overlapping findings
-- [ ] Assign severity levels: 🔴 CRITICAL (P1), 🟡 IMPORTANT (P2), 🔵 NICE-TO-HAVE (P3)
-- [ ] Estimate effort for each finding (Small/Medium/Large)
-- [ ] **Assign a Category** to each finding from the fixed list (see Category vocabulary below)
-- [ ] **Assign Confidence + rationale** to each finding (see Confidence vocabulary below). Default missing confidence to `medium` with rationale `"not stated by reviewer"` so the doc shape is uniform.
-- [ ] **Compose Plain English** for each finding (1–3 sentences, non-jargon, must reference at least one concrete code location from the finding's File(s))
-- [ ] **Form Groups** across P-levels (see Grouping rules below). Single-issue clusters are not written as groups.
-
-</synthesis_tasks>
-
-##### Category vocabulary (fixed list)
-
-Pick exactly one per finding:
-
-- `security` — auth, authz, secrets, injection, sensitive data
-- `correctness` — logic bugs, wrong behavior, broken contracts
-- `performance` — N+1s, hot paths, memory, latency
-- `architecture` — boundary violations, layering, coupling, abstractions
-- `duplication` — copy-paste, near-duplicate logic, missing reuse
-- `maintainability` — naming, readability, complexity, dead code
-- `testing` — missing coverage, weak assertions, flaky tests
-- `docs` — missing or wrong documentation, comments, READMEs
-
-##### Confidence vocabulary
-
-- `high` — reviewer verified the issue from the code shown (e.g., read the function, traced the call, confirmed the bug)
-- `medium` — strong pattern match but not verified end-to-end (e.g., looks like an N+1, but eager-loading upstream wasn't checked)
-- `low` — heuristic flag; likely needs human judgment (e.g., "this name is confusing", "this might be too coupled")
-
-Every finding gets a one-line `Confidence rationale:` stating what was or wasn't verified.
-
-##### Plain English rule
-
-1–3 sentences, no jargon-only descriptions. Must mention at least one concrete file/line from the finding's `File(s)`. If the underlying concept needs a term of art (e.g., "race condition"), follow it with a plain-language gloss tied to the code.
-
-##### Grouping rules
-
-Form a group when **two or more issues** share at least one of:
-
-- A common root cause (same bug expressed in multiple places)
-- The same module, file, or tight path cluster
-- An explicit fix-order dependency (fixing one changes the right answer for another)
-
-Groups can — and should — span P-levels. Do not write single-issue "groups." Every group includes a required `Cascade:` note. If no cascade exists, write `Cascade: independent fixes — no ordering dependency.`
-
-#### Step 2: Write Review File
-
-**REQUIRED: Write the review file to disk before creating todos or presenting the terminal summary.**
-
-Determine the filename:
-- Create `docs/reviews/` if it does not exist
-- Check existing files for today's date to determine the next sequence number (zero-padded to 3 digits, starting at 001)
-- Format: `docs/reviews/YYYY-MM-DD-NNN-<branch-or-pr-slug>-review.md`
-- Examples: `docs/reviews/2026-04-28-001-feat-add-auth-review.md`, `docs/reviews/2026-04-28-002-pr-42-review.md`
-
-Use the Write tool to save the complete review document following this template:
-
-```markdown
----
-title: [Review Title]
-target: [PR #NNN | branch-name]
-date: YYYY-MM-DD
----
-
-# [Review Title]
-
-## Summary
-
-| Priority | Count | Label |
-|----------|-------|-------|
-| P1 | [n] | Critical — fix before merge |
-| P2 | [n] | Important — should fix |
-| P3 | [n] | Nice-to-have |
-| **Total** | [n] | |
-
-### P1 Issues
-[For each P1: `- [ ] **[short title]** — [one sentence description]`]
-
-### P2 Issues
-[For each P2: `- [ ] **[short title]** — [one sentence description]`]
-
-### P3 Issues
-[For each P3: `- [ ] **[short title]** — [one sentence description]`]
-
----
-
-## Groups
-
-<!--
-Clusters of related issues that span P-levels. Walk-through tools (e.g. /review-walk)
-read this section to drive a group-first execution flow. If no groups were formed,
-write a single line: `_None — issues are independent._`
--->
-
-### G1: [Group Name]
-
-**Issues:** P1-1, P2-3, P3-2
-
-**Why grouped:** [1–2 sentences naming the shared root cause, module, or fix-order dependency.]
-
-**Suggested order:** P1-1 → P2-3 → P3-2
-
-**Cascade:** [How fixing one member affects the others. If none, write: `independent fixes — no ordering dependency.`]
-
----
-
-## Issues
-
-<!-- Each issue is self-contained — copy a section and paste it into Claude Code to fix. -->
-
-### P1-1: [Short Title]
-
-**Status:** `open` <!-- open | in-progress | done | deferred | wont-fix -->
-
-**Category:** [one of: security | correctness | performance | architecture | duplication | maintainability | testing | docs]
-
-**Confidence:** [high | medium | low]
-
-**Confidence rationale:** [One line: what was or wasn't verified.]
-
-**File(s):** `path/to/file.ext` (line NNN if applicable)
-
-**Plain English:** [1–3 sentences, non-jargon, referencing the actual code location. E.g., "Your code at `auth.rb:42` trusts the session header without re-validating it, which means a forged header would bypass the check."]
-
-**Problem:** [1–3 sentences. What is wrong, why it matters, what could go wrong if left unfixed.]
-
-**Fix:** [Concrete description of the change needed. Specific enough that Claude Code can act on it without re-investigating. Name the method, pattern, or approach to use. Include the expected behavior after the fix.]
-
-**Effort:** Small | Medium | Large
-
----
-
-### P2-1: [Short Title]
-
-**Status:** `open`
-
-**Category:** [category]
-
-**Confidence:** [high | medium | low]
-
-**Confidence rationale:** [One line.]
-
-**File(s):** `path/to/file.ext`
-
-**Plain English:** [1–3 sentences, non-jargon, referencing the actual code location.]
-
-**Problem:** [1-3 sentences.]
-
-**Fix:** [Concrete description of the change needed.]
-
-**Effort:** Small | Medium | Large
-
----
-
-### P3-1: [Short Title]
-
-**Status:** `open`
-
-**Category:** [category]
-
-**Confidence:** [high | medium | low]
-
-**Confidence rationale:** [One line.]
-
-**File(s):** `path/to/file.ext`
-
-**Plain English:** [1–3 sentences, non-jargon, referencing the actual code location.]
-
-**Problem:** [1-2 sentences.]
-
-**Fix:** [Concrete description of the change needed.]
-
-**Effort:** Small | Medium | Large
-```
-
-**Issue writing rules:**
-- Each issue must be fully self-contained — a reader with no other context should be able to paste it into Claude Code and get a correct fix
-- **Category** is required and must come from the fixed list above
-- **Confidence** + **Confidence rationale** are required on every issue (default to `medium` / `"not stated by reviewer"` if the originating agent didn't supply one)
-- **Plain English** is required: 1–3 sentences, non-jargon, with a concrete code reference
-- **File(s)** must include exact paths; add line numbers when the finding is pinpointed to a specific location
-- **Problem** explains what and why, not just what
-- **Fix** describes the concrete change — not just "fix the bug"
-- Keep issues tight: no alternatives, pros/cons tables, or acceptance criteria
-- Number issues sequentially within each tier: P1-1, P1-2, P2-1, P2-2, P3-1, etc.
-- `Status` extends to include `deferred` (for issues a human chose to punt — typically written by `/review-walk`, not by `/review` itself, which always emits `open`)
-
-#### Step 3: Create Todo Files Using todo-create Skill
-
-<critical_instruction> Use the todo-create skill to create todo files for ALL findings immediately. Do NOT present findings one-by-one asking for user approval. Create all todo files in parallel using the skill, then summarize results to user. </critical_instruction>
-
-**Implementation Options:**
-
-**Option A: Direct File Creation (Fast)**
-
-- Create todo files directly using Write tool
-- All findings in parallel for speed
-- Use standard template from the `todo-create` skill's [todo-template.md](../todo-create/assets/todo-template.md)
-- Follow naming convention: `{issue_id}-pending-{priority}-{description}.md`
-
-**Option B: Sub-Agents in Parallel (Recommended for Scale)** For large PRs with 15+ findings, use sub-agents to create finding files in parallel:
-
-```bash
-# Launch multiple finding-creator agents in parallel
-Task() - Create todos for first finding
-Task() - Create todos for second finding
-Task() - Create todos for third finding
-etc. for each finding.
-```
-
-Sub-agents can:
-
-- Process multiple findings simultaneously
-- Write detailed todo files with all sections filled
-- Organize findings by severity
-- Create comprehensive Proposed Solutions
-- Add acceptance criteria and work logs
-- Complete much faster than sequential processing
-
-**Execution Strategy:**
-
-1. Synthesize all findings into categories (P1/P2/P3)
-2. Group findings by severity
-3. Launch 3 parallel sub-agents (one per severity level)
-4. Each sub-agent creates its batch of todos using the todo-create skill
-5. Consolidate results and present summary
-
-**Process (Using todo-create Skill):**
-
-1. For each finding:
-
-   - Determine severity (P1/P2/P3)
-   - Write detailed Problem Statement and Findings
-   - Create 2-3 Proposed Solutions with pros/cons/effort/risk
-   - Estimate effort (Small/Medium/Large)
-   - Add acceptance criteria and work log
-
-2. Use todo-create skill for structured todo management:
-
-   ```bash
-   skill: todo-create
-   ```
-
-   The skill provides:
-
-   - Template location: the `todo-create` skill's [todo-template.md](../todo-create/assets/todo-template.md)
-   - Naming convention: `{issue_id}-{status}-{priority}-{description}.md`
-   - YAML frontmatter structure: status, priority, issue_id, tags, dependencies
-   - All required sections: Problem Statement, Findings, Solutions, etc.
-
-3. Create todo files in parallel:
-
-   ```bash
-   {next_id}-pending-{priority}-{description}.md
-   ```
-
-4. Examples:
-
-   ```
-   001-pending-p1-path-traversal-vulnerability.md
-   002-pending-p1-api-response-validation.md
-   003-pending-p2-concurrency-limit.md
-   004-pending-p3-unused-parameter.md
-   ```
-
-5. Follow template structure from todo-create skill: the `todo-create` skill's [todo-template.md](../todo-create/assets/todo-template.md)
-
-**Todo File Structure (from template):**
-
-Each todo must include:
-
-- **YAML frontmatter**: status, priority, issue_id, tags, dependencies
-- **Problem Statement**: What's broken/missing, why it matters
-- **Findings**: Discoveries from agents with evidence/location
-- **Proposed Solutions**: 2-3 options, each with pros/cons/effort/risk
-- **Recommended Action**: (Filled during triage, leave blank initially)
-- **Technical Details**: Affected files, components, database changes
-- **Acceptance Criteria**: Testable checklist items
-- **Work Log**: Dated record with actions and learnings
-- **Resources**: Links to PR, issues, documentation, similar patterns
-
-**File naming convention:**
+Collect the findings from every review agent — including code-simplicity-reviewer (section 4) and the learnings-researcher report — and dispatch a single synthesis task:
 
 ```
-{issue_id}-{status}-{priority}-{description}.md
-
-Examples:
-- 001-pending-p1-security-vulnerability.md
-- 002-pending-p2-performance-optimization.md
-- 003-pending-p3-code-cleanup.md
+Task cc-forge:review:review-synthesizer(
+  - all review-agent findings, verbatim
+  - the learnings-researcher report
+  - PR metadata and the branch-or-PR slug
+  - protected-artifacts paths
+  - cc-forge.local.md review context, if present
+  - absolute path of this repo's docs/reviews/ directory
+  - today's date
+)
 ```
 
-**Status values:**
+The synthesizer's Inputs section (`agents/review/review-synthesizer.md`) is the authoritative description of each value — pass the values, not restatements of what they mean. The synthesizer owns the synthesis rules, the review-doc template, and the filename convention (`docs/reviews/YYYY-MM-DD-NNN-<slug>-review.md`); it sanitizes the slug (lowercase, non-`[a-z0-9-]` → `-`, collapse repeats), so a branch like `feat/foo` becomes `feat-foo`. It writes the document itself and returns: the doc path, per-tier counts, the P1/P2 summary rows, the group count, and how many findings it discarded under the protected-artifacts rule. When there are zero findings it writes nothing and returns a clean-review marker (still reporting any discarded count).
 
-- `pending` - New findings, needs triage/decision
-- `ready` - Approved by manager, ready to work
-- `complete` - Work finished
+The synthesizer is always-run infrastructure — never list it in `review_agents` rosters, and it does not count toward the serial-mode agent threshold.
 
-**Priority values:**
+Before dispatching, persist each review agent's raw returned findings to one deterministic path: `docs/reviews/.raw/<sanitized-slug>/<agent>.md` (same slug sanitization the synthesizer uses). This is the fallback's source of truth — do not rely on in-context memory surviving compaction across the phases between agent dispatch and synthesis. The fallback re-derives this path from the slug, so it works even if the write happened before a compaction. `docs/reviews/.raw/` is gitignored scratch, not a review artifact.
 
-- `p1` - Critical (blocks merge, security/data issues)
-- `p2` - Important (should fix, architectural/performance)
-- `p3` - Nice-to-have (enhancements, cleanup)
+After synthesis, sanity-check the returned counts: kept + discarded + merged-duplicates should roughly equal the raw findings dispatched. A large shortfall signals the payload overflowed the synthesizer's context and findings were silently dropped — on a very large review, dispatch findings in severity-ordered batches (mirroring `--serial`) rather than one oversized call.
 
-**Tagging:** Always add `code-review` tag, plus: `security`, `performance`, `architecture`, `rails`, `quality`, etc.
+#### Step 2: Verify the Review Document
 
-#### Step 4: Summary Report
+**First, the clean-review case:** if the synthesizer returned the clean-review marker (no `Doc path` to a written file), tell the user the review found no issues and skip the rest of this step — there is no file to verify.
 
-After writing the review file and creating all todo files, present comprehensive summary:
+"Dispatch failed" means the Task call returned an error or returned without a `Doc path:` line. (A genuine hang is indistinguishable from slow synthesis in a prose-executed skill — there is no separate hang handling; rely on any session/tool-level timeout.) On failure:
+
+- **Model/spawn rejection** (the model pinned in `review-synthesizer.md` frontmatter is not on the org's allowlist): do NOT retry (a re-spawn with the same model always fails identically). Emit one line naming that pinned model and pointing at `agents/README.md` to repin, then go straight to inline fallback.
+- **Any other failure**: retry the dispatch once, then fall inline.
+
+On success, verify the doc rather than trusting the return message:
+- Confirm the returned path exists on disk.
+- Grep it for the structural anchors `/review-walk` needs: a `## Groups` heading, and at least one `### P<X>-<N>:` heading with `**Status:**` on the line below it. If missing, treat as a failed dispatch.
+- Confirm the frontmatter `target:` matches this run's branch/PR and `date:` matches today — guards against a stale same-path doc from an earlier run.
+- Re-read the verified file's `## Summary` section as the source of truth for the terminal summary.
+
+**Inline fallback:** read findings from the scratch files at `docs/reviews/.raw/<sanitized-slug>/` (not memory). Then locate the synthesizer's rules/template by trying, in order: (1) read `${CLAUDE_PLUGIN_ROOT}/agents/review/review-synthesizer.md` if that env var resolves to a non-empty path this session; (2) else `"$(git rev-parse --show-toplevel)"/agents/review/review-synthesizer.md`; (3) if neither Read succeeds, present the raw findings to the user grouped by severity rather than exiting with no output. Follow whichever resolved, and state in the terminal summary that the doc was produced by fallback, not the synthesizer.
+
+#### Step 3: Summary Report
+
+After verifying the review file, present the terminal summary:
 
 ````markdown
 ## ✅ Code Review Complete
@@ -564,87 +287,27 @@ After writing the review file and creating all todo files, present comprehensive
 **Review Target:** PR #XXXX - [PR Title] **Branch:** [branch-name]
 **Review document:** `docs/reviews/[filename]`
 
-### Findings Summary:
+### Findings
 
-- **Total Findings:** [X]
-- **🔴 CRITICAL (P1):** [count] - BLOCKS MERGE
-- **🟡 IMPORTANT (P2):** [count] - Should Fix
-- **🔵 NICE-TO-HAVE (P3):** [count] - Enhancements
+| Tier | Count | Issue | Category | Effort |
+|------|-------|-------|----------|--------|
+| P1   | [n]   | **P1-1: [Short title]** — [one-line description] | [category] | [effort] |
+|      |       | **P1-2: [Short title]** — [one-line description] | [category] | [effort] |
+| P2   | [n]   | **P2-1: [Short title]** — [one-line description] | [category] | [effort] |
+| P3   | [n]   | _[n] nice-to-haves: [one-line roll-up of themes] (full detail in the review doc)_ | — | — |
 
-### Created Todo Files:
+Every P1 and P2 gets its own row (copy the rows from the review doc's Summary); P3s are one roll-up row. Counts appear once per tier.
 
-**P1 - Critical (BLOCKS MERGE):**
+### Review Agents Used
 
-- `001-pending-p1-{finding}.md` - {description}
-- `002-pending-p1-{finding}.md` - {description}
+- [list only the agents that returned findings this run]
+- [if any dispatched agent failed or returned nothing, name it here: "Did not complete: <agent> — coverage for its area is missing"]
+- review-synthesizer (synthesis + document)
 
-**P2 - Important:**
+### Next Steps
 
-- `003-pending-p2-{finding}.md` - {description}
-- `004-pending-p2-{finding}.md` - {description}
-
-**P3 - Nice-to-Have:**
-
-- `005-pending-p3-{finding}.md` - {description}
-
-### Review Agents Used:
-
-- security-sentinel-python / security-sentinel-typescript
-- performance-oracle-python / performance-oracle-typescript
-- architecture-strategist
-- correctness-auditor
-- reliability-engineer
-- test-coverage-reviewer
-- adversarial-reviewer (if applicable)
-- [other agents]
-
-### Next Steps:
-
-1. **Address P1 Findings**: CRITICAL - must be fixed before merge
-
-   - Review each P1 todo in detail
-   - Implement fixes or request exemption
-   - Verify fixes before merging PR
-
-2. **Triage All Todos**:
-   ```bash
-   ls .context/cc-forge/todos/*-pending-*.md todos/*-pending-*.md 2>/dev/null  # View all pending todos
-   /todo-triage             # Use slash command for interactive triage
-   ```
-
-3. **Work on Approved Todos**:
-
-   ```bash
-   /todo-resolve  # Fix all approved items efficiently
-   ```
-
-4. **Track Progress**:
-   - Rename file when status changes: pending → ready → complete
-   - Update Work Log as you work
-   - Commit review findings and status updates
-
-### Severity Breakdown:
-
-**🔴 P1 (Critical - Blocks Merge):**
-
-- Security vulnerabilities
-- Data corruption risks
-- Breaking changes
-- Critical architectural issues
-
-**🟡 P2 (Important - Should Fix):**
-
-- Performance issues
-- Significant architectural concerns
-- Major code quality problems
-- Reliability issues
-
-**🔵 P3 (Nice-to-Have):**
-
-- Minor improvements
-- Code cleanup
-- Optimization opportunities
-- Documentation updates
+1. **Address P1 findings** — critical; must be fixed before merge.
+2. **Walk the review** — run `/review-walk docs/reviews/[filename]` to step through issues group-by-group with implement / defer / skip choices. Status updates land in the review doc, so progress is durable.
 ````
 
 ### 6. End-to-End Testing (Optional)
@@ -695,7 +358,7 @@ After presenting the Summary Report, offer appropriate testing based on project 
 Spawn a subagent to run browser tests (preserves main context):
 
 ```
-Task general-purpose("Run /test-browser for PR #[number]. Test all affected pages, check for console errors, handle failures by creating todos and fixing.")
+Task general-purpose("Run /test-browser for PR #[number]. Test all affected pages, check for console errors, report failures as P1 findings and fix.")
 ```
 
 The subagent will:
@@ -704,7 +367,7 @@ The subagent will:
 3. Check for console errors
 4. Test critical interactions
 5. Pause for human verification on OAuth/email/payment flows
-6. Create P1 todos for any failures
+6. Report any failures as P1 findings
 7. Fix and retry until all tests pass
 
 **Standalone:** `/test-browser [PR number]`
@@ -725,7 +388,7 @@ The subagent will:
 5. Take screenshots of key screens
 6. Capture console logs for errors
 7. Pause for human verification (Sign in with Apple, push, IAP)
-8. Create P1 todos for any failures
+8. Report any failures as P1 findings
 9. Fix and retry until all tests pass
 
 **Standalone:** `/xcode-test [scheme]`
