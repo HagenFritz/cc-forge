@@ -1,6 +1,8 @@
 # Agents
 
-Specialized subagents the skills dispatch via the `Task` tool. Each is a Markdown file with YAML frontmatter (`name`, `description`, `model: inherit`) and a prompt body. Fully-qualified name: `cc-forge:<category>:<agent-name>`.
+Specialized subagents the skills dispatch via the `Task` tool. Each is a Markdown file with YAML frontmatter (`name`, `description`, `model`) and a prompt body. Fully-qualified name: `cc-forge:<category>:<agent-name>`.
+
+Models are pinned per agent: everything under `review/` runs `claude-sonnet-5` (1M context, opus-level review quality at lower cost) except `review-synthesizer`, which runs `claude-opus-4-8`; `workflow/lint` runs `haiku`; the rest `inherit` the session model. Pins are plain frontmatter — edit them if your org's model allowlist differs or the IDs deprecate. Note a pin also applies when *other* skills dispatch the same agent, and it overrides (even downgrades) whatever model the main session runs.
 
 Several were ported from [EveryInc/compound-engineering-plugin](https://github.com/EveryInc/compound-engineering-plugin), whose stack is Rails/Ruby. The Rails-specific language has been generalized; security and performance reviewers are split into Python and TypeScript variants to match this repo's stack.
 
@@ -31,6 +33,7 @@ Several were ported from [EveryInc/compound-engineering-plugin](https://github.c
 | `test-coverage-reviewer` | Missing cases, weak assertions, untested branches, flaky patterns in shipped tests | deep-review |
 | `pattern-recognition-specialist` | Design patterns, anti-patterns, naming, duplication | compound, deepen-plan |
 | `code-simplicity-reviewer` | Final pass — YAGNI violations, simplification opportunities | deep-review, compound |
+| `review-synthesizer` | Consolidates all reviewer findings into the `docs/reviews/` document (dedupe, severity, groups) | deep-review |
 | `python-reviewer` | High-bar Python: Pythonic patterns, type safety, maintainability | _opt-in via `cc-forge.local.md`_ |
 | `typescript-reviewer` | High-bar TypeScript: type safety, modern patterns, maintainability | _opt-in via `cc-forge.local.md`_ |
 
@@ -50,6 +53,8 @@ Several were ported from [EveryInc/compound-engineering-plugin](https://github.c
 ## How `/deep-review` selects reviewers
 
 `/deep-review` does **not** hard-code its review roster. It reads `review_agents` from each project's `cc-forge.local.md` frontmatter, plus an always-run set (correctness, reliability, test-coverage, learnings-researcher) and conditional ones (adversarial on large/sensitive diffs). The `python-reviewer` / `typescript-reviewer` agents are opt-in: a project lists them only if it's a Python/TS codebase. Pick the matching `-python` or `-typescript` variant of the security/performance reviewers per the project's stack.
+
+Synthesis is delegated to `review-synthesizer` — always-run infrastructure dispatched after the reviewers finish, never listed in `review_agents`. It owns the review-doc template and writes the document itself.
 
 ## Porting notes
 
