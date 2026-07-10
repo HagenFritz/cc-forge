@@ -298,6 +298,8 @@ After verifying the review file, present the terminal summary:
 
 Every P1 and P2 gets its own row (copy the rows from the review doc's Summary); P3s are one roll-up row. Counts appear once per tier.
 
+Review docs are written under `docs/reviews/`, which is gitignored — they are local working artifacts, not committed repo content. `/review-walk` reads them from the working tree.
+
 ### Review Agents Used
 
 - [list only the agents that returned findings this run]
