@@ -57,7 +57,7 @@ cp -r skills/<name> ~/.claude/skills/
 cp -r agents/<category> ~/.claude/agents/
 ```
 
-Editing a file in this repo does **not** make it live — apply it by re-running the plugin install or copying the changed folder into `~/.claude/`.
+Editing a file in this repo does **not** make it live — the plugin loads from a cache copy, read once at session start. `/plugin update` does **not** apply changes: it keys off the `version` in `.claude-plugin/plugin.json` and no-ops when that's unchanged, so newly added agents/skills never appear (you'll see `Agent type '…' not found`). To apply any change, force a clean reinstall then restart Claude Code: `/plugin uninstall cc-forge && rm -rf ~/.claude/plugins/cache/cc-forge-local/ && /plugin install cc-forge` (or copy the changed folder into `~/.claude/` for the cherry-pick route). See the README "Applying repo changes" note.
 
 The `/caveman` hook is wired automatically by the plugin path via `hooks/hooks.json`. Only the cherry-pick route needs the manual `settings.json` paste documented in the README ("Caveman hook setup"). When adding a new hook in the future, add its script to `hooks/` and declare it in `hooks/hooks.json` (using `${CLAUDE_PLUGIN_ROOT}` for the path) so plugin installs pick it up automatically.
 
@@ -68,6 +68,7 @@ When referencing agents from within SKILL.md files, use fully-qualified names:
 
 ## Related
 
+- **PR #52** (2026-07-13): /deep-review deletes docs/reviews/.raw/<slug>/ after the synthesized doc is verified (never on fallback/clean-review); fixed README + CLAUDE.md plugin-reload guidance — /plugin update no-ops on an unchanged version, so use uninstall + rm -rf cache + install + restart
 - **PR #49** (2026-07-09): add /compact-prep — interactive skill that gathers git+session state, asks the next session's focus, writes a fresh-agent handoff doc to docs/handoff/, and prints the @-ref to paste after /compact; also gitignore docs/reviews/ — [plan](docs/plans/2026-07-07-001-feat-compact-prep-skill-plan.md)
 - **PR #43** (2026-06-25): remove document-review skill (broken agent refs, stale names), document plugin cache staleness workaround in README — [session](https://claude.ai/code/session_017p7uuzAi5nJw7s4usffXyD)
 - **PR #39** (2026-06-23): /land now verifies CI and merges — after stamping CLAUDE.md it runs local tests, watches Actions, fixes failures with confirmed re-commits (max 3), squash-merges, and syncs main — [plan](docs/plans/2026-06-23-001-feat-land-merge-flow-plan.md)

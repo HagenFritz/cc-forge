@@ -21,12 +21,17 @@ This installs **all skills, all agents, and the caveman hook** — the hook is w
 
 (The marketplace is named `cc-forge-local` with `source: "./"`, so add it by the **path to your clone**, not a remote `owner/repo` reference.)
 
-> **Reinstalling after renamed or deleted files?** The plugin cache overlays new files but doesn't prune removed ones. If a reinstall picks up stale agents or skills, clear the cache first:
+> **Applying repo changes to the installed plugin.** Editing files in this clone does **not** make them live — the plugin loads from a cache copy under `~/.claude/plugins/cache/`, and agents/skills are read once at session start. `/plugin update` does **not** help for a local directory-source plugin: it compares the `version` string in `.claude-plugin/plugin.json`, so if that hasn't bumped it reports "already at the latest version" and rebuilds nothing — even when new commits added agents or skills. That's why a newly added agent shows up as `Agent type '…' not found`.
+>
+> To pick up any repo change (added, renamed, or deleted files), force a clean reinstall, then **restart Claude Code** so the new agents/skills load:
 >
 > ```bash
+> /plugin uninstall cc-forge
 > rm -rf ~/.claude/plugins/cache/cc-forge-local/
 > /plugin install cc-forge
 > ```
+>
+> A reinstall alone can leave stale metadata pointing at an already-deleted cache dir; the `rm -rf` guarantees the cache rebuilds from your clone's current `HEAD` (uncommitted working-tree edits included).
 
 ### Cherry-pick individual pieces
 

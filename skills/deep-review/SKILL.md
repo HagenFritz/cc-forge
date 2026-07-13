@@ -274,6 +274,7 @@ On success, verify the doc rather than trusting the return message:
 - Grep it for the structural anchors `/review-walk` needs: a `## Groups` heading, and at least one `### P<X>-<N>:` heading with `**Status:**` on the line below it. If missing, treat as a failed dispatch.
 - Confirm the frontmatter `target:` matches this run's branch/PR and `date:` matches today — guards against a stale same-path doc from an earlier run.
 - Re-read the verified file's `## Summary` section as the source of truth for the terminal summary.
+- Once the doc passes every check above, delete this run's scratch: `rm -rf docs/reviews/.raw/<sanitized-slug>/`. Only after a verified write — never on the fallback path, which reads from it. The clean-review case keeps its scratch (there is no verified doc to gate on).
 
 **Inline fallback:** read findings from the scratch files at `docs/reviews/.raw/<sanitized-slug>/` (not memory). Then locate the synthesizer's rules/template by trying, in order: (1) read `${CLAUDE_PLUGIN_ROOT}/agents/review/review-synthesizer.md` if that env var resolves to a non-empty path this session; (2) else `"$(git rev-parse --show-toplevel)"/agents/review/review-synthesizer.md`; (3) if neither Read succeeds, present the raw findings to the user grouped by severity rather than exiting with no output. Follow whichever resolved, and state in the terminal summary that the doc was produced by fallback, not the synthesizer.
 
