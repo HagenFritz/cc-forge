@@ -12,5 +12,6 @@ Overlapping reviewers (reliability, data-integrity, adversarial) carry explicit 
 
 ## Related
 
+- **PR #51** (2026-07-13): add the rule of three to pattern-recognition-specialist — duplication is flagged for extraction only at the third occurrence, reconciling its prior second-copy bias with the reviewers' "simple duplication beats DRY" — [plan](docs/plans/2026-07-13-001-feat-rule-of-three-pattern-agent-plan.md)
 - **PR #50** (2026-07-09): pin all 14 review agents to claude-sonnet-5 and extract /deep-review synthesis into a dedicated review-synthesizer agent (claude-opus-4-8) that writes the review doc; tier-table summary, dead todo-step removed — [plan](docs/plans/2026-07-09-001-feat-review-model-pins-synthesizer-plan.md)
 - **PR #42** (2026-06-24): overhaul review agents — 5 new specialists, security/perf split into python+ts, de-Rails'd, phantom refs removed — closes #41
