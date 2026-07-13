@@ -68,6 +68,7 @@ When referencing agents from within SKILL.md files, use fully-qualified names:
 
 ## Related
 
+- **PR #52** (2026-07-13): /deep-review deletes docs/reviews/.raw/<slug>/ after the synthesized doc is verified (never on fallback/clean-review); fixed README + CLAUDE.md plugin-reload guidance — /plugin update no-ops on an unchanged version, so use uninstall + rm -rf cache + install + restart
 - **PR #49** (2026-07-09): add /compact-prep — interactive skill that gathers git+session state, asks the next session's focus, writes a fresh-agent handoff doc to docs/handoff/, and prints the @-ref to paste after /compact; also gitignore docs/reviews/ — [plan](docs/plans/2026-07-07-001-feat-compact-prep-skill-plan.md)
 - **PR #43** (2026-06-25): remove document-review skill (broken agent refs, stale names), document plugin cache staleness workaround in README — [session](https://claude.ai/code/session_017p7uuzAi5nJw7s4usffXyD)
 - **PR #39** (2026-06-23): /land now verifies CI and merges — after stamping CLAUDE.md it runs local tests, watches Actions, fixes failures with confirmed re-commits (max 3), squash-merges, and syncs main — [plan](docs/plans/2026-06-23-001-feat-land-merge-flow-plan.md)
