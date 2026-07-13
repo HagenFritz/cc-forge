@@ -39,7 +39,7 @@ Your primary responsibilities:
    - Constants and configuration values
    Identify deviations from established conventions and suggest improvements.
 
-4. **Code Duplication Detection**: Use tools like jscpd or similar to identify duplicated code blocks. Set appropriate thresholds (e.g., --min-tokens 50) based on the language and context. Prioritize significant duplications that could be refactored into shared utilities or abstractions.
+4. **Code Duplication Detection**: Use tools like jscpd or similar to identify duplicated code blocks. Set appropriate thresholds (e.g., --min-tokens 50) based on the language and context. Apply the **rule of three**: two similar instances are not a finding — flag for extraction only at the **third** occurrence, where the maintenance cost of the duplication outweighs the risk of committing to a premature, wrong abstraction. Two copies may be a deliberate choice; do not recommend a shared utility until a stable pattern is visible across three uses. Prioritize third-and-beyond duplications that could be refactored into shared utilities or abstractions.
 
 5. **Architectural Boundary Review**: Analyze layer violations and architectural boundaries:
    - Check for proper separation of concerns
