@@ -73,8 +73,8 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
 
 9. **Create and checkout:** `git checkout -b {branch-name}`
 
-10. **Rename the session** to match the branch name using the `/rename` built-in command:
-    - Invoke `/rename {branch-name}` so the session is identifiable when resuming later.
+10. **Output the branch name as the `/rename` command.** `/rename` only works when the user invokes it manually — do not run it. Print the full command using the branch name:
+    > `/rename {branch-name}`
 
 11. **Post a comment on the GitHub issue** (only if an issue number was provided):
     ```bash
