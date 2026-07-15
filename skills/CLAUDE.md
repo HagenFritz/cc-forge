@@ -6,4 +6,5 @@ A pre-commit hook runs `scripts/sync-workflows.sh`, which regenerates `.devin/wo
 
 ## Related
 
+- **PR #55** (2026-07-15): add /tree, /preview, /unpreview for a git-worktree dev workflow (primary checkout stays on main; feature work in sibling worktrees), and fix /ship + /land to operate correctly from inside a worktree
 - **PR #40** (2026-06-23): /land now reconciles CLAUDE.md body prose with the merged diff (not just appends); /ship splits Test Plan into Pre-merge/Post-merge; added scripts/sync-workflows.sh
