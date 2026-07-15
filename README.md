@@ -76,12 +76,13 @@ Typical flow: `/initiative` → `/plan` per workstream → `/work` → `/initiat
 
 | Skill | What it does | When to use |
 |---|---|---|
-| `/branch-from-issue` | Creates and checks out a git branch from an issue number or conversation context | Starting work tied to an issue |
+| `/branch-from-issue` | Creates and checks out a git branch from an issue number or conversation context, in the **current** directory | Starting work tied to an issue, no isolation needed |
+| `/tree` | Creates a git worktree — a second working directory on its own new branch, sibling to the primary checkout at `../<repo>-worktrees/<branch-name>/` — instead of checking the branch out in place. Symlinks `docs/` in so brainstorm/plan docs stay visible | Starting work you want isolated in its own directory (e.g. so the primary checkout can stay on `main`, or to run several branches concurrently in separate sessions) |
 | `/issue-from-context` | Generates a GitHub issue from conversation context and adds it to a project | Something worth tracking surfaced mid-conversation |
 | `/read-issue` | Fetches a GitHub issue by number and presents a structured digest | You want an issue's content summarized in-session |
 | `/triage-issue` | Fetches an issue and investigates the codebase to determine if it's still present, fixed, or needs more digging; writes to `docs/triage/` | Verifying whether a reported issue still reproduces |
 | `/ship` | Commits all changes per-file, pushes the branch, and creates a PR | Work is done and you want it shipped |
-| `/land` | Takes an open PR to merged: stamps a capped provenance entry (PR + plan link + one-line summary) into the affected directory's `CLAUDE.md` and commits it onto the PR's branch, runs local tests, waits on GitHub Actions, fixes CI failures one confirmed re-commit at a time (max 3), squash-merges + deletes the branch, then syncs `main` | When a PR is ready to merge — closes the loop in one command |
+| `/land` | Takes an open PR to merged: stamps a capped provenance entry (PR + plan link + one-line summary) into the affected directory's `CLAUDE.md` and commits it onto the PR's branch, runs local tests, waits on GitHub Actions, fixes CI failures one confirmed re-commit at a time (max 3), squash-merges + deletes the branch, then syncs `main`. If the branch lived in a `/tree` worktree, removes that worktree too (`git worktree remove`, not a raw delete) before syncing | When a PR is ready to merge — closes the loop in one command |
 
 **Dependency note:** the GitHub skills shell out to the `gh` CLI; have it installed and authenticated.
 
@@ -177,6 +178,14 @@ Restart Claude Code. The hook reads a flag file at `~/.claude/.caveman-active` (
 ```
 /branch-from-issue <issue-number> → /work → /ship → /land
 ```
+
+**Worktree-isolated workflow** (primary checkout stays on `main` throughout):
+```
+/brainstorm → /plan → /tree <issue-number>
+  → cd into the printed worktree path, start a new Claude Code session there
+  → /work → /deep-review → /ship → /land   # /land removes the worktree on merge
+```
+`/tree` is a drop-in alternative to `/branch-from-issue` for when you want the branch developed in its own directory rather than checked out in place — useful once you're running several branches at once, since each worktree is a fully separate working directory with no stashing required to switch between them.
 
 ## Structure
 
