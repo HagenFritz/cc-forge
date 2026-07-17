@@ -242,8 +242,13 @@ After all issues are terminal:
 - List deferred items with their reasons (the user may want these as follow-up
   tickets).
 - Suggest next steps:
-  - If any `done` issues require code changes that aren't yet committed → suggest
-    `/ship`.
+  - If any `done` issues produced code changes, check whether the current branch has
+    an open PR (`gh pr view --json state,number`):
+    - **Open PR exists** (the remote-review flow — this walk ran against a shipped PR):
+      suggest **`/push-review`**, which commits the fixes, pushes them onto the PR
+      branch, and posts a PR comment mapping each finding to its outcome (fixed /
+      deferred / skipped). That skill owns the commit+push+comment; don't do it here.
+    - **No PR**: suggest `/ship`.
   - If many `deferred` items exist → suggest opening follow-up issues via
     `/issue-from-context` or `/side-quest`.
 

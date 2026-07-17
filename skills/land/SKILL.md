@@ -1,6 +1,6 @@
 ---
 name: land
-description: "Take an open PR all the way to merged: stamp a CLAUDE.md provenance entry onto its branch, run the local test suite, wait for GitHub Actions, fix failures (one confirmed re-commit at a time, up to 3 rounds), squash-merge the PR, then sync main. The CLAUDE.md stamp rides the same PR. Use when the user says 'land this', 'land the PR', 'merge this PR', 'land and merge', 'stamp the PR', 'update the CLAUDE.md before merge', or invokes /land. Runs on an open PR."
+description: "Take an open PR all the way to merged: stamp a CLAUDE.md provenance entry onto its branch, run the local test suite, wait for GitHub Actions, fix failures (one confirmed re-commit at a time, up to 3 rounds), squash-merge the PR, sync main, then post a short resolution summary on the linked issue. The CLAUDE.md stamp rides the same PR. Use when the user says 'land this', 'land the PR', 'merge this PR', 'land and merge', 'stamp the PR', 'update the CLAUDE.md before merge', or invokes /land. Runs on an open PR."
 argument-hint: "[optional PR number]"
 allowed-tools: Bash, AskUserQuestion, Read, Edit, Write, Grep, Glob
 ---
@@ -9,9 +9,9 @@ allowed-tools: Bash, AskUserQuestion, Read, Edit, Write, Grep, Glob
 
 **Note: The current year is 2026.**
 
-`/land` takes an **open PR** from "ready" to "merged and synced." In order it: stamps the affected directory's `CLAUDE.md` — prepending a capped provenance entry (PR → plan → one-line summary) **and** reconciling the body prose with the merged diff so stale claims are revised and removed, not just appended to — then pushes it onto the PR branch so the doc lands atomically with the code; reads the PR body and runs any unchecked Pre-merge Tests, checking them off as they pass; waits for GitHub Actions; on CI failure, proposes a fix and re-commits **one confirmed fix at a time** (up to 3 rounds); squash-merges the PR; and checks out and pulls `main`.
+`/land` takes an **open PR** from "ready" to "merged and synced." In order it: fast-forwards the local branch to pick up review-fix commits pushed from another machine (the remote-review flow); stamps the affected directory's `CLAUDE.md` — prepending a capped provenance entry (PR → plan → one-line summary) **and** reconciling the body prose with the merged diff so stale claims are revised and removed, not just appended to — then pushes it onto the PR branch so the doc lands atomically with the code; reads the PR body and runs any unchecked Pre-merge Tests, checking them off as they pass; waits for GitHub Actions; on CI failure, proposes a fix and re-commits **one confirmed fix at a time** (up to 3 rounds); squash-merges the PR; and checks out and pulls `main`.
 
-Typical flow: open the PR with `/ship` → run `/land` → answer the confirm prompts → done: merged, branch deleted, on a fresh `main`.
+Typical flow: open the PR with `/ship` → run `/land` → answer the confirm prompts → done: merged, branch deleted, on a fresh `main`, and a ≤3-sentence resolution summary posted to the linked issue.
 
 ## Core Principles
 
@@ -38,6 +38,10 @@ Typical flow: open the PR with `/ship` → run `/land` → answer the confirm pr
    <url>
    ```
    Options: **Confirm** (use this PR) / **Cancel** (abort). On Cancel, stop with "Cancelled — no changes made."
+5b. **Sync the PR branch before touching it.** Review fixes may have been pushed from another machine (the remote-review flow: `/deep-review` + `/review-walk` + `/push-review` run on a separate box push fix commits to the PR branch). `/catch-up` normally does this sync earlier, with a fuller delta report; this step is the safety net for when it was skipped. Run `git fetch origin <headRefName>`, then compare:
+   - **Local behind, fast-forwardable** (`git merge-base --is-ancestor HEAD origin/<headRefName>`): run `git pull --ff-only origin <headRefName>` and report how many commits came in. This is the normal case after a remote review pass, not an anomaly. (For a fuller view of what those commits changed, `/catch-up` reports incoming files + review outcomes — run it instead of relying on this bare sync if you want the context.)
+   - **Local and remote diverged**: stop with "Local `<headRefName>` and `origin/<headRefName>` have diverged — reconcile manually (`git pull --rebase origin <headRefName>`), then re-run /land." Never auto-rebase or force-push.
+   - **Local up to date or ahead**: proceed.
 
 ### Phase 2: Choose the target directory
 
@@ -54,6 +58,7 @@ Typical flow: open the PR with `/ship` → run `/land` → answer the confirm pr
     - A plan path referenced in the PR body.
     - If none found, fall back to the issue link (parse the issue from the PR body's `Closes #N` / `Fixes #N`).
     - Never link a review document.
+    - **Capture the linked issue number** here regardless of whether a plan was found — parse `Closes #N` / `Fixes #N` / `Resolves #N` from the PR body (and the `{issue-number}` segment of `headRefName` if the body has none). Remember it as `<issue>` for the post-merge issue comment (Phase 11). If there's no linked issue, `<issue>` is empty and Phase 11 is skipped.
 11. **Draft the one-line summary** from the PR title plus the diff stat (`git diff --stat main...HEAD`; `gh pr diff` has no `--stat` flag). Keep it to one line describing what changed and why.
 12. **Compose the entry** as a single Markdown list item, newest-first:
     - With a plan: `- **PR #<N>**: <summary> — [plan](<plan-path>)`
@@ -147,6 +152,21 @@ Typical flow: open the PR with `/ship` → run `/land` → answer the confirm pr
     - **If not found in any worktree**: just `git branch -D <headRefName>` as before.
 35. Report the final state: merged, remote branch deleted, local branch/worktree cleaned up (or intentionally kept — say which) if applicable, and whether the local `main` ref ended up checked out or just fetched.
 
+### Phase 11: Comment the resolution on the linked issue
+
+36. **Skip entirely if** there's no `<issue>` from step 10, or the merge in Phase 9 did not succeed (never comment "resolved" on an issue whose PR isn't merged). A squash-merge with `Closes #<issue>` in the PR body auto-closes the issue; this comment adds the human-readable *what-shipped*, it does not close anything itself.
+37. **Verify the issue is real and open-or-just-closed:** `gh issue view <issue> --json number,state,title`. If it errors (wrong number, no access), skip with a one-line note — don't fabricate. If `state` is already `CLOSED` from before this PR, still comment (the resolution context is useful) but don't imply this PR closed it.
+38. **Draft a ≤3-sentence summary** of what shipped, aimed at someone who filed or is watching the issue — plain language, no diff stats or file lists. Source it from the PR title, the `## Related` summary you just composed, and the merged diff. Say what changed and, if not obvious, the effect. Keep it to at most three sentences.
+39. **Compose the comment:**
+    ```markdown
+    Resolved by #<N> (merged).
+
+    <≤3-sentence summary>
+    ```
+    (If the issue was already closed before this PR, replace the first line with `Addressed by #<N> (merged).`)
+40. **Confirm before posting** via `AskUserQuestion`, showing the composed comment in a `preview`: **Post to issue** (default) / **Edit summary** (free-form revised summary, recompose, re-confirm) / **Skip** (don't comment). On Post: `gh issue comment <issue> --body "<comment>"`.
+41. Report whether the issue comment posted, was edited, or was skipped. A failed `gh issue comment` is not fatal — the PR is already merged; report the failure and the manual command, don't roll anything back.
+
 ## Rules
 
 - Manual only — `/land` is never wired to a git or CI hook.
@@ -159,6 +179,7 @@ Typical flow: open the PR with `/ship` → run `/land` → answer the confirm pr
 - **No unattended fixes** — every CI-fix commit is confirmed by the user first. The fix loop is capped at 3 rounds; still-red after 3 means stop without merging.
 - **Merge is squash + delete branch by default**; only ask to override. Only claim "merged" after `gh pr merge` succeeds; on a blocked/failed merge, report the reason and leave the PR open.
 - Pre-merge tests: extract from PR body and run them; update PR body to check them off on success; **stop** when tests are red.
+- Issue comment: post a ≤3-sentence resolution summary to the linked issue **only after a successful merge**, user-confirmed, never fabricated; a missing linked issue or a failed comment is skip-and-note, never a rollback.
 - Depends on `gh`; if `gh` is unavailable, stop and say so rather than guessing.
 - On any failure (no open PR, no touched dirs, scaffold declined, red tests, CI red after 3 rounds, blocked merge, failed push), stop with a clear message — never leave a `CLAUDE.md` partially written, a half-made commit, or a false "merged" claim.
 - Plan links live under `docs/plans/` (gitignored in some repos) and may be local-only; record the path regardless.

@@ -74,18 +74,18 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
 8. **Create the worktree:** `git worktree add {worktree-path} -b {branch-name} {default-branch}`
    - This does not touch the primary checkout's working files or currently-checked-out branch.
 
-9. **Symlink `docs/` into the worktree.** `docs/` (brainstorms, plans, reviews, initiatives, handoff, etc.) is gitignored in this repo — `git worktree add` only materializes committed content, so the new worktree gets no `docs/` directory at all, and the brainstorm/plan files this work depends on would be invisible from it.
-   - Remove the empty `docs/` that may have been created if `docs/` itself isn't fully gitignored: check first (`ls {worktree-path}/docs` — if it exists and is empty, `rmdir` it; if it has tracked content, skip the symlink and warn the user instead, since a symlink can't coexist with a real directory).
-   - Otherwise: `ln -s {primary-checkout-root}/docs {worktree-path}/docs`
-   - **Verify it worked**: `[ -L {worktree-path}/docs ]`. If the symlink is missing (the `ln -s` itself failed — permissions, disk full, cross-device), do not silently continue: note this explicitly so step 11's output reflects it — `docs/` will not be visible from the new session until the symlink is created manually.
-   - This makes every subdirectory of `docs/` — including ones created after this worktree, like a new `docs/handoff/` entry — visible from the worktree with no per-subdirectory logic. Removing the worktree (`git worktree remove`, which `/land` calls on merge) deletes the symlink itself and leaves the primary checkout's real `docs/` untouched.
+9. **Symlink `docs/` into the worktree.** Gitignored doc subdirs (brainstorms, plans, reviews, etc.) are not materialized by `git worktree add`, so the brainstorm/plan files this work depends on would be invisible from the worktree. Two cases, decided by what `git worktree add` produced:
+   - **`docs/` fully gitignored** (no `docs/` in the worktree, or an empty one — `rmdir` the empty one): symlink the whole directory — `ln -s {primary-checkout-root}/docs {worktree-path}/docs`. Verify with `[ -L {worktree-path}/docs ]`.
+   - **`docs/` partially tracked** (the worktree's `docs/` has tracked content — a symlink can't replace a real directory, and deleting tracked files would show as deletions on the branch): symlink each missing subdir instead. For every top-level subdirectory of `{primary-checkout-root}/docs/` that does **not** exist in `{worktree-path}/docs/` (absent = gitignored), run `ln -s {primary-checkout-root}/docs/{subdir} {worktree-path}/docs/{subdir}`. Verify each with `[ -L ]`. Tracked subdirs stay branch-local real directories — never symlink over them. The symlinks sit at gitignored paths, so git never sees them.
+   - **On any `ln -s` failure** (permissions, disk full, cross-device), do not silently continue: note exactly which links are missing so step 11's output reflects it.
+   - Whole-dir case: subdirectories created later (e.g. a new `docs/handoff/` entry) are visible automatically. Per-subdir case: a doc subdir created in the primary **after** this worktree needs its own symlink — note this in step 11's output. Removing the worktree (`git worktree remove`, which `/land` calls on merge) deletes the symlinks and leaves the primary checkout's real `docs/` untouched.
 
 10. **Post a comment on the GitHub issue** (only if an issue number was provided):
     ```bash
     gh issue comment $ARGUMENTS --repo <owner>/<repo> --body "Worktree created: \`{branch-name}\` at \`{worktree-path}\`"
     ```
 
-11. **Output next steps.** If the `docs/` symlink from step 9 was verified present:
+11. **Output next steps.** If every step-9 symlink was verified present:
     ```
     Worktree created:
       {absolute-worktree-path}
@@ -96,7 +96,9 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
     ```
     Recommend starting a fresh Claude Code session in the new directory rather than continuing in this one — the session's project context (CLAUDE.md, skills, memory) is resolved from cwd, and a dedicated session keeps it matched to this branch alone.
 
-    If the symlink was **not** verified (step 9 failed), print the same block but replace "Next:" with a warning first: "Worktree created, but the `docs/` symlink failed — brainstorm/plan files won't be visible from this worktree until you run `ln -s {primary-checkout-root}/docs {absolute-worktree-path}/docs` manually." Then the same `cd` / `claude` next steps.
+    In the per-subdir case, list which subdirs were symlinked and add: "A doc subdir created in the primary later won't auto-appear here — symlink it the same way if needed."
+
+    If any symlink was **not** verified (step 9 failed), print the same block but replace "Next:" with a warning first: "Worktree created, but the `docs/` symlink(s) failed — these files won't be visible from this worktree until you create the link(s) manually: `<the exact ln -s command(s)>`." Then the same `cd` / `claude` next steps.
 
 ## Rules
 
