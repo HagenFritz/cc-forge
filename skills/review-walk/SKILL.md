@@ -310,8 +310,12 @@ gh issue comment <issue> --repo <owner>/<repo> --body "$(cat <<'EOF'
 
 **Summary:** <n> issues walked — <n> implemented, <n> deferred, <n> skipped
 **Issues:**
-- <P<X>-<N>: one line on what the issue is> — <status>: <why>
-- <P<X>-<N>: one line on what the issue is> — <status>: <why>
+- <P<X>-<N>: short title>
+  - <one line on what the issue is>
+  - <status>: <why>
+- <P<X>-<N>: short title>
+  - <one line on what the issue is>
+  - <status>: <why>
 **Tracking:** <owner>/<repo>#<n>, one ref per issue created in 8a
 EOF
 )"
