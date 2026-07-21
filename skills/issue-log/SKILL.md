@@ -68,12 +68,14 @@ Optional keys:
 | work | `unit-complete` | 🔨 | **Did** (always), **Solved** (only when a problem was solved) |
 | work | `unit-blocked` | ⚠️ | **Blocked:** reason; optional `blocked_by` |
 | deep-review | `review-written` | 🔍 | Severity counts + the findings table from the terminal summary (per-P1/P2 rows, P3 roll-up) |
-| review-walk | `walk-complete` | 🚶 | Summary line + every walked issue as "what — status: why"; tallies in the marker's `counts` |
+| review-walk | `walk-complete` | 🚶 | Summary line + every walked issue as "what — status: why"; tallies in the marker's `counts`; tracking refs for deferred items filed as issues |
 | side-quest | `side-quest-filed` | 🧭 | What was found, tracking-issue link (`tracking`, `followup:true`) |
 | ship | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
 | land | `pr-merged` | ✅ | 2-3 sentence summary of what landed + follow-ups (user-confirmed prose) |
 
 Event names are these exact strings. New events join this table before any skill emits them.
+
+Document-producing skills (brainstorm, plan, deep-review, side-quest) start the human body with a `**Doc:**` field holding the repo-relative doc path, and carry the same path in the marker's `paths`.
 
 ## Encoding rule
 

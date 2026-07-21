@@ -125,10 +125,11 @@ Posting mechanics, marker encoding, confirmation posture, and failure handling a
 
 ```bash
 gh issue comment <originating-issue> --repo <owner>/<repo> --body "$(cat <<'EOF'
-<!-- cc-forge-log v1: {"skill":"side-quest","event":"side-quest-filed","followup":true,"tracking":"<owner>/<repo>#<tracking-issue>","blocked_by":["<owner>/<repo>#<originating-issue>"]} -->
+<!-- cc-forge-log v1: {"skill":"side-quest","event":"side-quest-filed","followup":true,"tracking":"<owner>/<repo>#<tracking-issue>","blocked_by":["<owner>/<repo>#<originating-issue>"],"paths":["docs/side-quests/<filename>"]} -->
 
 ### 🧭 /side-quest — <short side-quest title>
 
+**Doc:** `docs/side-quests/<filename>`
 **Found:** <one line: what was discovered and why it's out of scope for the current work>
 **Tracking:** <owner>/<repo>#<tracking-issue>
 EOF

@@ -286,6 +286,7 @@ gh issue comment <issue> --repo <owner>/<repo> --body "$(cat <<'EOF'
 
 ### 🔍 /deep-review — review written
 
+**Doc:** `docs/reviews/<filename>`
 **Findings:** <n> P1 / <n> P2 / <n> P3
 
 | Tier | Count | Issue | Category | Effort |

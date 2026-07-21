@@ -241,7 +241,8 @@ After all issues are terminal:
 - Show counts by terminal status: `done`, `deferred`, `wont-fix`.
 - List deferred items with their reasons (the user may want these as follow-up
   tickets).
-- Stamp the walk outcome (Step 8a).
+- Offer tracking issues for the deferred items (Step 8a), then stamp the walk
+  outcome (Step 8b).
 - Suggest next steps:
   - If any `done` issues produced code changes, check whether the current branch has
     an open PR (`gh pr view --json state,number`):
@@ -251,10 +252,48 @@ After all issues are terminal:
       deferred / skipped). That skill owns the commit+push+comment; don't do it here.
     - **No PR**: suggest `/ship`.
 
-  - If many `deferred` items exist → suggest opening follow-up issues via
-    `/issue-from-context` or `/side-quest`.
+### 8a. Tracking Issues for Deferred Items
 
-### 8a. Stamp the Walk Outcome
+Derive the deferred list by re-reading the doc's `Status:` lines — never from
+session memory — so a walk resumed across sessions covers every deferred issue,
+not just this session's. If none are `deferred`, skip to 8b.
+
+Resolve `<owner>/<repo>` from `git remote get-url origin`. Then ask once via
+`AskUserQuestion`:
+
+> "File tracking issues for the <n> deferred items?"
+
+- **Create all** — one issue per deferred item.
+- **Pick which** — let the user select a subset, then create those.
+- **Skip** — create nothing.
+
+For each item being created, build the body from the shared
+[issue template](../issue-from-context/issue-template.md) — same structure
+`/issue-from-context` uses — filled from the review doc:
+
+- **Summary**: the finding's one-line description plus its defer reason
+- **Evidence**: the finding's `Problem:` section
+- **Expected**: the finding's `Fix:` section
+- **Actual (if bug)** / **Repro (if applicable)**: fill when the finding is a
+  bug with observed behavior; otherwise "n/a"
+
+```bash
+gh issue create \
+  --repo <owner>/<repo> \
+  --title "<the issue's title from its review-doc heading>" \
+  --label "follow-up" \
+  --body "$(cat <<'EOF'
+<filled issue template>
+EOF
+)"
+```
+
+- If the command errors because the `follow-up` label doesn't exist, re-run
+  without `--label` and tell the user the label is missing on this repo.
+- Capture each created issue's number from the output URL as
+  `<owner>/<repo>#<n>` — Step 8b lists these refs.
+
+### 8b. Stamp the Walk Outcome
 
 The stamp fires only here, at final summary — a walk abandoned before Step 8
 posts nothing. Statuses come from the doc's `Status:` lines (`done` →
@@ -265,7 +304,7 @@ in [the issue-log spec](../issue-log/SKILL.md).
 
 ```bash
 gh issue comment <issue> --repo <owner>/<repo> --body "$(cat <<'EOF'
-<!-- cc-forge-log v1: {"skill":"review-walk","event":"walk-complete","counts":{"implemented":<n>,"deferred":<n>,"skipped":<n>}} -->
+<!-- cc-forge-log v1: {"skill":"review-walk","event":"walk-complete","counts":{"implemented":<n>,"deferred":<n>,"skipped":<n>},"followup":true} -->
 
 ### 🚶 /review-walk — walk complete
 
@@ -273,11 +312,14 @@ gh issue comment <issue> --repo <owner>/<repo> --body "$(cat <<'EOF'
 **Issues:**
 - <P<X>-<N>: one line on what the issue is> — <status>: <why>
 - <P<X>-<N>: one line on what the issue is> — <status>: <why>
+**Tracking:** <owner>/<repo>#<n>, one ref per issue created in 8a
 EOF
 )"
 ```
 
-Enumerate every walked issue, in doc order.
+Enumerate every walked issue, in doc order. Include `"followup":true` and the
+`**Tracking:**` line only when 8a created at least one tracking issue; omit
+both otherwise.
 
 ## Fallback Mode Details
 

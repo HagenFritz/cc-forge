@@ -604,7 +604,7 @@ gh issue comment <issue-number> --repo <owner>/<repo> --body "$(cat <<'EOF'
 
 ### 📋 /plan — <plan title>
 
-**Plan:** `docs/plans/<plan-filename>` — <N> implementation units
+**Doc:** `docs/plans/<plan-filename>` — <N> implementation units
 **Units:**
 1. <Unit name> — <one-sentence summary of what it will do>
 2. <Unit name> — <one-sentence summary of what it will do>

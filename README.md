@@ -59,7 +59,7 @@ Restart Claude Code after copying. Skills become available as `/<name>` slash co
 | `/deepen-plan` | Stress-tests an existing plan and selectively strengthens weak sections with targeted research | A Standard/Deep or high-risk plan needs more confidence around decisions, sequencing, or risk |
 | `/work` | Executes a work plan unit-by-unit, following repo patterns and testing as it goes | You have a plan and want it implemented |
 | `/deep-review` | Exhaustive multi-agent code review using worktrees; writes a structured review doc | Complex, risky, or large changes that warrant deep review |
-| `/review-walk` | Walks a `/deep-review` document interactively, group-by-group, with implement/defer/skip per issue; updates `Status:` inline so it's resumable; stamps the walk outcome at the end | You have a `docs/reviews/*.md` and want to act on it methodically |
+| `/review-walk` | Walks a `/deep-review` document interactively, group-by-group, with implement/defer/skip per issue; updates `Status:` inline so it's resumable; at walk end, offers tracking issues for deferred items (shared issue template) and stamps the outcome | You have a `docs/reviews/*.md` and want to act on it methodically |
 | `/compound` | Documents a recently solved problem so the knowledge compounds | Right after solving something non-obvious worth recording |
 | `/ideate` | Generates and critically evaluates grounded improvement ideas for the project | "What should I improve?" — you want AI-generated directions before brainstorming one |
 | `/deprecate` | Plan-only safe removal of a named concept: parallel research agents find every reference, output a leaves-first plan with compat-risk flags | "Rip out X" / "retire X" — hand the resulting plan to `/work` |
