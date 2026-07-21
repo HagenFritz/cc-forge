@@ -241,6 +241,8 @@ After all issues are terminal:
 - Show counts by terminal status: `done`, `deferred`, `wont-fix`.
 - List deferred items with their reasons (the user may want these as follow-up
   tickets).
+- Offer tracking issues for the deferred items (Step 8a), then stamp the walk
+  outcome (Step 8b).
 - Suggest next steps:
   - If any `done` issues produced code changes, check whether the current branch has
     an open PR (`gh pr view --json state,number`):
@@ -249,8 +251,72 @@ After all issues are terminal:
       branch, and posts a PR comment mapping each finding to its outcome (fixed /
       deferred / skipped). That skill owns the commit+push+comment; don't do it here.
     - **No PR**: suggest `/ship`.
-  - If many `deferred` items exist → suggest opening follow-up issues via
-    `/issue-from-context` or `/side-quest`.
+
+### 8a. Tracking Issues for Deferred Items
+
+Derive the deferred list by re-reading the doc's `Status:` lines — never from
+session memory — so a walk resumed across sessions covers every deferred issue,
+not just this session's. If none are `deferred`, skip to 8b.
+
+Resolve `<owner>/<repo>` from `git remote get-url origin`. Then ask once via
+`AskUserQuestion`:
+
+> "File tracking issues for the <n> deferred items?"
+
+- **Create all** — one issue per deferred item.
+- **Pick which** — let the user select a subset, then create those.
+- **Skip** — create nothing.
+
+For each item being created:
+
+```bash
+gh issue create \
+  --repo <owner>/<repo> \
+  --title "<the issue's title from its review-doc heading>" \
+  --label "follow-up" \
+  --body "$(cat <<'EOF'
+<the issue's description from the review doc — Problem: and Fix: — plus its Defer reason>
+EOF
+)"
+```
+
+- If the command errors because the `follow-up` label doesn't exist, re-run
+  without `--label` and tell the user the label is missing on this repo.
+- Capture each created issue's number from the output URL as
+  `<owner>/<repo>#<n>` — Step 8b lists these refs.
+
+### 8b. Stamp the Walk Outcome
+
+The stamp fires only here, at final summary — a walk abandoned before Step 8
+posts nothing. Counts come from the doc's `Status:` lines (`done` → implemented,
+`deferred` → deferred, `wont-fix` → skipped), so resumed walks report correctly.
+Issue-number resolution (including the skip when none resolves), posting
+mechanics, marker encoding, and failure handling are defined in
+[the issue-log spec](../issue-log/SKILL.md).
+
+```bash
+gh issue comment <issue> --repo <owner>/<repo> --body "$(cat <<'EOF'
+<!-- cc-forge-log v1: {"skill":"review-walk","event":"walk-complete","counts":{"implemented":<n>,"deferred":<n>,"skipped":<n>},"followup":true} -->
+
+### 🚶 /review-walk — walk complete
+
+**Implemented (<n>):**
+- <P<X>-<N>: one-liner>
+**Deferred (<n>):**
+- <P<X>-<N>: one-liner — defer reason>
+**Skipped (<n>):**
+- <P<X>-<N>: one-liner>
+**Tracking:** <owner>/<repo>#<n>, one ref per issue created in 8a
+EOF
+)"
+```
+
+Adjustments before posting:
+- Include `"followup":true` only when 8a created at least one tracking issue;
+  omit the key otherwise, and drop the `**Tracking:**` line with it.
+- Tracking refs live in the human section only — the marker's `tracking` key is
+  single-string and is not used for the batch case.
+- Drop any Implemented/Deferred/Skipped block whose count is zero.
 
 ## Fallback Mode Details
 
