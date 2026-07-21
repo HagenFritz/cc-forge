@@ -1,6 +1,6 @@
 {
   "name": "cc-forge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A streamlined Claude Code plugin for structured development workflows, code review, and research automation.",
   "author": {
     "name": "Hagen Fritz"
