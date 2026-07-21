@@ -588,6 +588,38 @@ Plan written to docs/plans/[filename]
 
 **Pipeline mode:** If invoked from an automated workflow such as LFG, SLFG, or any `disable-model-invocation` context, skip interactive questions. Make the needed choices automatically and proceed to writing the plan.
 
+#### 5.2b Stamp the Origin Issue
+
+Post an issue-log stamp for the plan — once, at the first point an issue number is available. Envelope, resolution precedence, posting, and skip/failure rules are in [the issue-log spec](../issue-log/SKILL.md).
+
+- If an issue is already resolvable now (per the spec's resolution precedence), post the stamp below immediately after writing the plan file.
+- Otherwise, defer: if the user selects **Create Issue** in 5.3, the Issue Creation section posts this same stamp on the just-created issue.
+- If neither happens, the stamp is skipped.
+
+Never post the stamp twice.
+
+```bash
+gh issue comment <issue-number> --repo <owner>/<repo> --body "$(cat <<'EOF'
+<!-- cc-forge-log v1: {"skill":"plan","event":"plan-written","paths":["docs/plans/<plan-filename>"]} -->
+
+### 📋 /plan — <plan title>
+
+**Plan:** `docs/plans/<plan-filename>` — <N> implementation units
+**Scope:** <1-2 sentence scope summary>
+**Origin:** `docs/brainstorms/<origin-filename>`
+
+<details><summary>Origin key decisions</summary>
+
+- <key decision carried from the origin doc>
+- <key decision carried from the origin doc>
+
+</details>
+EOF
+)"
+```
+
+Omit the **Origin** line and the `<details>` block when the plan has no `origin:` frontmatter.
+
 #### 5.3 Post-Generation Options
 
 After writing the plan file, present the options using the platform's blocking question tool when available (see Interaction Method). Otherwise present numbered options in chat and wait for the user's reply before proceeding.
@@ -645,6 +677,7 @@ When the user selects "Create Issue", detect their project tracker from `AGENTS.
 
 After issue creation:
 - Display the issue URL
+- If the plan stamp was not posted in 5.2b (no issue was resolvable then), post it now on the just-created issue using the stamp block in 5.2b — never twice
 - Ask whether to proceed to `/work`
 
 NEVER CODE! Research, decide, and write the plan.

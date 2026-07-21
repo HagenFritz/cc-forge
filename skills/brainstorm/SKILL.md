@@ -306,3 +306,19 @@ Planning is blocked by:
 
 Resume with `/brainstorm` when ready to resolve these before planning.
 ```
+
+After displaying either summary, if a requirements document was written and a GitHub issue is already known in this session, post an issue-log stamp on it — envelope, posting, and skip/failure rules per [the issue-log spec](../issue-log/SKILL.md); otherwise skip silently (the common case, since brainstorms usually precede the issue).
+
+```bash
+gh issue comment <issue-number> --repo <owner>/<repo> --body "$(cat <<'EOF'
+<!-- cc-forge-log v1: {"skill":"brainstorm","event":"requirements-written","paths":["docs/brainstorms/<requirements-filename>"]} -->
+
+### 💡 /brainstorm — <topic title>
+
+**Doc:** `docs/brainstorms/<requirements-filename>`
+**Key decisions:**
+- <key decision, 2-4 bullets>
+**Unresolved:** <outstanding questions as one-liners, or "none">
+EOF
+)"
+```
