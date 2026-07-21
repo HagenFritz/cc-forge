@@ -88,6 +88,8 @@ Side-quest documented at `docs/side-quests/[filename]`.
 
 Back the side-quest with a real GitHub issue so it stays visible without local state.
 
+If the doc's `tracking:` frontmatter is already filled (a previous or interrupted run created the issue), skip creation and reuse that ref in Phase 4.
+
 1. Draft the tracking issue:
    - **Title:** the side-quest title from Phase 1.
    - **Body:** the doc's `## Description` section (include `## Impact / Why it matters` when it adds signal).
@@ -95,18 +97,18 @@ Back the side-quest with a real GitHub issue so it stays visible without local s
    - **Question 1:** "File this as a GitHub tracking issue?" — options **Create** (set the `preview` field to the drafted title, label `follow-up`, and body) and **Skip**.
    - **Question 2** (only when an originating issue resolved in Context Gathering): "Does this side-quest depend on the current work (#[number]) landing first?" — options **Yes** / **No**.
 3. If the user skips: leave `tracking:` empty and go to Phase 4 — the stamp still posts, covering what exists.
-4. If the user confirms, create the issue:
+4. If the user confirms, write the body below to a temp file with the Write tool, then create the issue:
+   ```markdown
+   <Description section from the doc>
+
+   Blocked by <owner>/<repo>#<originating-issue>
+   ```
    ```bash
    gh issue create \
      --repo <owner>/<repo> \
      --title "<title>" \
      --label "follow-up" \
-     --body "$(cat <<'EOF'
-   <Description section from the doc>
-
-   Blocked by <owner>/<repo>#<originating-issue>
-   EOF
-   )"
+     --body-file <temp-file>
    ```
    - Include the `Blocked by` line only when Question 2 was answered **Yes**; omit it otherwise.
    - If the command errors because the `follow-up` label doesn't exist, re-run without `--label` and tell the user the label is missing on this repo.
@@ -119,12 +121,17 @@ Back the side-quest with a real GitHub issue so it stays visible without local s
 
 ## Phase 4: Stamp the Originating Issue
 
-Skip this phase entirely if no originating issue resolved in Context Gathering (the tracking issue from Phase 3 still stands — there is just nowhere to stamp).
+What this phase does depends on the two conditions established earlier:
 
-Posting mechanics, marker encoding, confirmation posture, and failure handling are defined in [the issue-log spec](../issue-log/SKILL.md).
+| Originating issue | Tracking issue | Phase 4 behavior |
+|---|---|---|
+| resolved | created | full stamp below: `followup:true`, `tracking`, `blocked_by` (the latter only when the tracking issue carries the `Blocked by` line) |
+| resolved | skipped | stamp with only `paths` in the marker; drop the `**Tracking:**` line — record what exists |
+| not resolved | either | skip this phase entirely (the tracking issue still stands — there is just nowhere to stamp) |
 
-```bash
-gh issue comment <originating-issue> --repo <owner>/<repo> --body "$(cat <<'EOF'
+Posting mechanics, marker encoding, confirmation posture, and failure handling are defined in [the issue-log spec](../issue-log/SKILL.md). Compose the body below, write it to a temp file with the Write tool, and post:
+
+```markdown
 <!-- cc-forge-log v1: {"skill":"side-quest","event":"side-quest-filed","followup":true,"tracking":"<owner>/<repo>#<tracking-issue>","blocked_by":["<owner>/<repo>#<originating-issue>"],"paths":["docs/side-quests/<filename>"]} -->
 
 ### 🧭 /side-quest — <short side-quest title>
@@ -132,13 +139,10 @@ gh issue comment <originating-issue> --repo <owner>/<repo> --body "$(cat <<'EOF'
 **Doc:** `docs/side-quests/<filename>`
 **Found:** <one line: what was discovered and why it's out of scope for the current work>
 **Tracking:** <owner>/<repo>#<tracking-issue>
-EOF
-)"
 ```
-
-Adjustments before posting:
-- Include `blocked_by` only when the tracking issue's body carries the `Blocked by` line; omit the key otherwise.
-- If tracking-issue creation was skipped in Phase 3: omit `"followup":true`, `"tracking"`, and `"blocked_by"` from the marker and drop the `**Tracking:**` line — the stamp records only what exists.
+```bash
+gh issue comment <originating-issue> --repo <owner>/<repo> --body-file <temp-file>
+```
 
 ## Phase 5: Next Steps
 

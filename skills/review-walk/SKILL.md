@@ -267,6 +267,9 @@ Resolve `<owner>/<repo>` from `git remote get-url origin`. Then ask once via
 - **Pick which** — let the user select a subset, then create those.
 - **Skip** — create nothing.
 
+Skip any deferred item whose doc entry already carries a `Tracking:` line — a
+resumed walk must not re-file issues that exist.
+
 For each item being created, build the body from the shared
 [issue template](../issue-from-context/issue-template.md) — same structure
 `/issue-from-context` uses — filled from the review doc:
@@ -277,21 +280,26 @@ For each item being created, build the body from the shared
 - **Actual (if bug)** / **Repro (if applicable)**: fill when the finding is a
   bug with observed behavior; otherwise "n/a"
 
+Write the filled template to a temp file with the Write tool, then:
+
 ```bash
 gh issue create \
   --repo <owner>/<repo> \
   --title "<the issue's title from its review-doc heading>" \
   --label "follow-up" \
-  --body "$(cat <<'EOF'
-<filled issue template>
-EOF
-)"
+  --body-file <temp-file>
 ```
 
 - If the command errors because the `follow-up` label doesn't exist, re-run
   without `--label` and tell the user the label is missing on this repo.
-- Capture each created issue's number from the output URL as
-  `<owner>/<repo>#<n>` — Step 8b lists these refs.
+- **Immediately after each successful create**, add a `Tracking:
+  <owner>/<repo>#<n>` line under that item's `Status:` line in the review doc —
+  this is the durable record; Step 8b's list is derived from it, and an
+  interrupted batch resumes without duplicates.
+- If a create fails for any other reason, note the item and continue with the
+  rest; after the loop, report which deferred items did **not** get a tracking
+  issue. Step 8b's stamp must reflect the shortfall (e.g. `Tracking: 2 of 4
+  filed — P2-3, P2-5 failed`), never silently list only the successes.
 
 ### 8b. Stamp the Walk Outcome
 
@@ -302,9 +310,10 @@ report correctly. Issue-number resolution (including the skip when none
 resolves), posting mechanics, marker encoding, and failure handling are defined
 in [the issue-log spec](../issue-log/SKILL.md).
 
-```bash
-gh issue comment <issue> --repo <owner>/<repo> --body "$(cat <<'EOF'
-<!-- cc-forge-log v1: {"skill":"review-walk","event":"walk-complete","counts":{"implemented":<n>,"deferred":<n>,"skipped":<n>},"followup":true} -->
+Compose the body below, write it to a temp file with the Write tool, and post:
+
+```markdown
+<!-- cc-forge-log v1: {"skill":"review-walk","event":"walk-complete","followup":true} -->
 
 ### 🚶 /review-walk — walk complete
 
@@ -316,9 +325,10 @@ gh issue comment <issue> --repo <owner>/<repo> --body "$(cat <<'EOF'
 - <P<X>-<N>: short title>
   - <one line on what the issue is>
   - <status>: <why>
-**Tracking:** <owner>/<repo>#<n>, one ref per issue created in 8a
-EOF
-)"
+**Tracking:** <owner>/<repo>#<n>, one ref per `Tracking:` line in the doc — note any shortfall from 8a
+```
+```bash
+gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
 ```
 
 Enumerate every walked issue, in doc order. Include `"followup":true` and the

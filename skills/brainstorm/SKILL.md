@@ -307,10 +307,9 @@ Planning is blocked by:
 Resume with `/brainstorm` when ready to resolve these before planning.
 ```
 
-After displaying either summary, if a requirements document was written and a GitHub issue is already known in this session, post an issue-log stamp on it — envelope, posting, and skip/failure rules per [the issue-log spec](../issue-log/SKILL.md); otherwise skip silently (the common case, since brainstorms usually precede the issue).
+After displaying either summary, if a requirements document was written and an issue is resolvable per [the issue-log spec](../issue-log/SKILL.md)'s resolution precedence, post an issue-log stamp on it — envelope, posting, and skip/failure rules are the spec's; otherwise skip silently (the common case, since brainstorms usually precede the issue). Compose the body below, write it to a temp file with the Write tool, and post:
 
-```bash
-gh issue comment <issue-number> --repo <owner>/<repo> --body "$(cat <<'EOF'
+```markdown
 <!-- cc-forge-log v1: {"skill":"brainstorm","event":"requirements-written","paths":["docs/brainstorms/<requirements-filename>"]} -->
 
 ### 🧠 /brainstorm — <topic title>
@@ -319,6 +318,7 @@ gh issue comment <issue-number> --repo <owner>/<repo> --body "$(cat <<'EOF'
 **Requirements:**
 - R1. <requirement — port every requirement from the doc's Requirements section verbatim, not a selection>
 - R2. <…>
-EOF
-)"
+```
+```bash
+gh issue comment <issue-number> --repo <owner>/<repo> --body-file <temp-file>
 ```

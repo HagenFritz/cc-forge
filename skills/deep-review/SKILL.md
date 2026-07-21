@@ -280,8 +280,9 @@ On success, verify the doc rather than trusting the return message:
 
 **Stamp the linked issue:** once the doc has passed every verification check above (the same gate that deleted the scratch), post a stamp on the issue this review's branch/PR is tied to. The clean-review case posts no stamp — there is no doc to reference. A fallback-produced doc never passes this gate, so it posts none either. Issue-number resolution (including the skip when none resolves), posting mechanics, marker encoding, and failure handling are defined in [the issue-log spec](../issue-log/SKILL.md).
 
-```bash
-gh issue comment <issue> --repo <owner>/<repo> --body "$(cat <<'EOF'
+Compose the body below, write it to a temp file with the Write tool, and post:
+
+```markdown
 <!-- cc-forge-log v1: {"skill":"deep-review","event":"review-written","paths":["docs/reviews/<filename>"]} -->
 
 ### 🔍 /deep-review — review written
@@ -294,8 +295,9 @@ gh issue comment <issue> --repo <owner>/<repo> --body "$(cat <<'EOF'
 | P1   | <n>   | **P1-1: <short title>** — <one-line description> | <category> | <effort> |
 | P2   | <n>   | **P2-1: <short title>** — <one-line description> | <category> | <effort> |
 | P3   | <n>   | _<n> nice-to-haves: <one-line roll-up of themes> (full detail in the review doc)_ | — | — |
-EOF
-)"
+```
+```bash
+gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
 ```
 
 The table is the same one Step 3's terminal summary builds: every P1 and P2 gets its own row (copy them from the review doc's Summary), P3s are one roll-up row — nothing else in the body.

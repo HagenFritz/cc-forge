@@ -7,7 +7,7 @@ rm -f .devin/workflows/*.md
 for skill_file in skills/*/SKILL.md; do
   skill=$(basename $(dirname "$skill_file"))
   # Reference-only skills (never invoked) get no Devin workflow
-  if grep -q "^user-invocable: false" "$skill_file"; then
+  if grep -qE '^user-invocable:[[:space:]]*"?false"?[[:space:]]*(#.*)?$' "$skill_file"; then
     echo "Skipped ${skill} (user-invocable: false)"
     continue
   fi

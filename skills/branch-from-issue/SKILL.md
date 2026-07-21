@@ -76,16 +76,16 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
 10. **Output the branch name as the `/rename` command.** `/rename` only works when the user invokes it manually — do not run it. Print the full command using the branch name:
     > `/rename {branch-name}`
 
-11. **Post an issue-log stamp on the GitHub issue** (only if an issue number was provided). Post per [the issue-log spec](../issue-log/SKILL.md)'s posting rules:
-    ```bash
-    gh issue comment $ARGUMENTS --repo <owner>/<repo> --body "$(cat <<'EOF'
+11. **Post an issue-log stamp on the GitHub issue** (only if an issue number was provided). Compose the body below, write it to a temp file with the Write tool, and post per [the issue-log spec](../issue-log/SKILL.md)'s posting rules:
+    ```markdown
     <!-- cc-forge-log v1: {"skill":"branch-from-issue","event":"branch-created"} -->
 
     ### 🌱 /branch-from-issue — branch created
 
     **Branch:** `{branch-name}`
-    EOF
-    )"
+    ```
+    ```bash
+    gh issue comment $ARGUMENTS --repo <owner>/<repo> --body-file <temp-file>
     ```
 
 12. Output the new branch name.

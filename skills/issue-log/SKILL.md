@@ -53,7 +53,6 @@ Optional keys:
 | `paths` | array | Local doc/worktree paths this event produced or relies on. `unit-complete`/`unit-blocked` stamps always include the plan path (scopes `unit` dedupe across plans). |
 | `pr` | number | PR number for pr events |
 | `tracking` | string | `owner/repo#N` of a tracking issue this event created |
-| `counts` | object | Small integer tallies for multi-item events, e.g. `{"implemented":1,"deferred":2,"skipped":1}` |
 
 **Versioning:** additive-only within v1 — new optional keys, new event names, and new skills never bump the version. A **v2** is required only when an existing key's meaning or read type changes (e.g. `tracking` string → array). Readers skip unknown versions with a warning.
 
@@ -68,7 +67,7 @@ Optional keys:
 | work | `unit-complete` | 🔨 | **Did** (always), **Solved** (only when a problem was solved) |
 | work | `unit-blocked` | ⚠️ | **Blocked:** reason; optional `blocked_by` |
 | deep-review | `review-written` | 🔍 | Severity counts + the findings table from the terminal summary (per-P1/P2 rows, P3 roll-up) |
-| review-walk | `walk-complete` | 🚶 | Summary line + every walked issue as "what — status: why"; tallies in the marker's `counts`; tracking refs for deferred items filed as issues |
+| review-walk | `walk-complete` | 🚶 | Summary line + every walked issue as "what — status: why"; tracking refs for deferred items filed as issues |
 | side-quest | `side-quest-filed` | 🧭 | What was found, tracking-issue link (`tracking`, `followup:true`) |
 | ship | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
 | land | `pr-merged` | ✅ | 2-3 sentence summary of what landed + follow-ups (user-confirmed prose) |
@@ -77,25 +76,28 @@ Event names are these exact strings. New events join this table before any skill
 
 Document-producing skills (brainstorm, plan, deep-review, side-quest) start the human body with a `**Doc:**` field holding the repo-relative doc path, and carry the same path in the marker's `paths`.
 
-## Encoding rule
+## Encoding rules
 
-The payload must never contain the sequence `--` — it can terminate the HTML comment and expose the marker. When serializing any string value (including `unit` titles), replace `--` with `- -`. This applies to the human section's marker line only, not the body below it.
+- The marker line must never contain `--` outside its own delimiters — it can terminate the HTML comment early and expose the marker. When serializing string values (including `unit` titles), replace **every** occurrence, including runs: `---` → `- - -`, `Add --verbose flag` → `Add - -verbose flag`. This applies to the marker line only; the body below it may contain `--` freely.
+- Marker string values are JSON: escape embedded double quotes and backslashes so the payload parses under a strict JSON parser — the reader skips unparseable stamps.
 
 ## Issue-number resolution
 
 Precedence, evaluated top-down; first hit wins:
 
 1. Explicit argument to the skill
-2. Issue already established in session context (e.g. via `/read-issue`, `/triage-issue`)
-3. Branch name: split on `/`, second segment if a positive integer (`feat/57/issue-log-stamps` → 57)
-4. PR body: `Closes #N` / `Fixes #N` / `Resolves #N`
-5. Doc frontmatter (`issue:` in side-quest docs)
+2. Branch name: split on `/`, second segment if a positive integer (`feat/57/issue-log-stamps` → 57)
+3. PR body: `Closes #N` / `Fixes #N` / `Resolves #N`
+4. Doc frontmatter (`issue:` in side-quest docs)
+5. Issue established in session context (e.g. via `/read-issue`, `/triage-issue`) — last resort: a number derived from the branch or PR always outranks a remembered one, so a stale earlier issue never wins over the branch you're on.
+
+Before posting, verify the resolved issue exists (`gh issue view <n>`); if it errors, treat the number as unresolved — this guards against coincidentally-numeric branch segments (`feat/2026/year-name`).
 
 If nothing resolves, **skip the stamp silently** — no error, no prompt. Skills that predate the issue (brainstorm on `main`) skip routinely; this is normal.
 
 ## Posting
 
-- Post with `gh issue comment <n> --repo <owner>/<repo> --body "$(cat <<'EOF' … EOF)"` — always the heredoc form; embedded JSON and backticks break bare `--body` quoting.
+- Compose the full body as text, write it to a temp file with the Write tool, and post with `gh issue comment <n> --repo <owner>/<repo> --body-file <temp-file>`. **Never inline the body in shell** — no `--body "…"`, no heredocs: ported free text (requirements, findings, defer reasons) can contain quotes, backticks, or a line that is literally `EOF`, and none of it may ever be shell-parsed.
 - Fixed-format stamps post **unconfirmed**. Stamps containing drafted prose shown to the user for approval (land's `pr-merged`) keep their existing preview-confirm flow; the marker line is part of the previewed body.
 - **Failure is never fatal and never silent**: if the comment fails after the skill's real work succeeded, report one line — `couldn't stamp #<n>: <reason>` — plus the manual command, and continue. Closed issues accept comments; locked ones don't.
 
