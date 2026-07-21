@@ -313,12 +313,12 @@ After displaying either summary, if a requirements document was written and a Gi
 gh issue comment <issue-number> --repo <owner>/<repo> --body "$(cat <<'EOF'
 <!-- cc-forge-log v1: {"skill":"brainstorm","event":"requirements-written","paths":["docs/brainstorms/<requirements-filename>"]} -->
 
-### 💡 /brainstorm — <topic title>
+### 🧠 /brainstorm — <topic title>
 
 **Doc:** `docs/brainstorms/<requirements-filename>`
-**Key decisions:**
-- <key decision, 2-4 bullets>
-**Unresolved:** <outstanding questions as one-liners, or "none">
+**Requirements:**
+- R1. <requirement — port every requirement from the doc's Requirements section verbatim, not a selection>
+- R2. <…>
 EOF
 )"
 ```

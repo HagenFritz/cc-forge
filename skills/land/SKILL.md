@@ -157,15 +157,18 @@ Typical flow: open the PR with `/ship` → run `/land` → answer the confirm pr
 36. **Skip entirely if** there's no `<issue>` from step 10, or the merge in Phase 9 did not succeed (never comment "resolved" on an issue whose PR isn't merged). A squash-merge with `Closes #<issue>` in the PR body auto-closes the issue; this comment adds the human-readable *what-shipped*, it does not close anything itself.
 37. **Verify the issue is real and open-or-just-closed:** `gh issue view <issue> --json number,state,title`. If it errors (wrong number, no access), skip with a one-line note — don't fabricate. If `state` is already `CLOSED` from before this PR, still comment (the resolution context is useful) but don't imply this PR closed it.
 38. **Draft a ≤3-sentence summary** of what shipped, aimed at someone who filed or is watching the issue — plain language, no diff stats or file lists. Source it from the PR title, the `## Related` summary you just composed, and the merged diff. Say what changed and, if not obvious, the effect. Keep it to at most three sentences.
-39. **Compose the comment.** Composition always produces the whole body — line 1 is the issue-log marker per [the issue-log spec](../issue-log/SKILL.md), then a blank line, then the resolution text — so every recompose (including step 40's Edit-summary branch) re-includes the marker and the preview always shows it:
+39. **Compose the comment.** Composition always produces the whole body — so every recompose (including step 40's Edit-summary branch) re-includes the marker line and the preview always shows it:
     ```markdown
     <!-- cc-forge-log v1: {"skill":"land","event":"pr-merged","pr":<N>} -->
 
-    Resolved by #<N> (merged).
+    ### ✅ /land — PR #<N> merged
 
-    <≤3-sentence summary>
+    <2-3 sentence summary of what landed, from step 38>
+
+    **Follow-ups:**
+    - <known follow-up: deferred review items, side-quests, or debt discovered during this branch>
     ```
-    (If the issue was already closed before this PR, replace the `Resolved by` line with `Addressed by #<N> (merged).`)
+    Omit the **Follow-ups** section when none are known. If the issue was already closed before this PR, say so in the summary wording rather than implying this PR closed it.
 40. **Confirm before posting** via `AskUserQuestion`, showing the composed comment in a `preview`: **Post to issue** (default) / **Edit summary** (free-form revised summary, recompose per step 39, re-confirm) / **Skip** (don't comment). On Post:
     ```bash
     gh issue comment <issue> --body "$(cat <<'EOF'

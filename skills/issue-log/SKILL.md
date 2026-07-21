@@ -61,17 +61,17 @@ Optional keys:
 
 | Skill | Event | Glyph | Payload fields (human section) |
 |---|---|---|---|
-| brainstorm | `requirements-written` | 💡 | Doc path, 2-4 key decisions, unresolved questions |
-| plan | `plan-written` | 📋 | Plan path, 1-2 sentence scope, unit count, origin brainstorm path + key decisions |
+| brainstorm | `requirements-written` | 🧠 | Doc path, full requirements list (direct port from the doc) |
+| plan | `plan-written` | 📋 | Plan path, unit count, every unit enumerated with a one-sentence summary |
 | tree | `worktree-created` | 🌳 | Branch, worktree path (also in `paths`) |
 | branch-from-issue | `branch-created` | 🌱 | Branch |
 | work | `unit-complete` | 🔨 | **Did** (always), **Solved** (only when a problem was solved) |
 | work | `unit-blocked` | ⚠️ | **Blocked:** reason; optional `blocked_by` |
-| deep-review | `review-written` | 🔍 | Doc path, finding counts by severity, top 2-3 findings |
-| review-walk | `walk-complete` | 🚶 | Implemented / deferred / skipped one-liners; tallies in the marker's `counts`; `tracking` refs per created issue in the human section |
+| deep-review | `review-written` | 🔍 | Severity counts + the findings table from the terminal summary (per-P1/P2 rows, P3 roll-up) |
+| review-walk | `walk-complete` | 🚶 | Summary line + every walked issue as "what — status: why"; tallies in the marker's `counts` |
 | side-quest | `side-quest-filed` | 🧭 | What was found, tracking-issue link (`tracking`, `followup:true`) |
 | ship | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
-| land | `pr-merged` | ✅ | Resolution summary (user-confirmed prose) |
+| land | `pr-merged` | ✅ | 2-3 sentence summary of what landed + follow-ups (user-confirmed prose) |
 
 Event names are these exact strings. New events join this table before any skill emits them.
 

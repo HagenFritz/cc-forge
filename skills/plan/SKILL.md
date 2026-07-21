@@ -605,20 +605,14 @@ gh issue comment <issue-number> --repo <owner>/<repo> --body "$(cat <<'EOF'
 ### 📋 /plan — <plan title>
 
 **Plan:** `docs/plans/<plan-filename>` — <N> implementation units
-**Scope:** <1-2 sentence scope summary>
-**Origin:** `docs/brainstorms/<origin-filename>`
-
-<details><summary>Origin key decisions</summary>
-
-- <key decision carried from the origin doc>
-- <key decision carried from the origin doc>
-
-</details>
+**Units:**
+1. <Unit name> — <one-sentence summary of what it will do>
+2. <Unit name> — <one-sentence summary of what it will do>
 EOF
 )"
 ```
 
-Omit the **Origin** line and the `<details>` block when the plan has no `origin:` frontmatter.
+Enumerate every implementation unit, in plan order.
 
 #### 5.3 Post-Generation Options
 

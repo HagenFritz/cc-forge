@@ -286,15 +286,18 @@ gh issue comment <issue> --repo <owner>/<repo> --body "$(cat <<'EOF'
 
 ### 🔍 /deep-review — review written
 
-**Doc:** `docs/reviews/<filename>`
 **Findings:** <n> P1 / <n> P2 / <n> P3
-**Top findings:**
-- <P1-1: one-line description>
-- <next finding: one-line description>
-- <third finding: one-line description, only when it carries signal>
+
+| Tier | Count | Issue | Category | Effort |
+|------|-------|-------|----------|--------|
+| P1   | <n>   | **P1-1: <short title>** — <one-line description> | <category> | <effort> |
+| P2   | <n>   | **P2-1: <short title>** — <one-line description> | <category> | <effort> |
+| P3   | <n>   | _<n> nice-to-haves: <one-line roll-up of themes> (full detail in the review doc)_ | — | — |
 EOF
 )"
 ```
+
+The table is the same one Step 3's terminal summary builds: every P1 and P2 gets its own row (copy them from the review doc's Summary), P3s are one roll-up row — nothing else in the body.
 
 #### Step 3: Summary Report
 
