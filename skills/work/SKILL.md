@@ -96,6 +96,7 @@ This command takes a work document (plan, specification, or todo file) and execu
      - Run System-Wide Test Check (see below)
      - Run tests after changes
      - Mark task as completed
+     - Stamp any completed plan unit on the issue (see below)
      - Evaluate for incremental commit (see below)
    ```
 
@@ -121,6 +122,36 @@ This command takes a work document (plan, specification, or todo file) and execu
 
    **When this matters most:** Any change that touches models with callbacks, error handling with fallback/retry, or functionality exposed through multiple interfaces.
 
+   **Issue-Log Stamps** — When a completed task finishes a plan implementation unit, post a `unit-complete` stamp to the tracked issue. Resolve the issue number and post per [the issue-log spec](../issue-log/SKILL.md) (in a worktree the branch-name segment is the common case; when nothing resolves, the spec's skip applies). A skipped or failed stamp never blocks marking the unit complete or continuing the loop.
+
+   Stamps are per plan unit, not per task or per commit: tasks split and merge relative to units, and small related units may land in one commit — post one stamp for each plan unit that reached completion. Compose the `unit` key by re-reading that unit's checkbox heading from the plan file at stamp time (ordinal + title) — never the in-session task title. `paths` carries the plan file path. Keep the body terse: the commit carries the diff; the stamp carries the recall value. Include **Solved:** only when a real problem was solved during the unit; omit the line otherwise.
+
+   Compose the body below, write it to a temp file with the Write tool, and post:
+
+   ```markdown
+   <!-- cc-forge-log v1: {"skill":"work","event":"unit-complete","unit":"<ordinal>: <title from plan checkbox heading>","paths":["<plan file path>"]} -->
+
+   ### 🔨 /work — unit <ordinal>: <title>
+
+   **Did:** <one-liner: what the unit delivered>
+   **Solved:** <one-liner: the problem solved — omit this line when none>
+   ```
+   ```bash
+   gh issue comment <n> --repo <owner>/<repo> --body-file <temp-file>
+   ```
+
+   When a unit stalls and work moves on or stops, post a `unit-blocked` stamp instead — a blocked unit never receives `unit-complete`. Include `blocked_by` in the marker only when concrete refs gate the unit; drop the key otherwise:
+
+   ```markdown
+   <!-- cc-forge-log v1: {"skill":"work","event":"unit-blocked","unit":"<ordinal>: <title from plan checkbox heading>","paths":["<plan file path>"],"blocked_by":["<owner>/<repo>#<n>"]} -->
+
+   ### ⚠️ /work — unit <ordinal> blocked: <title>
+
+   **Blocked:** <one-liner: what gates the unit and why work moved on>
+   ```
+   ```bash
+   gh issue comment <n> --repo <owner>/<repo> --body-file <temp-file>
+   ```
 
 2. **Incremental Commits**
 

@@ -80,9 +80,17 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
    - **On any `ln -s` failure** (permissions, disk full, cross-device), do not silently continue: note exactly which links are missing so step 11's output reflects it.
    - Whole-dir case: subdirectories created later (e.g. a new `docs/handoff/` entry) are visible automatically. Per-subdir case: a doc subdir created in the primary **after** this worktree needs its own symlink — note this in step 11's output. Removing the worktree (`git worktree remove`, which `/land` calls on merge) deletes the symlinks and leaves the primary checkout's real `docs/` untouched.
 
-10. **Post a comment on the GitHub issue** (only if an issue number was provided):
+10. **Post an issue-log stamp on the GitHub issue** (only if an issue number was provided). Compose the body below, write it to a temp file with the Write tool, and post per [the issue-log spec](../issue-log/SKILL.md)'s posting rules:
+    ```markdown
+    <!-- cc-forge-log v1: {"skill":"tree","event":"worktree-created","paths":["{absolute-worktree-path}"]} -->
+
+    ### 🌳 /tree — worktree created
+
+    **Branch:** `{branch-name}`
+    **Worktree:** `{absolute-worktree-path}`
+    ```
     ```bash
-    gh issue comment $ARGUMENTS --repo <owner>/<repo> --body "Worktree created: \`{branch-name}\` at \`{worktree-path}\`"
+    gh issue comment $ARGUMENTS --repo <owner>/<repo> --body-file <temp-file>
     ```
 
 11. **Output next steps.** If every step-9 symlink was verified present:

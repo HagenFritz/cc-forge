@@ -241,6 +241,8 @@ After all issues are terminal:
 - Show counts by terminal status: `done`, `deferred`, `wont-fix`.
 - List deferred items with their reasons (the user may want these as follow-up
   tickets).
+- Offer tracking issues for the deferred items (Step 8a), then stamp the walk
+  outcome (Step 8b).
 - Suggest next steps:
   - If any `done` issues produced code changes, check whether the current branch has
     an open PR (`gh pr view --json state,number`):
@@ -249,8 +251,89 @@ After all issues are terminal:
       branch, and posts a PR comment mapping each finding to its outcome (fixed /
       deferred / skipped). That skill owns the commit+push+comment; don't do it here.
     - **No PR**: suggest `/ship`.
-  - If many `deferred` items exist → suggest opening follow-up issues via
-    `/issue-from-context` or `/side-quest`.
+
+### 8a. Tracking Issues for Deferred Items
+
+Derive the deferred list by re-reading the doc's `Status:` lines — never from
+session memory — so a walk resumed across sessions covers every deferred issue,
+not just this session's. If none are `deferred`, skip to 8b.
+
+Resolve `<owner>/<repo>` from `git remote get-url origin`. Then ask once via
+`AskUserQuestion`:
+
+> "File tracking issues for the <n> deferred items?"
+
+- **Create all** — one issue per deferred item.
+- **Pick which** — let the user select a subset, then create those.
+- **Skip** — create nothing.
+
+Skip any deferred item whose doc entry already carries a `Tracking:` line — a
+resumed walk must not re-file issues that exist.
+
+For each item being created, build the body from the shared
+[issue template](../issue-from-context/issue-template.md) — same structure
+`/issue-from-context` uses — filled from the review doc:
+
+- **Summary**: the finding's one-line description plus its defer reason
+- **Evidence**: the finding's `Problem:` section
+- **Expected**: the finding's `Fix:` section
+- **Actual (if bug)** / **Repro (if applicable)**: fill when the finding is a
+  bug with observed behavior; otherwise "n/a"
+
+Write the filled template to a temp file with the Write tool, then:
+
+```bash
+gh issue create \
+  --repo <owner>/<repo> \
+  --title "<the issue's title from its review-doc heading>" \
+  --label "follow-up" \
+  --body-file <temp-file>
+```
+
+- If the command errors because the `follow-up` label doesn't exist, re-run
+  without `--label` and tell the user the label is missing on this repo.
+- **Immediately after each successful create**, add a `Tracking:
+  <owner>/<repo>#<n>` line under that item's `Status:` line in the review doc —
+  this is the durable record; Step 8b's list is derived from it, and an
+  interrupted batch resumes without duplicates.
+- If a create fails for any other reason, note the item and continue with the
+  rest; after the loop, report which deferred items did **not** get a tracking
+  issue. Step 8b's stamp must reflect the shortfall (e.g. `Tracking: 2 of 4
+  filed — P2-3, P2-5 failed`), never silently list only the successes.
+
+### 8b. Stamp the Walk Outcome
+
+The stamp fires only here, at final summary — a walk abandoned before Step 8
+posts nothing. Statuses come from the doc's `Status:` lines (`done` →
+implemented, `deferred` → deferred, `wont-fix` → skipped), so resumed walks
+report correctly. Issue-number resolution (including the skip when none
+resolves), posting mechanics, marker encoding, and failure handling are defined
+in [the issue-log spec](../issue-log/SKILL.md).
+
+Compose the body below, write it to a temp file with the Write tool, and post:
+
+```markdown
+<!-- cc-forge-log v1: {"skill":"review-walk","event":"walk-complete","followup":true} -->
+
+### 🚶 /review-walk — walk complete
+
+**Summary:** <n> issues walked — <n> implemented, <n> deferred, <n> skipped
+**Issues:**
+- <P<X>-<N>: short title>
+  - <one line on what the issue is>
+  - <status>: <why>
+- <P<X>-<N>: short title>
+  - <one line on what the issue is>
+  - <status>: <why>
+**Tracking:** <owner>/<repo>#<n>, one ref per `Tracking:` line in the doc — note any shortfall from 8a
+```
+```bash
+gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
+```
+
+Enumerate every walked issue, in doc order. Include `"followup":true` and the
+`**Tracking:**` line only when 8a created at least one tracking issue; omit
+both otherwise.
 
 ## Fallback Mode Details
 

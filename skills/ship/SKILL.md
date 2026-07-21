@@ -104,6 +104,19 @@ Do NOT proceed with any commits or pushes on main/master.
 
 11. Output the PR URL.
 
+12. **Post an issue-log stamp on the linked issue** (skip if `<issue-number>` from step 10a is none). Compose the body below, write it to a temp file with the Write tool, and post per [the issue-log spec](../issue-log/SKILL.md)'s posting rules:
+    ```markdown
+    <!-- cc-forge-log v1: {"skill":"ship","event":"pr-created","pr":<pr-number>} -->
+
+    ### 🚀 /ship — PR created
+
+    **PR:** <pr-url>
+    **Summary:** <one-line summary of the PR>
+    ```
+    ```bash
+    gh issue comment <issue-number> --repo <owner>/<repo> --body-file <temp-file>
+    ```
+
 ## Rules
 
 - **Repo scoping**: Only commit and push changes within the current repository root. Never commit changes from other repositories.

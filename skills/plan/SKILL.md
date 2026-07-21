@@ -588,6 +588,26 @@ Plan written to docs/plans/[filename]
 
 **Pipeline mode:** If invoked from an automated workflow such as LFG, SLFG, or any `disable-model-invocation` context, skip interactive questions. Make the needed choices automatically and proceed to writing the plan.
 
+#### 5.2b Stamp the Origin Issue
+
+Post the plan-written stamp once, at the first point an issue number is resolvable per [the issue-log spec](../issue-log/SKILL.md) — immediately after writing the plan file, or (when nothing resolves yet) right after 5.3's Create Issue step creates one; skipped when neither happens. GitHub tracker only — when the tracker is Linear, skip with a one-line note. Compose the body below, write it to a temp file with the Write tool, and post:
+
+```markdown
+<!-- cc-forge-log v1: {"skill":"plan","event":"plan-written","paths":["docs/plans/<plan-filename>"]} -->
+
+### 📋 /plan — <plan title>
+
+**Doc:** `docs/plans/<plan-filename>` — <N> implementation units
+**Units:**
+1. <Unit name> — <one-sentence summary of what it will do>
+2. <Unit name> — <one-sentence summary of what it will do>
+```
+```bash
+gh issue comment <issue-number> --repo <owner>/<repo> --body-file <temp-file>
+```
+
+Enumerate every implementation unit, in plan order.
+
 #### 5.3 Post-Generation Options
 
 After writing the plan file, present the options using the platform's blocking question tool when available (see Interaction Method). Otherwise present numbered options in chat and wait for the user's reply before proceeding.
@@ -645,6 +665,7 @@ When the user selects "Create Issue", detect their project tracker from `AGENTS.
 
 After issue creation:
 - Display the issue URL
+- If the plan stamp was not posted in 5.2b (no issue was resolvable then) and the tracker is GitHub, post it now on the just-created issue using the stamp block in 5.2b — never twice, and never for Linear issues
 - Ask whether to proceed to `/work`
 
 NEVER CODE! Research, decide, and write the plan.

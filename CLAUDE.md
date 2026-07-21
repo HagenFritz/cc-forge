@@ -23,6 +23,8 @@ docs/             Plans, brainstorms, reviews, initiatives generated at runtime
 
 Core workflow: brainstorm -> plan -> work -> review -> compound
 
+**Issue-log convention:** the workflow skills stamp their key events onto the linked GitHub issue as standardized comments (hidden `<!-- cc-forge-log v1: {...} -->` marker + short human body), making the issue thread a reconstructable work log. All shared rules — envelope, event registry, issue-number resolution, encoding, failure posture, reader contract — live in `skills/issue-log/SKILL.md` (a non-invocable reference skill). Writer skills embed only their own filled stamp template and reference the spec; never restate a shared rule inline.
+
 - `/brainstorm` - Explore requirements and approaches
 - `/plan` - Create implementation plans
 - `/work` - Execute work plans
@@ -32,7 +34,7 @@ Core workflow: brainstorm -> plan -> work -> review -> compound
 - `/ideate` - Generate improvement ideas
 - `/deepen-plan` - Enhance plans with research
 - `/deprecate` - Plan-only safe removal of a named concept (parallel research agents, leaves-first plan, compat-risk flags; hand off to `/work`)
-- `/review-walk` - Guided execution of a `/deep-review` document. Walks issues group-by-group with a plain-English teach moment per group, then per-issue **implement / defer / skip / explain more**. Updates `Status:` inline in the review doc — durable, resumable. Auto-discovers the latest `docs/reviews/*.md` if no path is given. Falls back to issue-by-issue order on pre-enrichment review docs.
+- `/review-walk` - Guided execution of a `/deep-review` document. Walks issues group-by-group with a plain-English teach moment per group, then per-issue **implement / defer / skip / explain more**. Updates `Status:` inline in the review doc — durable, resumable. Auto-discovers the latest `docs/reviews/*.md` if no path is given. Falls back to issue-by-issue order on pre-enrichment review docs. At walk end, offers tracking issues for deferred items (using issue-from-context's template) and stamps the walk outcome on the linked issue.
 - `/caveman` - Ultra-terse response mode (lite/full/ultra). Persists across turns via a `UserPromptSubmit` hook that re-injects a reminder when active. Off by default. Activate with `/caveman <level>`; deactivate with `/caveman off`, "stop caveman", or "normal mode".
 
 **Strategic:**

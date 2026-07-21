@@ -1,6 +1,6 @@
 ---
 name: side-quest
-description: 'Document out-of-scope tasks, technical debt, or related ideas discovered during execution that should be tracked but not immediately addressed. Ties the side-quest to the current issue.'
+description: 'Document out-of-scope tasks, technical debt, or related ideas discovered during execution that should be tracked but not immediately addressed. Files a labeled GitHub tracking issue and stamps the originating issue.'
 argument-hint: "[brief description of the side quest or task]"
 ---
 
@@ -26,8 +26,9 @@ argument-hint: "[brief description of the side quest or task]"
 1. Check the current git branch by running `git rev-parse --abbrev-ref HEAD`.
 2. Extract the issue number from the branch name. The project's branch naming convention is `{prefix}/{issue-number}/{short-description}` (e.g., `feat/123/add-login` -> `123`).
 3. If an issue number is successfully extracted, use it automatically.
-4. If the branch does not contain a clear issue number and it wasn't provided in the prompt, ask the user: "What is the GitHub/Linear issue number this relates to?"
-5. Scan `docs/brainstorms/`, `docs/plans/`, or `docs/ideate/` for any recent documents that relate to this issue or current context.
+4. If the branch does not contain a clear issue number and it wasn't provided in the prompt, ask the user: "What is the GitHub/Linear issue number this relates to?" If they answer that there is none, continue without an originating issue — the doc and tracking issue are still created, but Phase 4's stamp is skipped.
+5. Run `git remote get-url origin` and parse `<owner>/<repo>` from the URL (needed for Phases 3-4).
+6. Scan `docs/brainstorms/`, `docs/plans/`, or `docs/ideate/` for any recent documents that relate to this issue or current context.
 
 ## Phase 1: Structure the Document
 
@@ -52,6 +53,7 @@ issue: #[number]
 branch: <current-branch-name>
 topic: <kebab-case-topic>
 status: pending
+tracking:
 ---
 
 # <Topic Title>
@@ -75,13 +77,73 @@ status: pending
 
 ## Phase 2: Write the File
 
-Use the Write tool to save the side-quest document to the path determined in Phase 1.
+Use the Write tool to save the side-quest document to the path determined in Phase 1. Leave `tracking:` empty — Phase 3 fills it if a tracking issue is created.
 
 Confirm to the user:
 ```text
 Side-quest documented at `docs/side-quests/[filename]`.
 ```
 
-## Phase 3: Next Steps
+## Phase 3: File the Tracking Issue
+
+Back the side-quest with a real GitHub issue so it stays visible without local state.
+
+If the doc's `tracking:` frontmatter is already filled (a previous or interrupted run created the issue), skip creation and reuse that ref in Phase 4.
+
+1. Draft the tracking issue:
+   - **Title:** the side-quest title from Phase 1.
+   - **Body:** the doc's `## Description` section (include `## Impact / Why it matters` when it adds signal).
+2. Ask with a single `AskUserQuestion` call:
+   - **Question 1:** "File this as a GitHub tracking issue?" — options **Create** (set the `preview` field to the drafted title, label `follow-up`, and body) and **Skip**.
+   - **Question 2** (only when an originating issue resolved in Context Gathering): "Does this side-quest depend on the current work (#[number]) landing first?" — options **Yes** / **No**.
+3. If the user skips: leave `tracking:` empty and go to Phase 4 — the stamp still posts, covering what exists.
+4. If the user confirms, write the body below to a temp file with the Write tool, then create the issue:
+   ```markdown
+   <Description section from the doc>
+
+   Blocked by <owner>/<repo>#<originating-issue>
+   ```
+   ```bash
+   gh issue create \
+     --repo <owner>/<repo> \
+     --title "<title>" \
+     --label "follow-up" \
+     --body-file <temp-file>
+   ```
+   - Include the `Blocked by` line only when Question 2 was answered **Yes**; omit it otherwise.
+   - If the command errors because the `follow-up` label doesn't exist, re-run without `--label` and tell the user the label is missing on this repo.
+   - Capture the tracking-issue number from the URL in the output.
+5. Update the doc's `tracking:` frontmatter to `<owner>/<repo>#<tracking-issue>` with the Edit tool.
+6. Confirm to the user:
+   ```text
+   Tracking issue created: <issue-url>
+   ```
+
+## Phase 4: Stamp the Originating Issue
+
+What this phase does depends on the two conditions established earlier:
+
+| Originating issue | Tracking issue | Phase 4 behavior |
+|---|---|---|
+| resolved | created | full stamp below: `followup:true`, `tracking`, `blocked_by` (the latter only when the tracking issue carries the `Blocked by` line) |
+| resolved | skipped | stamp with only `paths` in the marker; drop the `**Tracking:**` line — record what exists |
+| not resolved | either | skip this phase entirely (the tracking issue still stands — there is just nowhere to stamp) |
+
+Posting mechanics, marker encoding, confirmation posture, and failure handling are defined in [the issue-log spec](../issue-log/SKILL.md). Compose the body below, write it to a temp file with the Write tool, and post:
+
+```markdown
+<!-- cc-forge-log v1: {"skill":"side-quest","event":"side-quest-filed","followup":true,"tracking":"<owner>/<repo>#<tracking-issue>","blocked_by":["<owner>/<repo>#<originating-issue>"],"paths":["docs/side-quests/<filename>"]} -->
+
+### 🧭 /side-quest — <short side-quest title>
+
+**Doc:** `docs/side-quests/<filename>`
+**Found:** <one line: what was discovered and why it's out of scope for the current work>
+**Tracking:** <owner>/<repo>#<tracking-issue>
+```
+```bash
+gh issue comment <originating-issue> --repo <owner>/<repo> --body-file <temp-file>
+```
+
+## Phase 5: Next Steps
 
 Ask the user: "Side-quest saved. Ready to return to your main task?"

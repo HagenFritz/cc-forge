@@ -48,6 +48,8 @@ Restart Claude Code after copying. Skills become available as `/<name>` slash co
 
 ## Skills
 
+**Issue-log convention:** the workflow skills (brainstorm, plan, work, deep-review, review-walk, ship, land, tree, branch-from-issue, side-quest) each post a standardized "stamp" comment to the linked GitHub issue at their key event — a hidden machine-readable marker plus a short human-readable body — so an issue's thread becomes a reconstructable work log. The spec lives at [`skills/issue-log/SKILL.md`](skills/issue-log/SKILL.md) (a reference doc, not a command).
+
 ### Core workflow
 
 | Skill | What it does | When to use |
@@ -57,7 +59,7 @@ Restart Claude Code after copying. Skills become available as `/<name>` slash co
 | `/deepen-plan` | Stress-tests an existing plan and selectively strengthens weak sections with targeted research | A Standard/Deep or high-risk plan needs more confidence around decisions, sequencing, or risk |
 | `/work` | Executes a work plan unit-by-unit, following repo patterns and testing as it goes | You have a plan and want it implemented |
 | `/deep-review` | Exhaustive multi-agent code review using worktrees; writes a structured review doc | Complex, risky, or large changes that warrant deep review |
-| `/review-walk` | Walks a `/deep-review` document interactively, group-by-group, with implement/defer/skip per issue; updates `Status:` inline so it's resumable | You have a `docs/reviews/*.md` and want to act on it methodically |
+| `/review-walk` | Walks a `/deep-review` document interactively, group-by-group, with implement/defer/skip per issue; updates `Status:` inline so it's resumable; at walk end, offers tracking issues for deferred items (shared issue template) and stamps the outcome | You have a `docs/reviews/*.md` and want to act on it methodically |
 | `/compound` | Documents a recently solved problem so the knowledge compounds | Right after solving something non-obvious worth recording |
 | `/ideate` | Generates and critically evaluates grounded improvement ideas for the project | "What should I improve?" — you want AI-generated directions before brainstorming one |
 | `/deprecate` | Plan-only safe removal of a named concept: parallel research agents find every reference, output a leaves-first plan with compat-risk flags | "Rip out X" / "retire X" — hand the resulting plan to `/work` |
@@ -96,7 +98,7 @@ Typical flow: `/initiative` → `/plan` per workstream → `/work` → `/initiat
 
 | Skill | What it does | When to use |
 |---|---|---|
-| `/side-quest` | Documents out-of-scope tasks or tech debt discovered during execution and ties them to the current issue | You hit something worth tracking but out of scope for the current task |
+| `/side-quest` | Documents out-of-scope tasks or tech debt discovered during execution, files a `follow-up`-labeled tracking issue, and stamps the originating issue | You hit something worth tracking but out of scope for the current task |
 | `/stand-up` | Summarizes the past 28h of commits, PRs, and linked issues | A daily catch-up on what moved |
 | `/test-plan` | Generates a manual test plan from current branch diffs (unstaged, staged, committed); saves a living doc to `docs/tests/` with pass/fail you update | You want a structured manual-testing pass over a branch's changes |
 
