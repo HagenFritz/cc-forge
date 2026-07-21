@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+#
+# devbox — laptop-side wrapper for the RO Compass devbox VM.
+#
+#   devbox <name>       attach to tmux session <name> (creates it if missing);
+#                       starts the VM first if it's stopped
+#   devbox cc <name>    same, but iTerm2-native (tmux -CC control mode)
+#   devbox ls           list tmux sessions on the box
+#   devbox ssh          plain shell, no tmux
+#   devbox kill <name>  kill a tmux session
+#   devbox up|down      start / stop the VM
+#   devbox status       VM state (RUNNING / TERMINATED / ...)
+#   devbox sync         copy the current repo's docs/ to the same repo on the box
+set -euo pipefail
+
+PROJECT="app-dev-464512"
+ZONE="us-central1-a"
+INSTANCE="ro-dev-devbox-hfritz"
+HOST="ro-devbox" # ~/.ssh/config entry (IAP ProxyCommand)
+
+usage() { sed -n '3,13p' "$0"; }
+
+vm_status() {
+  gcloud compute instances describe "$INSTANCE" \
+    --project="$PROJECT" --zone="$ZONE" --format='value(status)'
+}
+
+ensure_running() {
+  local s
+  s="$(vm_status)"
+  if [ "$s" != "RUNNING" ]; then
+    echo "devbox is ${s} — starting…" >&2
+    gcloud compute instances start "$INSTANCE" --project="$PROJECT" --zone="$ZONE" >&2
+    echo "waiting for SSH…" >&2
+    until ssh -o ConnectTimeout=5 "$HOST" true 2>/dev/null; do sleep 5; done
+  fi
+}
+
+cmd="${1:-}"
+case "$cmd" in
+  "" | -h | --help) usage ;;
+  up) gcloud compute instances start "$INSTANCE" --project="$PROJECT" --zone="$ZONE" ;;
+  down) gcloud compute instances stop "$INSTANCE" --project="$PROJECT" --zone="$ZONE" ;;
+  status) vm_status ;;
+  ls)
+    ensure_running
+    ssh "$HOST" 'tmux ls 2>/dev/null || echo "no sessions"'
+    ;;
+  ssh)
+    ensure_running
+    ssh -t "$HOST"
+    ;;
+  kill)
+    ssh "$HOST" "tmux kill-session -t '${2:?usage: devbox kill <name>}'"
+    ;;
+  sync)
+    ensure_running
+    root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+      echo "devbox sync: run from inside a git repo" >&2
+      exit 1
+    }
+    [ -d "$root/docs" ] || {
+      echo "devbox sync: no docs/ in $root" >&2
+      exit 1
+    }
+    repo="$(basename "$root")"
+    remote="$(ssh "$HOST" "ls -d ~/'$repo' ~/Projects/'$repo' ~/Misc/'$repo' 2>/dev/null | head -1")"
+    [ -n "$remote" ] || {
+      echo "devbox sync: no '$repo' checkout found on the box" >&2
+      exit 1
+    }
+    tar --no-xattrs --no-mac-metadata --no-fflags -C "$root" -cf - docs |
+      ssh "$HOST" "tar -C '$remote' -xf -"
+    echo "synced $root/docs → $HOST:$remote/docs"
+    ;;
+  cc)
+    ensure_running
+    ssh -t "$HOST" "tmux -CC new -As '${2:?usage: devbox cc <name>}'"
+    ;;
+  *)
+    ensure_running
+    ssh -t "$HOST" "tmux new -As '$cmd'"
+    ;;
+esac
