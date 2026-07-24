@@ -32,7 +32,9 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
 2. **Sync main.**
    - Run `git remote` to check if a remote exists. If none, skip this step.
    - Detect the default branch name (`main` or `master`) from `git rev-parse --abbrev-ref origin/HEAD` (strip the `origin/` prefix), falling back to `main` if that fails.
-   - `git fetch origin {default-branch}:{default-branch}`. If this fails, check whether the current branch is already `{default-branch}` (`git rev-parse --abbrev-ref HEAD`) — if so, run `git pull` instead (equivalent effect, safe since the primary checkout owns that branch). Otherwise the fetch failed for a real reason (network, auth, no `origin/{default-branch}`); report the error and stop before creating the worktree from a possibly stale ref.
+   - `git fetch origin {default-branch}`. This only updates the `origin/{default-branch}` remote-tracking ref — no `:{default-branch}` destination — so it never touches the local branch and can't collide with any worktree that has `{default-branch}` checked out, including the primary checkout itself. Step 8 branches off `origin/{default-branch}` directly, so this fetch alone is sufficient. If it fails, that's a real error (network, auth, no such remote branch); report it and stop before creating the worktree from a possibly stale ref.
+   - Additionally, if the current branch is already `{default-branch}` (`git rev-parse --abbrev-ref HEAD`), also run `git pull` — this refreshes the primary checkout's working files, a benefit the remote-tracking fetch alone doesn't provide. This is additive to the fetch above, not a substitute for it.
+   - Sanity check: run `git worktree list` and check whether any entry other than the primary checkout has `{default-branch}` itself checked out (as opposed to its own feature branch). If so, warn the user this is anomalous — normal `/tree` usage never leaves a worktree parked on the default branch — but don't block on it.
 
 3. **Resolve branch context.** `$ARGUMENTS` may or may not contain an issue number.
    - **If an issue number is provided:** detect `<owner>/<repo>` from `git remote get-url origin`, then run `gh issue view $ARGUMENTS --repo <owner>/<repo>` to get the issue title and description. **If this fails** (issue doesn't exist, wrong repo, no access), tell the user the issue number couldn't be resolved and ask whether to stop or proceed without an issue link (falling back to the no-argument path below) — never fabricate an issue title. Otherwise use the fetched title/description to determine the **prefix** and **short description**.
@@ -71,7 +73,8 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
    - If user cancels, stop.
    - If user provides a custom name via Other, use that instead (recompute the worktree path too).
 
-8. **Create the worktree:** `git worktree add {worktree-path} -b {branch-name} {default-branch}`
+8. **Create the worktree:** `git worktree add {worktree-path} -b {branch-name} origin/{default-branch}`
+   - Branches off the fetched remote-tracking ref, not the local `{default-branch}`, so the new worktree always gets the state fetched in step 2 regardless of what the local ref points to or which worktree owns it.
    - This does not touch the primary checkout's working files or currently-checked-out branch.
 
 9. **Symlink `docs/` into the worktree.** Gitignored doc subdirs (brainstorms, plans, reviews, etc.) are not materialized by `git worktree add`, so the brainstorm/plan files this work depends on would be invisible from the worktree. Two cases, decided by what `git worktree add` produced:
