@@ -8,6 +8,7 @@ A pre-commit hook runs `scripts/sync-workflows.sh`, which regenerates `.devin/wo
 
 ## Related
 
+- **PR #60** (2026-07-24): /tree's main-sync now fetches origin/{default-branch} (remote-tracking ref only) instead of git fetch origin {default-branch}:{default-branch}, so it no longer hard-fails when another worktree has the default branch checked out; the new worktree branches off that fetched ref directly, and the git pull fast-forward for an already-main primary checkout is now additive rather than the sole fallback
 - **PR #59** (2026-07-21): issue-log stamp convention — new skills/issue-log reference spec (marker v1, event registry, reader contract) + ten skills stamp their key events onto the linked issue; posting hardened to --body-file after deep-review — [plan](docs/plans/2026-07-21-001-feat-issue-log-standard-plan.md)
 - **PR #55** (2026-07-15): add /tree, /preview, /unpreview for a git-worktree dev workflow (primary checkout stays on main; feature work in sibling worktrees), and fix /ship + /land to operate correctly from inside a worktree
 - **PR #40** (2026-06-23): /land now reconciles CLAUDE.md body prose with the merged diff (not just appends); /ship splits Test Plan into Pre-merge/Post-merge; added scripts/sync-workflows.sh
