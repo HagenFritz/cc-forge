@@ -1,6 +1,6 @@
 ---
-name: plan
-description: "Transform feature descriptions or requirements into structured implementation plans grounded in repo patterns and research. Use when the user says 'plan this', 'create a plan', 'write a tech plan', 'plan the implementation', 'how should we build', 'what's the approach for', 'break this down', or when a brainstorm/requirements document is ready for technical planning. Best when requirements are at least roughly defined; for exploratory or ambiguous requests, prefer brainstorm first."
+name: blueprint
+description: "Transform feature descriptions or requirements into structured implementation plans grounded in repo patterns and research. Use when the user says 'blueprint this', 'plan this', 'create a plan', 'write a tech plan', 'plan the implementation', 'how should we build', 'what's the approach for', 'break this down', or when a brainstorm/requirements document is ready for technical planning. Best when requirements are at least roughly defined; for exploratory or ambiguous requests, prefer brainstorm first."
 argument-hint: "[feature description, requirements doc path, or improvement idea]"
 ---
 
@@ -8,7 +8,7 @@ argument-hint: "[feature description, requirements doc path, or improvement idea
 
 **Note: The current year is 2026.** Use this when dating plans and searching for recent documentation.
 
-`brainstorm` defines **WHAT** to build. `plan` defines **HOW** to build it. `work` executes the plan.
+`brainstorm` defines **WHAT** to build. `blueprint` defines **HOW** to build it. `work` executes the plan.
 
 This workflow produces a durable implementation plan. It does **not** implement code, run tests, or learn from execution-time results. If the answer depends on changing code and seeing what happens, that belongs in `work`, not here.
 
@@ -386,7 +386,7 @@ type: [feat|fix|refactor]
 status: active
 date: YYYY-MM-DD
 origin: docs/brainstorms/YYYY-MM-DD-<topic>-requirements.md  # include when planning from a requirements doc
-deepened: YYYY-MM-DD  # optional, set later by deepen-plan when the plan is substantively strengthened
+deepened: YYYY-MM-DD  # optional, set later by deepen-blueprint when the plan is substantively strengthened
 ---
 
 # [Plan Title]
@@ -593,9 +593,9 @@ Plan written to docs/plans/[filename]
 Post the plan-written stamp once, at the first point an issue number is resolvable per [the issue-log spec](../issue-log/SKILL.md) — immediately after writing the plan file, or (when nothing resolves yet) right after 5.3's Create Issue step creates one; skipped when neither happens. GitHub tracker only — when the tracker is Linear, skip with a one-line note. Compose the body below, write it to a temp file with the Write tool, and post:
 
 ```markdown
-<!-- cc-forge-log v1: {"skill":"plan","event":"plan-written","paths":["docs/plans/<plan-filename>"]} -->
+<!-- cc-forge-log v1: {"skill":"blueprint","event":"plan-written","paths":["docs/plans/<plan-filename>"]} -->
 
-### 📋 /plan — <plan title>
+### 📋 /blueprint — <plan title>
 
 **Doc:** `docs/plans/<plan-filename>` — <N> implementation units
 **Units:**
@@ -616,7 +616,7 @@ After writing the plan file, present the options using the platform's blocking q
 
 **Options:**
 1. **Open plan in editor** - Open the plan file for review
-2. **Run `/deepen-plan`** - Stress-test weak sections with targeted research when the plan needs more confidence
+2. **Run `/deepen-blueprint`** - Stress-test weak sections with targeted research when the plan needs more confidence
 3. **Share to Proof** - Upload the plan for collaborative review and sharing
 4. **Start `/work`** - Begin implementing this plan in the current environment
 5. **Start `/work` in another session** - Begin implementing in a separate agent session when the current platform supports it
@@ -624,7 +624,7 @@ After writing the plan file, present the options using the platform's blocking q
 
 Based on selection:
 - **Open plan in editor** → Open `docs/plans/<plan_filename>.md` using the current platform's file-open or editor mechanism (e.g., `open` on macOS, `xdg-open` on Linux, or the IDE's file-open API)
-- **`/deepen-plan`** → Call `/deepen-plan` with the plan path
+- **`/deepen-blueprint`** → Call `/deepen-blueprint` with the plan path
 - **Share to Proof** → Upload the plan:
   ```bash
   CONTENT=$(cat docs/plans/<plan_filename>.md)
@@ -640,7 +640,7 @@ Based on selection:
 - **Create Issue** → Follow the Issue Creation section below
 - **Other** → Accept free text for revisions and loop back to options
 
-If running with ultrathink enabled, or the platform's reasoning/effort level is set to max or extra-high, automatically run `/deepen-plan` only when the plan is `Standard` or `Deep`, high-risk, or still shows meaningful confidence gaps in decisions, sequencing, system-wide impact, risks, or verification.
+If running with ultrathink enabled, or the platform's reasoning/effort level is set to max or extra-high, automatically run `/deepen-blueprint` only when the plan is `Standard` or `Deep`, high-risk, or still shows meaningful confidence gaps in decisions, sequencing, system-wide impact, risks, or verification.
 
 ## Issue Creation
 

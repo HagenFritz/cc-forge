@@ -358,4 +358,4 @@ Based on problem type, these agents can enhance documentation:
 ## Related Commands
 
 - `/research [topic]` - Deep investigation (searches docs/solutions/ for patterns)
-- `/plan` - Planning workflow (references documented solutions)
+- `/blueprint` - Planning workflow (references documented solutions)

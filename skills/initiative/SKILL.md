@@ -1,6 +1,6 @@
 ---
 name: initiative
-description: "Author, maintain, and optionally publish a high-altitude living initiative document at docs/initiatives/. Sibling to /plan but one altitude up — workstreams and milestones rather than commit-sized units. The doc is the durable record of a multi-feature effort: it survives compaction (a fresh agent can resume by reading the file) and accrues progress over time. Two modes: invoke with no path to **author** a new initiative, or invoke with the path to an existing initiative doc to **resume** — the skill gathers evidence (commits, new sub-plans, PR/issue activity) since last_updated and writes the update back into the doc surgically. After authoring or resuming, optionally publish to GitHub as a parent issue with linked sub-tasks. Use when the user says 'start an initiative', 'track this initiative', 'log progress on the initiative', 'update the initiative doc', 'publish this initiative', or hands you the path to an existing initiative file."
+description: "Author, maintain, and optionally publish a high-altitude living initiative document at docs/initiatives/. Sibling to /blueprint but one altitude up — workstreams and milestones rather than commit-sized units. The doc is the durable record of a multi-feature effort: it survives compaction (a fresh agent can resume by reading the file) and accrues progress over time. Two modes: invoke with no path to **author** a new initiative, or invoke with the path to an existing initiative doc to **resume** — the skill gathers evidence (commits, new sub-plans, PR/issue activity) since last_updated and writes the update back into the doc surgically. After authoring or resuming, optionally publish to GitHub as a parent issue with linked sub-tasks. Use when the user says 'start an initiative', 'track this initiative', 'log progress on the initiative', 'update the initiative doc', 'publish this initiative', or hands you the path to an existing initiative file."
 argument-hint: "[optional path/slug of existing initiative doc, OR free-text framing for a new initiative]"
 ---
 
@@ -8,9 +8,9 @@ argument-hint: "[optional path/slug of existing initiative doc, OR free-text fra
 
 **Note: The current year is 2026.** Use this when dating initiative docs and progress log entries.
 
-`brainstorm` defines **WHAT** to build. `plan` defines **HOW** to build one feature. `initiative` coordinates a **multi-feature effort** at one altitude up — and stays alive across the life of that effort.
+`brainstorm` defines **WHAT** to build. `blueprint` defines **HOW** to build one feature. `initiative` coordinates a **multi-feature effort** at one altitude up — and stays alive across the life of that effort.
 
-This workflow produces or updates a durable initiative document at `docs/initiatives/`. It does **not** implement code, run tests, or learn from execution-time results. Each workstream typically hands off to `/plan` when its time comes; `/work` then executes that plan; the user re-invokes `/initiative <path>` afterward to log progress back.
+This workflow produces or updates a durable initiative document at `docs/initiatives/`. It does **not** implement code, run tests, or learn from execution-time results. Each workstream typically hands off to `/blueprint` when its time comes; `/work` then executes that plan; the user re-invokes `/initiative <path>` afterward to log progress back.
 
 `/initiative` does **not** publish to GitHub — that's `/create-initiative`'s job. The two skills compose: author with `/initiative`, optionally publish with `/create-initiative` later, and `parent_issue` is recorded in frontmatter so subsequent resumes can pull issue/PR state.
 
@@ -30,9 +30,9 @@ Ask one question at a time. Prefer concise single-select choices when natural op
 2. **Compaction-survival is a design constraint.** A reader who has only the file must understand intent before mechanics. Section ordering reflects this: Overview → Problem Frame → Goals → Strategic Decisions → Current State → Workstreams → Progress Log → Open Threads → Risks → Sources.
 3. **Living record, not a snapshot.** The Progress Log is append-only and reverse-chronological. Every successful write-back produces at least one Progress Log entry, even when the primary edit was elsewhere.
 4. **Evidence-grounded updates.** In resume mode, don't transcribe what the user says — collect repo evidence (commits, new sub-plans, PR/issue activity) and present it alongside their framing before writing.
-5. **High altitude.** Workstreams are coarse-grained — each is potentially weeks of work and likely spawns its own `/plan`. Surface area is described by directory or component, not exact file paths.
+5. **High altitude.** Workstreams are coarse-grained — each is potentially weeks of work and likely spawns its own `/blueprint`. Surface area is described by directory or component, not exact file paths.
 6. **Publish is optional.** After authoring or resuming, offer to publish to GitHub as a parent issue with linked sub-tasks. Record `parent_issue` in frontmatter once published; use it to pull GitHub activity on subsequent resumes.
-7. **No external research phase.** Initiatives are shaped by product/strategic intent. Research belongs to the per-step `/plan` invocations.
+7. **No external research phase.** Initiatives are shaped by product/strategic intent. Research belongs to the per-step `/blueprint` invocations.
 
 ## Workflow
 
@@ -64,7 +64,7 @@ If the argument is empty **and** the recent conversation context already referen
 
 ### Phase A1: Find Upstream Brainstorm
 
-Search `docs/brainstorms/` for a relevant `*-requirements.md`. Relevance criteria mirror `/plan`:
+Search `docs/brainstorms/` for a relevant `*-requirements.md`. Relevance criteria mirror `/blueprint`:
 - The topic semantically matches the initiative framing
 - Created within the last 30 days (override with judgment if clearly still relevant or clearly stale)
 - Covers the same problem or scope
@@ -91,7 +91,7 @@ Skip any question whose answer is already clear from the brainstorm or argument 
 
 ### Phase A3: Identify Workstreams
 
-Propose 3–6 workstreams. Each is coarse, dependency-ordered, and potentially its own `/plan`.
+Propose 3–6 workstreams. Each is coarse, dependency-ordered, and potentially its own `/blueprint`.
 
 For each workstream, capture:
 - **Name**
@@ -226,13 +226,13 @@ After a successful write (either mode), use the platform's blocking question too
 
 **Author Mode just finished:**
 1. **Open in editor** — open the file using the platform's open mechanism (`open` on macOS, `xdg-open` on Linux, IDE API).
-2. **Start `/plan` on Workstream 1** — invoke `/plan` with the first workstream's goal, surface area, and success criteria as input.
+2. **Start `/blueprint` on Workstream 1** — invoke `/blueprint` with the first workstream's goal, surface area, and success criteria as input.
 3. **Publish to GitHub** — run Phase P below to create a parent issue + linked sub-tasks.
 4. **Done** — exit cleanly.
 
 **Resume Mode just finished:**
 1. **Open in editor**.
-2. **Start `/plan` on next pending workstream** — pick the next unchecked workstream whose dependencies are satisfied.
+2. **Start `/blueprint` on next pending workstream** — pick the next unchecked workstream whose dependencies are satisfied.
 3. **Publish to GitHub** — run Phase P below (only if `parent_issue` is not already set in frontmatter; if it is, skip this option).
 4. **Mark initiative complete** — set frontmatter `status: completed`, regenerate Current State as a closing summary, and append a final Progress Log entry. Subsequent resumes are still allowed but the skill warns the initiative is closed.
 5. **Done** — exit cleanly.
@@ -447,15 +447,15 @@ parent_issue: owner/repo#NNN            # optional, set after /create-initiative
 
 ## Rules
 
-- Never write code or implementation details into the initiative doc — that's `/plan`'s job.
+- Never write code or implementation details into the initiative doc — that's `/blueprint`'s job.
 - Never delete from the Progress Log or Open Threads. Resolved threads are annotated, not removed.
 - Never rewrite the whole file in Resume Mode. Use surgical Edit operations only.
 - Always bump `last_updated:` on a successful Resume write-back.
 - Always preview proposed changes before writing in Resume Mode.
 - Always read the full existing doc first in Resume Mode — never assume context from prior conversation.
-- Surface area in workstreams is described by directory/component/system, not exact file paths. Exact file paths belong in the per-workstream `/plan`.
+- Surface area in workstreams is described by directory/component/system, not exact file paths. Exact file paths belong in the per-workstream `/blueprint`.
 - If the doc is malformed, surface the issue and ask. Never silently repair in a way that loses content.
 - Workstream checkboxes toggle only when evidence clearly indicates completion. When ambiguous, add a status note instead.
-- No external research. If a workstream needs external research, that happens inside its `/plan`.
+- No external research. If a workstream needs external research, that happens inside its `/blueprint`.
 
-NEVER CODE! Author or update the initiative doc. Hand off implementation to `/plan` and `/work`.
+NEVER CODE! Author or update the initiative doc. Hand off implementation to `/blueprint` and `/work`.
