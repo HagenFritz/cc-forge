@@ -47,11 +47,13 @@ Optional keys:
 
 | Key | Type | Meaning |
 |---|---|---|
-| `unit` | string | Dedupe key for per-unit events: ordinal + title read from the plan's checkbox heading at stamp time, e.g. `"3: Retrofit /plan and /brainstorm stamps"`. Never the in-session task title. |
+| `unit` | string | Dedupe key for per-unit events: ordinal + title read from the plan's checkbox heading at stamp time, e.g. `"3: Retrofit /blueprint and /brainstorm stamps"`. Never the in-session task title. |
 | `followup` | bool | Marks the stamp as follow-up material for the daily reviewer |
 | `blocked_by` | array | Refs gating a follow-up, each `owner/repo#N` |
 | `paths` | array | Local doc/worktree paths this event produced or relies on. `unit-complete`/`unit-blocked` stamps always include the plan path (scopes `unit` dedupe across plans). |
 | `pr` | number | PR number for pr events |
+| `slices` | number | PR slice count in a `grind-started` event |
+| `merged` | number | PRs merged in a completed `/grind` run |
 | `tracking` | string | `owner/repo#N` of a tracking issue this event created |
 
 **Versioning:** additive-only within v1 — new optional keys, new event names, and new skills never bump the version. A **v2** is required only when an existing key's meaning or read type changes (e.g. `tracking` string → array). Readers skip unknown versions with a warning.
@@ -61,7 +63,7 @@ Optional keys:
 | Skill | Event | Glyph | Payload fields (human section) |
 |---|---|---|---|
 | brainstorm | `requirements-written` | 🧠 | Doc path, full requirements list (direct port from the doc) |
-| plan | `plan-written` | 📋 | Plan path, unit count, every unit enumerated with a one-sentence summary |
+| blueprint | `plan-written` | 📋 | Plan path, unit count, every unit enumerated with a one-sentence summary |
 | tree | `worktree-created` | 🌳 | Branch, worktree path (also in `paths`) |
 | branch-from-issue | `branch-created` | 🌱 | Branch |
 | work | `unit-complete` | 🔨 | **Did** (always), **Solved** (only when a problem was solved) |
@@ -71,10 +73,15 @@ Optional keys:
 | side-quest | `side-quest-filed` | 🧭 | What was found, tracking-issue link (`tracking`, `followup:true`) |
 | ship | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
 | land | `pr-merged` | ✅ | 2-3 sentence summary of what landed + follow-ups (user-confirmed prose) |
+| grind | `grind-started` | ⚙️ | Plan path, slice count (`slices`), one line per slice |
+| grind | `pr-reviewed` | 🔍 | Severity counts from the Fable review (`pr`), one-line verdict |
+| grind | `pr-merged` | ✅ | Slice name + 1-2 sentences on what landed (`pr`) |
+| grind | `grind-blocked` | 🛑 | What halted the run, open PR url, worktree path, remaining slice count |
+| grind | `grind-complete` | 🏁 | Merged PR count (`merged`) + links, follow-up tracking issues |
 
 Event names are these exact strings. New events join this table before any skill emits them.
 
-Document-producing skills (brainstorm, plan, deep-review, side-quest) start the human body with a `**Doc:**` field holding the repo-relative doc path, and carry the same path in the marker's `paths`.
+Document-producing skills (brainstorm, blueprint, deep-review, side-quest) start the human body with a `**Doc:**` field holding the repo-relative doc path, and carry the same path in the marker's `paths`.
 
 ## Encoding rules
 
@@ -120,9 +127,9 @@ Consumers (the `/daily-review` skill) must:
 A `/work` stamp for unit 3 of a plan, posted to issue #57:
 
 ```markdown
-<!-- cc-forge-log v1: {"skill":"work","event":"unit-complete","unit":"3: Retrofit /plan and /brainstorm stamps","paths":["docs/plans/2026-07-21-001-feat-issue-log-standard-plan.md"]} -->
+<!-- cc-forge-log v1: {"skill":"work","event":"unit-complete","unit":"3: Retrofit /blueprint and /brainstorm stamps","paths":["docs/plans/2026-07-21-001-feat-issue-log-standard-plan.md"]} -->
 
-### 🔨 /work — unit 3: Retrofit /plan and /brainstorm stamps
+### 🔨 /work — unit 3: Retrofit /blueprint and /brainstorm stamps
 
 **Did:** Added plan-written stamp after issue creation; brainstorm stamps only when an issue is known in session.
 **Solved:** Plan stamps fired before the issue existed — moved the stamp after the optional issue-creation step.
