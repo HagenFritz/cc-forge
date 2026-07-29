@@ -8,7 +8,7 @@ argument-hint: "[feature idea or problem to explore]"
 
 **Note: The current year is 2026.** Use this when dating requirements documents.
 
-Brainstorming helps answer **WHAT** to build through collaborative dialogue. It precedes `/plan`, which answers **HOW** to build it.
+Brainstorming helps answer **WHAT** to build through collaborative dialogue. It precedes `/blueprint`, which answers **HOW** to build it.
 
 The durable output of this workflow is a **requirements document**. In other workflows this might be called a lightweight PRD or feature brief. In compound engineering, keep the workflow name `brainstorm`, but make the written artifact strong enough that planning does not need to invent product behavior, scope boundaries, or success criteria.
 
@@ -214,7 +214,7 @@ topic: <kebab-case-topic>
 - [Affects R2][Needs research] [Question that likely requires research during planning]
 
 ## Next Steps
-[If `Resolve Before Planning` is empty: `→ /plan` for structured implementation planning]
+[If `Resolve Before Planning` is empty: `→ /blueprint` for structured implementation planning]
 [If `Resolve Before Planning` is not empty: `→ Resume /brainstorm` to resolve blocking questions before planning]
 ```
 
@@ -227,7 +227,7 @@ For very small requirements docs with only 1-3 simple requirements, plain bullet
 When the work is simple, combine sections rather than padding them. A short requirements document is better than a bloated one.
 
 Before finalizing, check:
-- What would `plan` still have to invent if this brainstorm ended now?
+- What would `blueprint` still have to invent if this brainstorm ended now?
 - Do any requirements depend on something claimed to be out of scope?
 - Are any unresolved items actually product decisions rather than planning questions?
 - Did implementation details leak in when they shouldn't have?
@@ -263,7 +263,7 @@ If `Resolve Before Planning` contains any items:
 **Question when blocking questions remain and user wants to pause:** "Brainstorm paused. Planning is blocked until the remaining questions are resolved. What would you like to do next?"
 
 Present only the options that apply:
-- **Proceed to planning (Recommended)** - Run `/plan` for structured implementation planning
+- **Proceed to planning (Recommended)** - Run `/blueprint` for structured implementation planning
 - **Ask more questions** - Continue clarifying scope, preferences, or edge cases
 - **Done for now** - Return later
 
@@ -271,7 +271,7 @@ Present only the options that apply:
 
 **If user selects "Proceed to planning (Recommended)":**
 
-Immediately run `/plan` in the current session. Pass the requirements document path when one exists; otherwise pass a concise summary of the finalized brainstorm decisions. Do not print the closing summary first.
+Immediately run `/blueprint` in the current session. Pass the requirements document path when one exists; otherwise pass a concise summary of the finalized brainstorm decisions. Do not print the closing summary first.
 
 **If user selects "Ask more questions":** Return to Phase 1.3 (Collaborative Dialogue) and continue asking the user questions one at a time to further refine the design. Probe deeper into edge cases, constraints, preferences, or areas not yet explored. Continue until the user is satisfied, then return to Phase 4. Do not show the closing summary yet.
 
@@ -290,7 +290,7 @@ Key decisions:
 - [Decision 1]
 - [Decision 2]
 
-Recommended next step: `/plan`
+Recommended next step: `/blueprint`
 ```
 
 If the user pauses with `Resolve Before Planning` still populated, display:

@@ -54,7 +54,7 @@ Ensure that the code is ready for analysis (either in worktree or on current bra
 The following paths must never be flagged for deletion, removal, or gitignore by any review agent:
 
 - `docs/brainstorms/*-requirements.md` — Requirements documents created by `/brainstorm`. These are the product-definition artifacts that planning depends on.
-- `docs/plans/*.md` — Plan files created by `/plan`. These are living documents that track implementation progress (checkboxes are checked off by `/work`).
+- `docs/plans/*.md` — Plan files created by `/blueprint`. These are living documents that track implementation progress (checkboxes are checked off by `/work`).
 - `docs/solutions/*.md` — Solution documents created during the pipeline.
 
 If a review agent flags any file in these directories for cleanup or removal, the review-synthesizer discards that finding during synthesis — always pass this list in its dispatch.

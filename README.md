@@ -2,7 +2,7 @@
 
 A personal reference collection of Claude Code skills, agents, and hooks for structured development workflows, code review, and research automation.
 
-This repo is meant to be **referenced and cherry-picked**, not installed as a package. Browse the skills and agents below, copy the ones you want into your own `~/.claude/`, and adapt them. The whole thing is built around a `brainstorm → plan → work → review → compound` loop with GitHub integration on top.
+This repo is meant to be **referenced and cherry-picked**, not installed as a package. Browse the skills and agents below, copy the ones you want into your own `~/.claude/`, and adapt them. The whole thing is built around a `brainstorm → blueprint → work → review → compound` loop with GitHub integration on top.
 
 ## How to use it
 
@@ -38,7 +38,7 @@ This installs **all skills, all agents, and the caveman hook** — the hook is w
 Skills and agents are plain Markdown that Claude Code loads from `~/.claude/skills/` and `~/.claude/agents/`. To grab just one, copy its folder:
 
 ```bash
-cp -r skills/plan ~/.claude/skills/        # one skill
+cp -r skills/blueprint ~/.claude/skills/        # one skill
 cp -r agents/research ~/.claude/agents/    # one agent category
 ```
 
@@ -55,9 +55,10 @@ Restart Claude Code after copying. Skills become available as `/<name>` slash co
 | Skill | What it does | When to use |
 |---|---|---|
 | `/brainstorm` | Explores requirements and approaches through dialogue, then writes a right-sized requirements doc | A vague or ambitious feature idea; you want to think through options before committing to scope |
-| `/plan` | Turns a feature description or requirements doc into a structured implementation plan grounded in repo patterns | Requirements are roughly defined and you need a technical approach broken into units |
-| `/deepen-plan` | Stress-tests an existing plan and selectively strengthens weak sections with targeted research | A Standard/Deep or high-risk plan needs more confidence around decisions, sequencing, or risk |
+| `/blueprint` | Turns a feature description or requirements doc into a structured implementation plan grounded in repo patterns | Requirements are roughly defined and you need a technical approach broken into units |
+| `/deepen-blueprint` | Stress-tests an existing plan and selectively strengthens weak sections with targeted research | A Standard/Deep or high-risk plan needs more confidence around decisions, sequencing, or risk |
 | `/work` | Executes a work plan unit-by-unit, following repo patterns and testing as it goes | You have a plan and want it implemented |
+| `/grind` | Executes a whole plan **autonomously as a sequence of PRs**. Slices the plan into PR-sized groups, confirms that breakdown once, then per slice runs unattended: worktree → max-effort Opus subagent builds and opens the PR → Fable subagent reviews and posts comments → `/grind` triages the feedback itself → Opus subagent applies accepted fixes → final look → squash-merge on green CI. Serial (slice N merges before N+1 branches), resumable via a `## PR Breakdown` table in the plan doc, and halts the whole run on a blocked slice | You have a plan you trust and want it ground all the way to merged `main` without babysitting each PR. Needs a repo without required-reviews branch protection |
 | `/deep-review` | Exhaustive multi-agent code review using worktrees; writes a structured review doc | Complex, risky, or large changes that warrant deep review |
 | `/review-walk` | Walks a `/deep-review` document interactively, group-by-group, with implement/defer/skip per issue; updates `Status:` inline so it's resumable; at walk end, offers tracking issues for deferred items (shared issue template) and stamps the outcome | You have a `docs/reviews/*.md` and want to act on it methodically |
 | `/compound` | Documents a recently solved problem so the knowledge compounds | Right after solving something non-obvious worth recording |
@@ -70,16 +71,16 @@ Restart Claude Code after copying. Skills become available as `/<name>` slash co
 
 | Skill | What it does | When to use |
 |---|---|---|
-| `/initiative` | Authors, maintains, and optionally publishes a high-altitude living initiative doc at `docs/initiatives/` — one altitude up from `/plan` (workstreams, not commit-sized units). Two modes: no path **authors** a new initiative; passing an existing path **resumes** it by gathering evidence since `last_updated`. Optionally publishes to GitHub as a parent issue with linked sub-tasks | Multi-feature efforts that span many plans and need a durable record that survives compaction |
+| `/initiative` | Authors, maintains, and optionally publishes a high-altitude living initiative doc at `docs/initiatives/` — one altitude up from `/blueprint` (workstreams, not commit-sized units). Two modes: no path **authors** a new initiative; passing an existing path **resumes** it by gathering evidence since `last_updated`. Optionally publishes to GitHub as a parent issue with linked sub-tasks | Multi-feature efforts that span many plans and need a durable record that survives compaction |
 
-Typical flow: `/initiative` → `/plan` per workstream → `/work` → `/initiative <path>` to log progress.
+Typical flow: `/initiative` → `/blueprint` per workstream → `/work` → `/initiative <path>` to log progress.
 
 ### GitHub integration
 
 | Skill | What it does | When to use |
 |---|---|---|
 | `/branch-from-issue` | Creates and checks out a git branch from an issue number or conversation context, in the **current** directory | Starting work tied to an issue, no isolation needed |
-| `/tree` | Creates a git worktree — a second working directory on its own new branch, sibling to the primary checkout at `../<repo>-worktrees/<branch-name>/` — instead of checking the branch out in place. Symlinks `docs/` in so brainstorm/plan docs stay visible | Starting work you want isolated in its own directory (e.g. so the primary checkout can stay on `main`, or to run several branches concurrently in separate sessions) |
+| `/tree` | Creates a git worktree — a second working directory on its own new branch, sibling to the primary checkout at `../<repo>-worktrees/<branch-name>/` — instead of checking the branch out in place. Symlinks `docs/` in so brainstorm/blueprint docs stay visible | Starting work you want isolated in its own directory (e.g. so the primary checkout can stay on `main`, or to run several branches concurrently in separate sessions) |
 | `/issue-from-context` | Generates a GitHub issue from conversation context and adds it to a project | Something worth tracking surfaced mid-conversation |
 | `/read-issue` | Fetches a GitHub issue by number and presents a structured digest | You want an issue's content summarized in-session |
 | `/triage-issue` | Fetches an issue and investigates the codebase to determine if it's still present, fixed, or needs more digging; writes to `docs/triage/` | Verifying whether a reported issue still reproduces |
@@ -164,13 +165,13 @@ Restart Claude Code. The hook reads a flag file at `~/.claude/.caveman-active` (
 
 **Feature development:**
 ```
-/brainstorm → /plan → /work → /review → /review-walk → /ship
+/brainstorm → /blueprint → /work → /review → /review-walk → /ship
 ```
 
 **Multi-feature initiative:**
 ```
 /initiative                        # draft initiative doc
-  → /plan <workstream>             # plan one workstream
+  → /blueprint <workstream>             # plan one workstream
   → /work                          # implement it
   → /initiative docs/initiatives/… # log progress back to the doc
   → repeat per workstream
@@ -183,7 +184,7 @@ Restart Claude Code. The hook reads a flag file at `~/.claude/.caveman-active` (
 
 **Worktree-isolated workflow** (primary checkout stays on `main` throughout):
 ```
-/brainstorm → /plan → /tree <issue-number>
+/brainstorm → /blueprint → /tree <issue-number>
   → cd into the printed worktree path, start a new Claude Code session there
   → /work → /deep-review → /ship → /land   # /land removes the worktree on merge
 ```

@@ -1,22 +1,22 @@
 ---
-name: deepen-plan
+name: deepen-blueprint
 description: "Stress-test an existing implementation plan and selectively strengthen weak sections with targeted research. Use when a plan needs more confidence around decisions, sequencing, system-wide impact, risks, or verification. Best for Standard or Deep plans, or high-risk topics such as auth, payments, migrations, external APIs, and security."
 argument-hint: "[path to plan file]"
 ---
 
-# Deepen Plan
+# Deepen Blueprint
 
 ## Introduction
 
 **Note: The current year is 2026.** Use this when searching for recent documentation and best practices.
 
-`plan` does the first planning pass. `deepen-plan` is a second-pass confidence check.
+`blueprint` does the first planning pass. `deepen-blueprint` is a second-pass confidence check.
 
 Use this skill when the plan already exists and the question is not "Is this document clear?" but rather "Is this plan grounded enough for the complexity and risk involved?"
 
 This skill does **not** turn plans into implementation scripts. It identifies weak sections, runs targeted research only for those sections, and strengthens the plan in place.
 
-Use `deepen-plan` when the plan is structurally sound but still needs stronger rationale, sequencing, risk treatment, or system-wide thinking.
+Use `deepen-blueprint` when the plan is structurally sound but still needs stronger rationale, sequencing, risk treatment, or system-wide thinking.
 
 ## Interaction Method
 
@@ -26,7 +26,7 @@ Ask one question at a time. Prefer a concise single-select choice when natural o
 
 ## Plan File
 
-<plan_path> #$ARGUMENTS </plan_path>
+<plan_path> #$ARGUMENTS </blueprint_path>
 
 If the plan path above is empty:
 1. Check `docs/plans/` for recent files
@@ -84,7 +84,7 @@ If the plan already appears sufficiently grounded:
 - Recommend moving to `/work` or the `document-review` skill
 - If the user explicitly asked to deepen anyway, continue with a light pass and deepen at most 1-2 sections
 
-### Phase 1: Parse the Current `plan` Structure
+### Phase 1: Parse the Current `blueprint` Structure
 
 Map the plan into the current template. Look for these sections, or their nearest equivalents:
 - `Overview`
@@ -294,7 +294,7 @@ If a direct-mode agent starts producing bulky or repetitive output, stop and swi
 
 #### 4.2 Artifact-Backed Mode
 
-Use a per-run scratch directory under `.context/cc-forge/deepen-plan/`, for example `.context/cc-forge/deepen-plan/<run-id>/` or `.context/cc-forge/deepen-plan/<plan-filename-stem>/`.
+Use a per-run scratch directory under `.context/cc-forge/deepen-blueprint/`, for example `.context/cc-forge/deepen-blueprint/<run-id>/` or `.context/cc-forge/deepen-blueprint/<plan-filename-stem>/`.
 
 Use the scratch directory only for the current deepening pass.
 

@@ -12,7 +12,7 @@ argument-hint: "[optional: feature, focus area, or constraint]"
 
 - `ideate` answers: "What are the strongest ideas worth exploring?"
 - `brainstorm` answers: "What exactly should one chosen idea mean?"
-- `plan` answers: "How should it be built?"
+- `blueprint` answers: "How should it be built?"
 
 This workflow produces a ranked ideation artifact in `docs/ideation/`. It does **not** produce requirements, plans, or code.
 
