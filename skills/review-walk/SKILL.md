@@ -258,17 +258,38 @@ Derive the deferred list by re-reading the doc's `Status:` lines — never from
 session memory — so a walk resumed across sessions covers every deferred issue,
 not just this session's. If none are `deferred`, skip to 8b.
 
+**Filing an issue is never a side effect.** An issue is outward-facing and
+persists after this session, so it takes an explicit, informed yes — not one
+inferred from the user having deferred a finding. **Default to filing nothing.**
+If the user has not said to create issues, propose and stop; a walk that ends
+with zero issues filed is a normal, correct outcome.
+
 Resolve `<owner>/<repo>` from `git remote get-url origin`. Then ask once via
 `AskUserQuestion`:
 
 > "File tracking issues for the <n> deferred items?"
 
-- **Create all** — one issue per deferred item.
+- **Skip** — create nothing. **This is the default option**: list it first, and
+  select it if the user dismisses the prompt or answers ambiguously.
 - **Pick which** — let the user select a subset, then create those.
-- **Skip** — create nothing.
+- **Create all** — one issue per deferred item.
 
 Skip any deferred item whose doc entry already carries a `Tracking:` line — a
 resumed walk must not re-file issues that exist.
+
+**Then confirm the content, not just the count.** The prompt above approves the
+*batch*; it does not show the user a single word of what will be filed. Before
+the first `gh issue create`, compose every issue body and show them via one more
+`AskUserQuestion`, with the full drafted title + body of each in a `preview`:
+
+- **File them** — create exactly what was previewed.
+- **Edit** — the user revises a title or body in free-form; recompose and
+  re-confirm.
+- **Cancel** — file nothing, leave every `Status:` line untouched.
+
+Batching all previews into one prompt keeps this to two questions total, however
+many items are deferred. Do not skip this second confirm because the first was
+answered "Create all" — that answer is consent to the batch, not to its contents.
 
 For each item being created, build the body from the shared
 [issue template](../issue-from-context/issue-template.md) — same structure
@@ -354,6 +375,12 @@ When running in fallback mode (no `## Groups` section or no enriched fields):
   missing from the doc. Fallback mode handles their absence gracefully.
 - Never skip the user's chosen action (e.g., don't "implement" when they said
   "defer").
+- **Never create a GitHub issue without an explicit, informed yes.** Two confirms
+  gate it (§8a): one for the batch, one showing the drafted title + body of every
+  issue. Deferring a finding is not consent to file anything; filing nothing is
+  the default and a perfectly good outcome. This holds even when the user's
+  project instructions are silent on issues — and where those instructions
+  forbid unprompted issue creation, they win outright.
 - The review doc is the source of truth. If the user manually edits the doc
   between turns, re-read it before the next action so changes are picked up.
 - Respect the Protected Artifacts rule from `/deep-review`: never apply a fix that would
