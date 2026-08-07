@@ -22,7 +22,7 @@ This skill **reads** the review doc — it never edits it. `/review-walk` owns t
 ## Core Principles
 
 1. **The review doc is the source of truth for outcomes.** What was fixed / deferred / skipped comes from the doc's `Status:` lines, not from guessing at the diff.
-2. **One writer per phase.** This runs on the review machine and pushes to the PR branch. The worktree that shipped the PR is untouched; it fast-forwards later (via `/catch-up` or `/land`).
+2. **One writer per phase.** This runs on the review machine and pushes to the PR branch. The worktree that shipped the PR is untouched; it fast-forwards later via `/catch-up` (`/land` no longer syncs branches).
 3. **Report the real outcome.** Only claim "pushed" after the push succeeds. If nothing was fixed, say so and don't invent a commit.
 4. **The PR comment is the carried context.** It's what a human reviewer and the landing machine read to understand what the review produced — write it for them, not as a log dump.
 

@@ -15,7 +15,7 @@ Two run-level guards wrap the loop. A **lifetime timer** (default on) stops the 
 
 The plan document is the durable state. `/grind` writes a `## PR Breakdown` table into it and updates each row as the PR advances; the review doc, worktrees, and unpushed-nothing per-unit cadence mean every checkpoint also exists on GitHub or on disk. An interrupted run — stopped, blocked, or hard-killed — is resumed by re-invoking `/grind` on the same plan.
 
-`/grind` is the autonomous sibling of `/work` → `/deep-review` → `/ship`. It does **not** call those skills (or `/land`): they are confirm-gated by design and would deadlock an unattended run. It mirrors their processes instead — `/work`'s per-unit stamps and commit cadence, `/deep-review`'s roster and synthesizer, `/push-review`'s outcome reporting, `/ship`'s PR shape — so the issue thread and PR history of a grind run read identically to a manual run.
+`/grind` is the autonomous sibling of `/work` → `/deep-review` → `/ship`. It does **not** call those skills (confirm-gated by design, they would deadlock an unattended run) or `/land` (click-free, but per-PR and human-invoked). It mirrors their processes instead — `/work`'s per-unit stamps and commit cadence, `/deep-review`'s roster and synthesizer, `/push-review`'s outcome reporting, `/ship`'s PR shape — so the issue thread and PR history of a grind run read identically to a manual run.
 
 ## Autonomy Contract
 
