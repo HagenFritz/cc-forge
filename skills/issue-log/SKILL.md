@@ -74,14 +74,20 @@ Optional keys:
 | ship | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
 | land | `pr-merged` | ✅ | 2-3 sentence summary of what landed + follow-ups (user-confirmed prose) |
 | grind | `grind-started` | ⚙️ | Plan path, slice count (`slices`), one line per slice |
-| grind | `pr-reviewed` | 🔍 | Severity counts from the Fable review (`pr`), one-line verdict |
+| grind | `unit-complete` | 🔨 | Same shape as work's row: **Did** (always), **Solved** (only when a problem was solved) |
+| grind | `unit-blocked` | ⚠️ | **Blocked:** reason; optional `blocked_by` |
+| grind | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
+| grind | `pr-reviewed` | 🔍 | Severity counts from the review fleet (`pr`), one-line verdict; names any roster agent that did not complete |
 | grind | `pr-merged` | ✅ | Slice name + 1-2 sentences on what landed (`pr`) |
+| grind | `grind-stopped` | ⏸️ | Phase the timer stopped at, remaining slice count, resume pointer |
 | grind | `grind-blocked` | 🛑 | What halted the run, open PR url, worktree path, remaining slice count |
 | grind | `grind-complete` | 🏁 | Merged PR count (`merged`) + links, follow-up tracking issues |
 
 Event names are these exact strings. New events join this table before any skill emits them.
 
 Document-producing skills (brainstorm, blueprint, deep-review, side-quest) start the human body with a `**Doc:**` field holding the repo-relative doc path, and carry the same path in the marker's `paths`.
+
+Grind's `unit-complete`/`unit-blocked` stamps are posted by its build subagent mid-build (grind blocks on that agent, so only the agent can stamp in real time). The subagent authenticates as the same `gh` login, so the reader contract's author check is unaffected; grind embeds the filled templates and encoding rules in the agent's brief rather than assuming it reads this spec.
 
 ## Encoding rules
 
