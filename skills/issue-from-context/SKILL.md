@@ -1,7 +1,7 @@
 ---
 name: issue-from-context
 description: Generate a GitHub issue from conversation context and add it to a project
-argument-hint: "[optional framing to guide the issue's focus, used alongside conversation and git context]"
+argument-hint: "[--prefix <str>] [--who <names>] [context]"
 allowed-tools: Bash, AskUserQuestion, Read, TaskCreate, TaskUpdate, TaskList
 ---
 
@@ -18,9 +18,31 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
 3. "Select label and issue type" (activeForm: "Fetching GitHub metadata...")
 4. "Generate title and body" (activeForm: "Drafting issue...")
 5. "Create issue on GitHub" (activeForm: "Creating issue...")
-6. "Add to project" (activeForm: "Adding to project...")
+6. "Assign users" (activeForm: "Assigning users...") — only when `--who` was given
+7. "Add to project" (activeForm: "Adding to project...")
 
 ## Steps
+
+0. **Parse flags**
+   - Scan the argument for `--prefix <str>` and `--who <name>[,<name>…]`. If neither is present, this step is a no-op.
+   - `--prefix <str>`: remember `<str>` verbatim for step 5. Everything up to the next whitespace is the value; quote it to include spaces.
+   - `--who <names>`: split on commas, lowercase each name, and resolve against the map below.
+
+     | Name | GitHub login |
+     | --- | --- |
+     | hagen | `HagenFritz` |
+     | james | `james-wagner11` |
+     | yazen | `YazenB-PBI` |
+     | chloe | `chloe-mc` |
+     | joe | `starkjoe` |
+     | chris | `ro-chris93` |
+     | bruno | `bchiquini` |
+     | holmes | `jdh208` |
+     | ryan | `rweaver11` |
+
+   - If any name is not in the map, STOP before any GitHub call — nothing is created. Report:
+     > "Unknown name in `--who`: `<name>`. Known names: hagen, james, yazen, chloe, joe, chris, bruno, holmes, ryan."
+   - Strip both flags and their values from the argument. Whatever text remains is the framing lens used in step 3; if nothing remains, treat the argument as absent.
 
 1. **Require context or code changes**
    - If there is no prior conversation context **and** no recent git changes, STOP and tell the user they should only invoke this skill from within an active conversation or after inspecting code.
@@ -62,6 +84,7 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
 
 5. **Generate title and body from signals**
    - Title: under 70 chars, concise, include area/scope (e.g., "chat-v2: new chat button clears URL"), avoid redundancy
+   - If `--prefix <str>` was given in step 0, the final title is `<str>: <generated title>` — the prefix is used verbatim, never reformatted, and the generated part is written as if the prefix weren't there
    - Do NOT include type or emoji in the title; type will be set separately via GraphQL
    - Body: Use the template format from [issue-template.md](issue-template.md) and fill in each section based on the context and git signals
    - Keep the body concise and low-verbosity
@@ -73,9 +96,11 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
      Title: <title>
      Label: <label>
      Type: <type>
+     Assignees: <logins>
 
      <body rendered as-is>
      ```
+   - `Title` is the final prefixed title from step 5. Include the `Assignees` line only when `--who` was given; show the resolved logins.
    - Options:
      - **Confirm** (description: "Create this issue as shown") — include the full preview on this option
      - **Cancel** (description: "Abort without creating")
@@ -119,6 +144,16 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
        }'
        ```
 
+6b. **Assign (only if `--who` was given)**
+   - Assign after creation, never via `gh issue create --assignee` — a non-assignable login there rejects the whole creation.
+   - One call per resolved login (whether `--add-assignee` accepts a comma-separated list may be verified live; one call per login is always safe):
+     ```bash
+     gh issue edit <issue-number> --repo <owner>/<repo> --add-assignee <login>
+     ```
+   - Collect every failure and emit ONE warning line naming the logins that could not be assigned:
+     > "Could not assign: <login>, <login>. The issue was created."
+   - Never treat an assignment failure as a creation failure — continue to step 7 regardless.
+
 7. **Add to project (optional)**
    - Fetch projects live:
      ```bash
@@ -141,6 +176,7 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
       > "Created issue #<number>: <title>"
       > "Type: <type>"
       > "Label: <label>"
+      > "Assignees: <logins>" (if `--who` was given)
       > "Project: <project-name>" (if added)
       > ""
       > "<issue-url>"
