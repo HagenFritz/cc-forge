@@ -9,7 +9,7 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Agent, AskUserQuestion, Task
 
 **Note: The current year is 2026.**
 
-`/grind` takes a plan document and drives it to fully merged `main`, one PR at a time, without stopping for approval between PRs — executing the same process the manual chain (`/work` → `/deep-review` → `/ship`) performs, unattended. For each PR slice it: creates a worktree; dispatches a **max-effort Opus** subagent that implements the slice unit-by-unit — committing, **pushing**, and stamping the issue after every unit — and opens a ship-conformant PR; runs the **`/deep-review` agent fleet** over the PR and posts the review; **triages the findings itself**, records every verdict durably before acting on it, dispatches a second max-effort Opus subagent for accepted fixes and reports each finding's outcome on the PR; then squash-merges once CI is green and moves to the next slice.
+`/grind` takes a plan document and drives it to fully merged `main`, one PR at a time, without stopping for approval between PRs. For each PR slice it: creates a worktree; dispatches a **max-effort Opus** subagent that implements the slice unit-by-unit — committing, **pushing**, and stamping the issue after every unit — and opens a ship-conformant PR; runs the **`/deep-review` agent fleet** over the PR and posts the review; **triages the findings itself**, records every verdict durably before acting on it, dispatches a second max-effort Opus subagent for accepted fixes and reports each finding's outcome on the PR; then squash-merges once CI is green and moves to the next slice.
 
 Two run-level guards wrap the loop. A **lifetime timer** (default on) stops the run cleanly at a phase boundary before the VM's ~2-hour wall instead of letting the process be killed mid-write — the stop is a healthy, resumable state, not a failure. And every terminal outcome — **complete**, **stopped** (timer), or **blocked** (needs a human) — posts a final issue stamp and sends an **email notification**, so an unattended run never ends silently.
 
@@ -139,10 +139,10 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
 
 - **Row `merged`, or any in-flight row whose PR is `MERGED`** (`gh pr view <N> --json state,mergedAt`): confirm cleanup actually finished — worktree removed, local default branch moved forward, plan checkboxes checked, `pr-merged` stamp posted. Complete whatever is missing (a duplicate stamp is harmless — the reader dedupes), set the row `merged`, move on.
 - **Row `blocked`:** re-check only the *objective gate* that blocked it — is CI green now? is the merge conflict gone? If the gate has cleared, continue the slice from the phase that halted; if not, re-halt with the same stamp. A blocked row never silently restarts from scratch.
-- **Row `building` with no PR:** check for the worktree on disk, the remote branch, and `unit-complete` stamps on the issue (`gh api repos/{owner}/{repo}/issues/{n}/comments --paginate`). If partial build state exists, dispatch the build subagent to **continue from the first unfinished unit in the existing worktree** — never recreate the worktree, never redo stamped units. If nothing exists, build from scratch.
+- **Row `building` with no PR:** check for the worktree on disk, the remote branch, and `unit-complete` stamps on the issue (`gh api repos/{owner}/{repo}/issues/{n}/comments --paginate`) — counting only stamps whose marker `paths` includes **this plan's file path**, per the reader contract in [the issue-log spec](../issue-log/SKILL.md); a stamp from another plan or an earlier run against the same issue is not evidence about this slice. If partial build state exists, dispatch the build subagent to **continue from the first unfinished unit in the existing worktree** — never recreate the worktree, never redo stamped units. If nothing exists, build from scratch.
 - **Row `reviewing` or `addressing`:** walk the checkpoint ladder —
-  1. A verified review doc for this slice exists in `docs/reviews/` → the review ran; **never re-dispatch the fleet** (one review pass per PR).
-  2. The doc's issues carry `Status:` lines → triage happened; re-derive the fix brief from the accepted (`in-progress`) findings.
+  1. A review doc in `docs/reviews/` passes **step 26's verification for this PR** — frontmatter `target:` matches this PR/branch and `date:` is current, plus the structural greps → the review ran; **never re-dispatch the fleet** (one review pass per PR). A doc that fails any of those checks is a leftover from an earlier attempt, not this slice's review: ignore it.
+  2. The doc's issues carry `Status:` lines → triage happened. If **no** finding is accepted (every one `wont-fix` or `deferred`), no fix agent was ever dispatched and none is owed — mirror step 32 and go straight to Phase 6. Otherwise re-derive the fix brief from the accepted (`in-progress`) findings.
   3. The PR shows fix commits after the verdict comment (`gh pr view <N> --json commits,comments`) → fixes landed; proceed to the outcome comment / merge.
   Re-enter at the first checkpoint that is missing.
 
@@ -157,7 +157,7 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
     ```
     Branching off `origin/<default-branch>` is what makes serial execution work: slice N+1's worktree contains slice N's merged code. Then symlink `docs/` from the primary checkout into the worktree (as `/tree` does), since it's gitignored and the plan lives there.
 
-17. **Dispatch the build subagent** — `Agent` with `model: "opus"`, `effort: "max"`, `subagent_type: "general-purpose"`, `run_in_background: false`. `/grind` blocks on it; there is nothing to interleave in a serial run.
+17. **Dispatch the build subagent** — `Agent` with `model: "opus"`, `effort: "max"`, `subagent_type: "general-purpose"`, `run_in_background: false`. `/grind` blocks on it; there is nothing to interleave in a serial run. Budget gates cannot fire while it blocks, so the 30-minute buffer is what covers a dispatched agent overrunning its phase budget — an agent that outlasts that is malfunctioning, not slow.
 
     The brief must contain, and nothing may be left implicit:
     - The absolute worktree path, and the instruction to do **all** work there — never in the primary checkout.
@@ -185,6 +185,7 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
 
       **Blocked:** <one-liner: what gates the unit>
       ```
+      When concrete refs gate the blocked unit, add `"blocked_by":["<owner>/<repo>#<n>"]` to its marker; drop the key otherwise (same rule as `/work`'s stamp).
     - **The blocked-unit rule:** a unit it cannot complete stops the build — post the `unit-blocked` stamp, push what is committed, open **no PR**, and return the partial state (which units landed, what blocked, the branch name). A partial-slice PR would violate "every slice leaves `main` green."
     - **Its deliverable:** commits on the branch, pushed per unit, with an open PR. It must not merge, must not touch `main`, must not `git add -A`, must not `--no-verify`, and must not create a worktree of its own.
     - The PR body format from [ship's pr-template.md](../ship/pr-template.md), used **verbatim** — including the template's `Related to #<issue>` line when there's a linked issue (never `Closes`: a multi-PR run must not auto-close the tracking issue mid-run; issue resolution rides the branch name).
@@ -318,9 +319,9 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
 
     On halt:
     - Set the row to `blocked` with a one-clause reason in `Notes`.
-    - Leave the PR **open** and the worktree **in place** — both are the user's material for taking over.
+    - Leave the PR (when one was opened) **open** and the worktree **in place** — both are the user's material for taking over.
     - Set every remaining row's `Notes` to `not started`.
-    - Stamp the issue:
+    - Stamp the issue. A build-phase halt fires **before any PR exists** (the blocked-unit rule opens none), so the stamp branches on whether there is a PR — never invent a number or url for one that was never opened:
       ```markdown
       <!-- cc-forge-log v1: {"skill":"grind","event":"grind-blocked","pr":<N>,"paths":["<plan file path>"]} -->
 
@@ -328,6 +329,17 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
 
       **Blocked:** <what stopped it>
       **PR:** <url> (open)
+      **Worktree:** <absolute path>
+      **Remaining:** <count> slices not started
+      ```
+      With no PR, drop the `pr` key from the marker and the `**PR:**` line from the body, and say where the work actually is:
+      ```markdown
+      <!-- cc-forge-log v1: {"skill":"grind","event":"grind-blocked","paths":["<plan file path>"]} -->
+
+      ### 🛑 /grind — halted at slice <i> of <count>
+
+      **Blocked:** <what stopped it>
+      **Branch:** `<branch-name>` (pushed, no PR — <n> of <m> units built)
       **Worktree:** <absolute path>
       **Remaining:** <count> slices not started
       ```
@@ -381,7 +393,7 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
 
 Every terminal outcome — `grind-complete`, `grind-stopped`, `grind-blocked` — sends one email after its stamp is posted. The stamp is the durable record; the email is the reach.
 
-- **Transport, re-checked at send time** (preflight's detection is a signal, not a promise): try Gmail MCP if its tools are present; on absence or failure, fall through to SendGrid (`SENDGRID_API_KEY`, a single API call with a hard timeout — `curl --max-time 30`); on absence or failure of that, report one line — "couldn't send notification: <reason>" — and continue. Never more than one attempt per rung, and never any retry during a timer stop.
+- **Transport, re-checked at send time** (preflight's detection is a signal, not a promise): try Gmail MCP if its tools are present; on absence or failure, fall through to SendGrid (`SENDGRID_API_KEY`, a single API call with a hard timeout — `curl --max-time 30`, the key passed only as an `Authorization: Bearer` header, never in the URL or body where it lands in process listings and logs); on absence or failure of that, report one line — "couldn't send notification: <reason>" — and continue. Never more than one attempt per rung, and never any retry during a timer stop.
 - **Recipient:** hfritz@r-o.com. **Subject:** `[grind] <plan title>: <complete | stopped | blocked>`.
 - **Body:** the outcome in one sentence, the per-slice table (merged PRs as links), what remains (for stopped/blocked), the blocking reason and PR link (for blocked), and the resume command.
 - A notification failure is never fatal and never blocks the exit path it rides on.
