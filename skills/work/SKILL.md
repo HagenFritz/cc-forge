@@ -1,6 +1,6 @@
 ---
 name: work
-description: Execute work plans efficiently while maintaining quality and finishing features
+description: Execute work plans unit-by-unit through orchestrated dispatch — the main session briefs one max-effort Opus subagent per implementation unit (strictly serial), reviews each diff, commits, stamps the issue, and carries a rolling digest of prior units into every next brief; the orchestrator never writes code itself
 argument-hint: "[plan file, specification, or todo file path]"
 ---
 
@@ -61,54 +61,53 @@ This command takes a work document (plan, specification, or todo file) and execu
    - Include testing and quality check tasks
    - Keep tasks specific and completable
 
-4. **Choose Execution Strategy**
+4. **The Dispatch Contract**
 
-   After creating the task list, decide how to execute based on the plan's size and dependency structure:
+   `/work` has one execution mode: **orchestrated dispatch**. The main session is the orchestrator; every implementation unit — including in a single-unit plan — is built by a dispatched subagent. There is no inline mode and no parallel mode.
 
-   | Strategy | When to use |
-   |----------|-------------|
-   | **Inline** | 1-2 small tasks, or tasks needing user interaction mid-flight |
-   | **Serial subagents** | 3+ tasks with dependencies between them. Each subagent gets a fresh context window focused on one unit — prevents context degradation across many tasks |
-   | **Parallel subagents** | 3+ tasks where some units have no shared dependencies and touch non-overlapping files. Dispatch independent units simultaneously, run dependent units after their prerequisites complete |
+   **The orchestrator** (this session) briefs workers, reviews their diffs, commits, stamps, updates plan checkboxes, and maintains the digest. It **never writes code** — no exceptions: a typo or drive-by fix spotted while reviewing a diff rides the next worker's brief as an addendum, or gets a micro-dispatch of its own when no units remain. One absolute rule is followable; "except trivial" invites drift.
 
-   **Subagent dispatch** uses your available subagent or task spawning mechanism. For each unit, give the subagent:
-   - The full plan file path (for overall context)
-   - The specific unit's Goal, Files, Approach, Execution note, Patterns, Test scenarios, and Verification
-   - Any resolved deferred questions relevant to that unit
+   **The worker** — `Agent` with `model: "opus"`, `effort: "max"`, `subagent_type: "general-purpose"`, `run_in_background: false` — implements exactly one unit in the shared working tree, writes and runs tests, runs the System-Wide Test Check (see Phase 2), and returns its report. Workers never touch git and never post stamps.
 
-   After each subagent completes, update the plan checkboxes and task list before dispatching the next dependent unit.
+   **Strictly serial:** one worker at a time. Commit-per-unit in a shared tree makes concurrent workers a race; unit N+1's brief needs unit N's digest anyway.
 
    For genuinely large plans needing persistent inter-agent communication (agents challenging each other's approaches, shared coordination across 10+ tasks), see Swarm Mode below which uses Agent Teams.
 
 ### Phase 2: Execute
 
-1. **Task Execution Loop**
+1. **The Dispatch Loop**
 
-   For each task in priority order:
+   For each unit in dependency order:
 
    ```
-   while (tasks remain):
-     - Mark task as in-progress
-     - Read any referenced files from the plan
-     - Look for similar patterns in codebase
-     - Implement following existing conventions
-     - Write tests for new functionality
-     - Run System-Wide Test Check (see below)
-     - Run tests after changes
-     - Mark task as completed
-     - Stamp any completed plan unit on the issue (see below)
-     - Evaluate for incremental commit (see below)
+   while (units remain):
+     - Mark the unit's task in-progress
+     - Compose the worker brief (see below)
+     - Dispatch the worker; block until it returns
+     - Review the actual diff — a returned "done" is a hypothesis
+     - Commit (orchestrator; see Incremental Commits)
+     - Mark task completed; check the plan checkbox
+     - Stamp the unit on the issue (see below)
+     - Append to the digest (see below)
    ```
 
-   When a unit carries an `Execution note`, honor it. For test-first units, write the failing test before implementation for that unit. For characterization-first units, capture existing behavior before changing it. For units without an `Execution note`, proceed pragmatically.
+   **The worker brief** must contain, and nothing may be left implicit:
+   - The absolute plan file path, for full context.
+   - The unit's verbatim fields: Goal, Requirements, Files, Approach, Execution note, Patterns to follow, Test scenarios, Verification.
+   - Any resolved `Deferred to Implementation` questions bearing on this unit, plus the plan's `Scope Boundaries` as explicit non-goals.
+   - The repo's test command, and the instruction to leave the suite green.
+   - The instruction to follow the repo's `CLAUDE.md` conventions and honor the unit's `Execution note` (test-first: failing test before implementation, verify it fails, don't over-implement; characterization-first: capture existing behavior before changing it; skip the discipline for trivial renames, pure config, pure styling).
+   - The instruction to run the System-Wide Test Check (below) before returning.
+   - **The digest** — the orchestrator's accumulated notes from every prior unit, verbatim.
+   - **The return contract:** what changed per file, test results, any deviation from the unit's Approach with its reason, discoveries bearing on later units, or — if the unit cannot be completed — a blocked report saying exactly what gates it.
 
-   Guardrails for execution posture:
-   - Do not write the test and implementation in the same step when working test-first
-   - Do not skip verifying that a new test fails before implementing the fix or feature
-   - Do not over-implement beyond the current behavior slice when working test-first
-   - Skip test-first discipline for trivial renames, pure configuration, and pure styling work
+   **The orchestrator's review** is conformance-level: the diff does what the unit's Goal and Verification say, stays inside the unit's Files and the plan's Scope Boundaries, and matches repo conventions. Deviations the worker justified are accepted or sent back with a follow-up dispatch; unjustified drift is a re-dispatch with a corrected brief. Never fix it by hand.
 
-   **System-Wide Test Check** — Before marking a task done, pause and ask:
+   **The digest** — after each review, record 1–3 bullets: decisions made, patterns established, gotchas hit. Cap ~4 lines per unit; when the run grows long, consolidate rather than append. The digest states *constraints on future work* ("auth helpers live in lib/auth, not per-route", "the fixtures assume UTC"), not a change log.
+
+   **Blocked units:** the worker reports; the orchestrator posts the `unit-blocked` stamp (below) and decides — continue with later units that don't depend on it, or stop and surface it.
+
+   **System-Wide Test Check** — run by the **worker** before it returns (the brief points here). Pause and ask:
 
    | Question | What to do |
    |----------|------------|
