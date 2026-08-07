@@ -72,7 +72,7 @@ Optional keys:
 | review-walk | `walk-complete` | 🚶 | Summary line + every walked issue as "what — status: why"; tracking refs for deferred items filed as issues |
 | side-quest | `side-quest-filed` | 🧭 | What was found, tracking-issue link (`tracking`, `followup:true`) |
 | ship | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
-| land | `pr-merged` | ✅ | 2-3 sentence summary of what landed + follow-ups (user-confirmed prose) |
+| land | `pr-merged` | ✅ | 2-3 sentence summary of what landed + follow-ups (`pr`) |
 | grind | `grind-started` | ⚙️ | Plan path, slice count (`slices`), one line per slice |
 | grind | `unit-complete` | 🔨 | Same shape as work's row: **Did** (always), **Solved** (only when a problem was solved) |
 | grind | `unit-blocked` | ⚠️ | **Blocked:** reason; optional `blocked_by` |
@@ -111,7 +111,7 @@ If nothing resolves, **skip the stamp silently** — no error, no prompt. Skills
 ## Posting
 
 - Compose the full body as text, write it to a temp file with the Write tool, and post with `gh issue comment <n> --repo <owner>/<repo> --body-file <temp-file>`. **Never inline the body in shell** — no `--body "…"`, no heredocs: ported free text (requirements, findings, defer reasons) can contain quotes, backticks, or a line that is literally `EOF`, and none of it may ever be shell-parsed.
-- Fixed-format stamps post **unconfirmed**. Stamps containing drafted prose shown to the user for approval (land's `pr-merged`) keep their existing preview-confirm flow; the marker line is part of the previewed body.
+- All stamps post **unconfirmed** — composed, written to the temp file, and posted without a preview step.
 - **Failure is never fatal and never silent**: if the comment fails after the skill's real work succeeded, report one line — `couldn't stamp #<n>: <reason>` — plus the manual command, and continue. Closed issues accept comments; locked ones don't.
 
 ## Dedupe semantics
