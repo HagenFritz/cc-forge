@@ -65,7 +65,7 @@ Read-only beyond the fast-forward itself: it fetches, fast-forwards, and reports
    - From the review doc (if present): X fixed, Y deferred, Z skipped.
    - Or: "Review doc not in this checkout — see the PR comment posted by /push-review for the fix summary."
    ```
-10. **End with the handoff, not an action:** "Worktree is now current. Next: `/land` to stamp, verify, and merge." Do not invoke `/land` — leave it to the user.
+10. **End with the handoff, not an action:** "Worktree is now current. Next: `/land` to verify CI and merge." Do not invoke `/land` — leave it to the user. (`/land` no longer syncs the branch itself, so this catch-up is the sync in the remote-review flow.)
 
 ## Rules
 
