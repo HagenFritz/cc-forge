@@ -81,7 +81,7 @@ Typical flow: `/initiative` → `/blueprint` per workstream → `/work` → `/in
 |---|---|---|
 | `/branch-from-issue` | Creates and checks out a git branch from an issue number or conversation context, in the **current** directory | Starting work tied to an issue, no isolation needed |
 | `/tree` | Creates a git worktree — a second working directory on its own new branch, sibling to the primary checkout at `../<repo>-worktrees/<branch-name>/` — instead of checking the branch out in place. Symlinks `docs/` in so brainstorm/blueprint docs stay visible | Starting work you want isolated in its own directory (e.g. so the primary checkout can stay on `main`, or to run several branches concurrently in separate sessions) |
-| `/issue-from-context` | Generates a GitHub issue from conversation context and adds it to a project | Something worth tracking surfaced mid-conversation |
+| `/issue-from-context` (alias `/ifc`) | Generates a GitHub issue from conversation context and adds it to a project. `--prefix <str>` prepends a verbatim title prefix; `--who <names>` assigns teammates by first name through a hardcoded name → login map | Something worth tracking surfaced mid-conversation |
 | `/read-issue` | Fetches a GitHub issue by number and presents a structured digest | You want an issue's content summarized in-session |
 | `/triage-issue` | Fetches an issue and investigates the codebase to determine if it's still present, fixed, or needs more digging; writes to `docs/triage/` | Verifying whether a reported issue still reproduces |
 | `/ship` | Commits all changes per-file, pushes the branch, and creates a PR | Work is done and you want it shipped |
