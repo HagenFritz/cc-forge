@@ -113,9 +113,9 @@ Run agents in parallel in the **foreground** (do not use background dispatch —
    >
    > Focus hint: {focus_hint}
 
-2. **Learnings search** — dispatch `cc-forge:research:learnings-researcher` with a brief summary of the ideation focus.
+2. **Learnings search** — dispatch `forge:research:learnings-researcher` with a brief summary of the ideation focus.
 
-3. **Issue intelligence** (conditional) — if issue-tracker intent was detected in Phase 0.2, dispatch `cc-forge:research:issue-intelligence-analyst` with the focus hint. If a focus hint is present, pass it so the agent can weight its clustering toward that area. Run this in parallel with agents 1 and 2.
+3. **Issue intelligence** (conditional) — if issue-tracker intent was detected in Phase 0.2, dispatch `forge:research:issue-intelligence-analyst` with the focus hint. If a focus hint is present, pass it so the agent can weight its clustering toward that area. Run this in parallel with agents 1 and 2.
 
    If the agent returns an error (gh not installed, no remote, auth failure), log a warning to the user ("Issue analysis unavailable: {reason}. Proceeding with standard ideation.") and continue with the existing two-agent grounding.
 

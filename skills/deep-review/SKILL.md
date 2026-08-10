@@ -110,10 +110,10 @@ For each agent in review_agents:
 ```
 
 Always run these last regardless of mode:
-- Task cc-forge:review:correctness-auditor(PR content) - Trace logic, boundaries, and contracts for behavior that doesn't match its claim
-- Task cc-forge:review:reliability-engineer(PR content) - Check error handling, timeouts, retries, and partial-failure safety
-- Task cc-forge:review:test-coverage-reviewer(PR content) - Judge whether shipped tests would catch a regression of this change
-- Task cc-forge:research:learnings-researcher(PR content) - Search docs/solutions/ for past issues related to this PR's modules and patterns
+- Task forge:review:correctness-auditor(PR content) - Trace logic, boundaries, and contracts for behavior that doesn't match its claim
+- Task forge:review:reliability-engineer(PR content) - Check error handling, timeouts, retries, and partial-failure safety
+- Task forge:review:test-coverage-reviewer(PR content) - Judge whether shipped tests would catch a regression of this change
+- Task forge:research:learnings-researcher(PR content) - Search docs/solutions/ for past issues related to this PR's modules and patterns
 
 </parallel_tasks>
 
@@ -125,7 +125,7 @@ These agents are run ONLY when the PR matches specific criteria. Check the PR fi
 
 **ADVERSARIAL: If the diff is ≥50 lines OR touches shared state, concurrency, auth, or value-bearing operations (payments, credits, redemptions, voting):**
 
-- Task cc-forge:review:adversarial-reviewer(PR content) - Hunt for abuse cases, race conditions, and cascade failures
+- Task forge:review:adversarial-reviewer(PR content) - Hunt for abuse cases, race conditions, and cascade failures
 
 **When to run:**
 - Diff is 50+ lines
@@ -232,7 +232,7 @@ Complete system context map with component interactions
 
 ### 4. Simplification and Minimalism Review
 
-Run the Task cc-forge:review:code-simplicity-reviewer() to see if we can simplify the code.
+Run the Task forge:review:code-simplicity-reviewer() to see if we can simplify the code.
 
 ### 5. Findings Synthesis and Review Document
 
@@ -241,7 +241,7 @@ Run the Task cc-forge:review:code-simplicity-reviewer() to see if we can simplif
 Collect the findings from every review agent — including code-simplicity-reviewer (section 4) and the learnings-researcher report — and dispatch a single synthesis task:
 
 ```
-Task cc-forge:review:review-synthesizer(
+Task forge:review:review-synthesizer(
   - all review-agent findings, verbatim
   - the learnings-researcher report
   - PR metadata and the branch-or-PR slug

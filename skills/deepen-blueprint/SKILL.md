@@ -206,41 +206,41 @@ Use fully-qualified agent names inside Task calls.
 #### 3.1 Deterministic Section-to-Agent Mapping
 
 **Requirements Trace / Open Questions classification**
-- `cc-forge:workflow:spec-flow-analyzer` for missing user flows, edge cases, and handoff gaps
-- `cc-forge:research:repo-research-analyst` (Scope: `architecture, patterns`) for repo-grounded patterns, conventions, and implementation reality checks
+- `forge:workflow:spec-flow-analyzer` for missing user flows, edge cases, and handoff gaps
+- `forge:research:repo-research-analyst` (Scope: `architecture, patterns`) for repo-grounded patterns, conventions, and implementation reality checks
 
 **Context & Research / Sources & References gaps**
-- `cc-forge:research:learnings-researcher` for institutional knowledge and past solved problems
-- `cc-forge:research:framework-docs-researcher` for official framework or library behavior
-- `cc-forge:research:best-practices-researcher` for current external patterns and industry guidance
-- Add `cc-forge:research:git-history-analyzer` only when historical rationale or prior art is materially missing
+- `forge:research:learnings-researcher` for institutional knowledge and past solved problems
+- `forge:research:framework-docs-researcher` for official framework or library behavior
+- `forge:research:best-practices-researcher` for current external patterns and industry guidance
+- Add `forge:research:git-history-analyzer` only when historical rationale or prior art is materially missing
 
 **Key Technical Decisions**
-- `cc-forge:review:architecture-strategist` for design integrity, boundaries, and architectural tradeoffs
-- Add `cc-forge:research:framework-docs-researcher` or `cc-forge:research:best-practices-researcher` when the decision needs external grounding beyond repo evidence
+- `forge:review:architecture-strategist` for design integrity, boundaries, and architectural tradeoffs
+- Add `forge:research:framework-docs-researcher` or `forge:research:best-practices-researcher` when the decision needs external grounding beyond repo evidence
 
 **High-Level Technical Design**
-- `cc-forge:review:architecture-strategist` for validating that the technical design accurately represents the intended approach and identifying gaps
-- `cc-forge:research:repo-research-analyst` (Scope: `architecture, patterns`) for grounding the technical design in existing repo patterns and conventions
-- Add `cc-forge:research:best-practices-researcher` when the technical design involves a DSL, API surface, or pattern that benefits from external validation
+- `forge:review:architecture-strategist` for validating that the technical design accurately represents the intended approach and identifying gaps
+- `forge:research:repo-research-analyst` (Scope: `architecture, patterns`) for grounding the technical design in existing repo patterns and conventions
+- Add `forge:research:best-practices-researcher` when the technical design involves a DSL, API surface, or pattern that benefits from external validation
 
 **Implementation Units / Verification**
-- `cc-forge:research:repo-research-analyst` (Scope: `patterns`) for concrete file targets, patterns to follow, and repo-specific sequencing clues
-- `cc-forge:review:pattern-recognition-specialist` for consistency, duplication risks, and alignment with existing patterns
-- Add `cc-forge:workflow:spec-flow-analyzer` when sequencing depends on user flow or handoff completeness
+- `forge:research:repo-research-analyst` (Scope: `patterns`) for concrete file targets, patterns to follow, and repo-specific sequencing clues
+- `forge:review:pattern-recognition-specialist` for consistency, duplication risks, and alignment with existing patterns
+- Add `forge:workflow:spec-flow-analyzer` when sequencing depends on user flow or handoff completeness
 
 **System-Wide Impact**
-- `cc-forge:review:architecture-strategist` for cross-boundary effects, interface surfaces, and architectural knock-on impact
+- `forge:review:architecture-strategist` for cross-boundary effects, interface surfaces, and architectural knock-on impact
 - Add the specific specialist that matches the risk:
-  - `cc-forge:review:performance-oracle-python` / `cc-forge:review:performance-oracle-typescript` for scalability, latency, throughput, and resource-risk analysis
-  - `cc-forge:review:security-sentinel-python` / `cc-forge:review:security-sentinel-typescript` for auth, validation, exploit surfaces, and security boundary review
-  - `cc-forge:review:data-integrity-guardian` for migrations, persistent state safety, consistency, and data lifecycle risks
+  - `forge:review:performance-oracle-python` / `forge:review:performance-oracle-typescript` for scalability, latency, throughput, and resource-risk analysis
+  - `forge:review:security-sentinel-python` / `forge:review:security-sentinel-typescript` for auth, validation, exploit surfaces, and security boundary review
+  - `forge:review:data-integrity-guardian` for migrations, persistent state safety, consistency, and data lifecycle risks
 
 **Risks & Dependencies / Operational Notes**
 - Use the specialist that matches the actual risk:
-  - `cc-forge:review:security-sentinel-python` / `cc-forge:review:security-sentinel-typescript` for security, auth, privacy, and exploit risk
-  - `cc-forge:review:data-integrity-guardian` for persistent data safety, constraints, transaction boundaries, migrations, and backfills
-  - `cc-forge:review:performance-oracle-python` / `cc-forge:review:performance-oracle-typescript` for capacity, latency, and scaling concerns
+  - `forge:review:security-sentinel-python` / `forge:review:security-sentinel-typescript` for security, auth, privacy, and exploit risk
+  - `forge:review:data-integrity-guardian` for persistent data safety, constraints, transaction boundaries, migrations, and backfills
+  - `forge:review:performance-oracle-python` / `forge:review:performance-oracle-typescript` for capacity, latency, and scaling concerns
 
 #### 3.2 Agent Prompt Shape
 

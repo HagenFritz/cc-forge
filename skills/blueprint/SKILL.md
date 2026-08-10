@@ -144,8 +144,8 @@ Prepare a concise planning context summary (a paragraph or two) to pass as input
 
 Run these agents in parallel:
 
-- Task cc-forge:research:repo-research-analyst(Scope: technology, architecture, patterns. {planning context summary})
-- Task cc-forge:research:learnings-researcher(planning context summary)
+- Task forge:research:repo-research-analyst(Scope: technology, architecture, patterns. {planning context summary})
+- Task forge:research:learnings-researcher(planning context summary)
 
 Collect:
 - Technology stack and versions (used in section 1.2 to make sharper external research decisions)
@@ -208,8 +208,8 @@ Announce the decision briefly before continuing. Examples:
 
 If Step 1.2 indicates external research is useful, run these agents in parallel:
 
-- Task cc-forge:research:best-practices-researcher(planning context summary)
-- Task cc-forge:research:framework-docs-researcher(planning context summary)
+- Task forge:research:best-practices-researcher(planning context summary)
+- Task forge:research:framework-docs-researcher(planning context summary)
 
 #### 1.4 Consolidate Research
 
@@ -224,7 +224,7 @@ Summarize:
 
 For **Standard** or **Deep** plans, or when user flow completeness is still unclear, run:
 
-- Task cc-forge:workflow:spec-flow-analyzer(planning context summary, research findings)
+- Task forge:workflow:spec-flow-analyzer(planning context summary, research findings)
 
 Use the output to:
 - Identify missing edge cases, state transitions, or handoff gaps
