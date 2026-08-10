@@ -43,7 +43,7 @@ Spawn two agents in parallel using the Agent tool. Do NOT wait for one before la
 ### Agent 1: Codebase Search
 
 ```
-subagent_type: cc-forge:research:repo-research-analyst
+subagent_type: forge:research:repo-research-analyst
 
 Prompt:
 You are triaging GitHub issue #<N>: "<title>"
@@ -74,7 +74,7 @@ Report:
 ### Agent 2: Git History Search
 
 ```
-subagent_type: cc-forge:research:git-history-analyzer
+subagent_type: forge:research:git-history-analyzer
 
 Prompt:
 You are triaging GitHub issue #<N>: "<title>"

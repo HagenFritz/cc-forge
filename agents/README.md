@@ -1,6 +1,6 @@
 # Agents
 
-Specialized subagents the skills dispatch via the `Task` tool. Each is a Markdown file with YAML frontmatter (`name`, `description`, `model`) and a prompt body. Fully-qualified name: `cc-forge:<category>:<agent-name>`.
+Specialized subagents the skills dispatch via the `Task` tool. Each is a Markdown file with YAML frontmatter (`name`, `description`, `model`) and a prompt body. Fully-qualified name: `forge:<category>:<agent-name>`.
 
 Models are pinned per agent: everything under `review/` runs `claude-sonnet-5` (1M context, opus-level review quality at lower cost) except `review-synthesizer`, which runs `claude-opus-4-8`; `workflow/lint` runs `haiku`; the rest `inherit` the session model. Pins are plain frontmatter — edit them if your org's model allowlist differs or the IDs deprecate. Note a pin also applies when *other* skills dispatch the same agent, and it overrides (even downgrades) whatever model the main session runs.
 

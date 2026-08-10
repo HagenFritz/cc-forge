@@ -194,7 +194,7 @@ Progress: X / N tests completed (pass or skip count toward completion; fail and 
 
 ## Step 4: Critic Pass
 
-After writing the file, spawn the `cc-forge:test:test-plan-critic` agent. Pass it:
+After writing the file, spawn the `forge:test:test-plan-critic` agent. Pass it:
 - The absolute path to the test plan file you just wrote
 - The full git diff output collected in Step 1.2 (unstaged + staged + branch commits)
 

@@ -1,6 +1,6 @@
 # Agents
 
-Specialized subagents dispatched by skills via the `Task` tool. Each is a Markdown file with YAML frontmatter (`name`, `description`, `model`) and a prompt body. Fully-qualified name: `cc-forge:<category>:<agent-name>`. See [README.md](README.md) for the full catalog.
+Specialized subagents dispatched by skills via the `Task` tool. Each is a Markdown file with YAML frontmatter (`name`, `description`, `model`) and a prompt body. Fully-qualified name: `forge:<category>:<agent-name>`. See [README.md](README.md) for the full catalog.
 
 Categories: `research/` (6), `review/` (15), `test/` (1), `workflow/` (2).
 

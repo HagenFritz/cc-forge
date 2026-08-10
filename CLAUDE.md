@@ -5,10 +5,10 @@ Personal reference collection of Claude Code skills, agents, and hooks with GitH
 ## Structure
 
 ```
-.claude-plugin/   Plugin + marketplace metadata (one-command install path)
+.claude-plugin/   Plugin manifest (makes the symlinked clone load as forge@skills-dir)
 agents/           Specialized subagents (research, review, workflow, test)
 skills/           Slash commands (SKILL.md files)
-hooks/            Hook scripts (.cjs) + hooks.json (auto-wires hooks on /plugin install)
+hooks/            Hook scripts (.cjs) + hooks.json (auto-wired when the plugin loads)
 docs/             Plans, brainstorms, reviews, initiatives generated at runtime
 ```
 
@@ -52,25 +52,16 @@ Core workflow: brainstorm -> blueprint -> work -> review -> compound
 
 ## Applying changes
 
-This is a reference repo, not a package — there's no build step or install CLI. Skills and agents are plain Markdown that Claude Code loads from `~/.claude/skills/` and `~/.claude/agents/`.
+This is a personal showcase repo, not a package — there's no build step or install CLI. The clone is symlinked into `~/.claude/skills/cc-forge`, which makes Claude Code load it **in place** as a skills-directory plugin, `forge@skills-dir` — no marketplace, no cache copy (`ln -s <clone> ~/.claude/skills/cc-forge`, once per machine; verify with `claude plugin list`).
 
-Two install paths (see README):
-- **Plugin** (`/plugin install cc-forge`) — installs all skills, agents, and the caveman hook (the hook is auto-wired via `hooks/hooks.json`). Recommended.
-- **Cherry-pick** — copy individual folders into `~/.claude/`:
+Because there is no cache, **editing a file or pulling a commit is the deploy** — the next session has it automatically. Mid-session: `SKILL.md` edits are live immediately; agent, hook, and manifest changes need `/reload-plugins`. Never use `/plugin install` / `/plugin update` for this repo — the marketplace route copies to a cache that goes stale on every edit (the README "Migrating from the old marketplace install" note has the removal steps if it resurfaces).
 
-```bash
-cp -r skills/<name> ~/.claude/skills/
-cp -r agents/<category> ~/.claude/agents/
-```
-
-Editing a file in this repo does **not** make it live — the plugin loads from a cache copy, read once at session start. `/plugin update` does **not** apply changes: it keys off the `version` in `.claude-plugin/plugin.json` and no-ops when that's unchanged, so newly added agents/skills never appear (you'll see `Agent type '…' not found`). To apply any change, force a clean reinstall then restart Claude Code: `/plugin uninstall cc-forge && rm -rf ~/.claude/plugins/cache/cc-forge-local/ && /plugin install cc-forge` (or copy the changed folder into `~/.claude/` for the cherry-pick route). See the README "Applying repo changes" note.
-
-The `/caveman` hook is wired automatically by the plugin path via `hooks/hooks.json`. Only the cherry-pick route needs the manual `settings.json` paste documented in the README ("Caveman hook setup"). When adding a new hook in the future, add its script to `hooks/` and declare it in `hooks/hooks.json` (using `${CLAUDE_PLUGIN_ROOT}` for the path) so plugin installs pick it up automatically.
+The `/caveman` hook is wired automatically via `hooks/hooks.json` when the plugin loads. Only a hand-copied (cherry-picked) skill needs the manual `settings.json` paste documented in the README ("Caveman hook setup"). When adding a new hook in the future, add its script to `hooks/` and declare it in `hooks/hooks.json` (using `${CLAUDE_PLUGIN_ROOT}` for the path) so it's picked up automatically.
 
 ## Agent References in Skills
 
 When referencing agents from within SKILL.md files, use fully-qualified names:
-`cc-forge:<category>:<agent-name>` (e.g., `cc-forge:research:best-practices-researcher`)
+`forge:<category>:<agent-name>` (e.g., `forge:research:best-practices-researcher`)
 
 ## Related
 
