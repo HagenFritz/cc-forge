@@ -1,8 +1,8 @@
 ---
 name: grind
-description: "Execute an entire implementation plan autonomously as a sequence of PRs, mirroring the manual skill chain unattended: a max-effort Opus subagent builds each slice unit-by-unit (committing, pushing, and stamping the issue per unit) and opens a ship-conformant PR; the deep-review agent fleet reviews it; grind triages the findings itself, posts every verdict and outcome to the PR, dispatches a second Opus subagent for accepted fixes, and squash-merges on green CI — halting, never self-repairing, on red. A default-on lifetime timer stops the run cleanly before the VM's ~2-hour wall (--no-timer to disable), and every terminal outcome — complete, stopped, or blocked — sends an email notification. Use when the user says 'grind this plan', 'grind it out', 'run the whole plan', 'build all the PRs', or invokes /grind."
+description: "Execute an entire implementation plan autonomously as a sequence of PRs, mirroring the manual skill chain unattended: a max-effort Opus subagent builds each slice unit-by-unit (committing, pushing, and stamping the issue per unit) and opens a ship-conformant PR; the deep-review agent fleet reviews it; grind triages the findings itself, posts every verdict and outcome to the PR, dispatches a second Opus subagent for accepted fixes, and squash-merges on green CI — halting, never self-repairing, on red. A default-on lifetime timer stops the run cleanly before the VM's ~2-hour wall (--no-timer to disable), and every terminal outcome — complete, stopped, or blocked — always fires a push notification and emails when SendGrid is configured. Use when the user says 'grind this plan', 'grind it out', 'run the whole plan', 'build all the PRs', or invokes /grind."
 argument-hint: "[plan file path] [--no-timer]"
-allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Agent, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
+allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Agent, AskUserQuestion, PushNotification, TaskCreate, TaskUpdate, TaskList
 ---
 
 # Grind — Autonomously Execute a Plan as a Sequence of PRs
@@ -11,7 +11,7 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Agent, AskUserQuestion, Task
 
 `/grind` takes a plan document and drives it to fully merged `main`, one PR at a time, without stopping for approval between PRs. For each PR slice it: creates a worktree; dispatches a **max-effort Opus** subagent that implements the slice unit-by-unit — committing, **pushing**, and stamping the issue after every unit — and opens a ship-conformant PR; runs the **`/deep-review` agent fleet** over the PR and posts the review; **triages the findings itself**, records every verdict durably before acting on it, dispatches a second max-effort Opus subagent for accepted fixes and reports each finding's outcome on the PR; then squash-merges once CI is green and moves to the next slice.
 
-Two run-level guards wrap the loop. A **lifetime timer** (default on) stops the run cleanly at a phase boundary before the VM's ~2-hour wall instead of letting the process be killed mid-write — the stop is a healthy, resumable state, not a failure. And every terminal outcome — **complete**, **stopped** (timer), or **blocked** (needs a human) — posts a final issue stamp and sends an **email notification**, so an unattended run never ends silently.
+Two run-level guards wrap the loop. A **lifetime timer** (default on) stops the run cleanly at a phase boundary before the VM's ~2-hour wall instead of letting the process be killed mid-write — the stop is a healthy, resumable state, not a failure. And every terminal outcome — **complete**, **stopped** (timer), or **blocked** (needs a human) — posts a final issue stamp and notifies on **two independent channels** — a push that always fires, plus an email when SendGrid is configured — so an unattended run never ends silently.
 
 The plan document is the durable state. `/grind` writes a `## PR Breakdown` table into it and updates each row as the PR advances; the review doc, worktrees, and unpushed-nothing per-unit cadence mean every checkpoint also exists on GitHub or on disk. An interrupted run — stopped, blocked, or hard-killed — is resumed by re-invoking `/grind` on the same plan.
 
@@ -52,11 +52,7 @@ Run these checks before touching anything. Any failure stops the run — a half-
 4. **Read the plan completely.** Note its `Implementation Units`, `Requirements Trace`, `Scope Boundaries`, `Deferred to Implementation`, and any `Execution note` fields. These are the source material for both the breakdown and every subagent brief.
 5. **Resolve the linked issue** per [the issue-log spec](../issue-log/SKILL.md)'s issue-number resolution. Remember it as `<issue>`; it may be empty. Every stamp below skips silently when it is.
 6. **Detect the test command** for the repo (`package.json` scripts, `Makefile`, `pytest.ini`, `Cargo.toml`, etc.). It is used in exactly one place: as the merge gate for a PR that reports **no CI checks** (Phase 6). When the repo has CI, `/grind` never runs the local suite itself — though build and fix subagents still leave it green.
-7. **Detect the notification transport** and announce the result:
-   - Gmail MCP tools present in this session → transport is **Gmail**.
-   - Else `SENDGRID_API_KEY` set in the environment → transport is **SendGrid**.
-   - Else → **stamp-only**: warn now, up front — "No email transport available (no Gmail MCP, no SENDGRID_API_KEY). Terminal outcomes will be stamped to the issue but not emailed."
-   The detection is a preflight signal; the send itself re-checks (see Notification).
+7. **Detect the email transport** and announce the result. `SENDGRID_API_KEY` set in the environment → email is **on**; unset → warn now, up front: "No SENDGRID_API_KEY — terminal outcomes will be stamped and pushed, but not emailed." Either way `PushNotification` still fires, so a terminal outcome is never silent. The detection is a preflight signal; the send itself re-checks (see Notification).
 8. **Start the clock** (unless `--no-timer`): record the current time in this session's working memory. The start time is **never persisted** — not to the plan doc, not to a file — so a resumed run on a fresh process starts a fresh clock.
 
 ### The Lifetime Timer
@@ -363,7 +359,7 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
        **Remaining:** <what remains, one line>
        **Resume:** re-run `/grind <plan path>` — reconciliation picks up from here
        ```
-    3. **Send the notification** — exactly one attempt (see Notification); never retry on a stop, the buffer is for exiting cleanly.
+    3. **Send the notification** — push always, email if configured, one attempt per channel (see Notification); never retry on a stop, the buffer is for exiting cleanly.
     4. Report the same summary to the terminal and exit.
 
 ### Phase 9: Report (complete)
@@ -391,12 +387,13 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
 
 ### Notification
 
-Every terminal outcome — `grind-complete`, `grind-stopped`, `grind-blocked` — sends one email after its stamp is posted. The stamp is the durable record; the email is the reach.
+Every terminal outcome — `grind-complete`, `grind-stopped`, `grind-blocked` — notifies on **two independent channels** after its stamp is posted. The stamp is the durable record; the channels are the reach. They are not fallbacks for each other: push always fires, whether or not the email succeeded, because the two land in different places (terminal and phone vs. inbox) and an unattended run should reach whichever one you're near.
 
-- **Transport, re-checked at send time** (preflight's detection is a signal, not a promise): try Gmail MCP if its tools are present; on absence or failure, fall through to SendGrid (`SENDGRID_API_KEY`, a single API call with a hard timeout — `curl --max-time 30`, the key passed only as an `Authorization: Bearer` header, never in the URL or body where it lands in process listings and logs); on absence or failure of that, report one line — "couldn't send notification: <reason>" — and continue. Never more than one attempt per rung, and never any retry during a timer stop.
-- **Recipient:** hfritz@r-o.com. **Subject:** `[grind] <plan title>: <complete | stopped | blocked>`.
+- **Push — always.** Call `PushNotification` with a one-line message under 200 characters: outcome, plan title, and the number that matters (`grind complete: auth-refresh — 4 PRs merged` / `grind stopped: auth-refresh — 2 of 5 slices, resume to continue` / `grind blocked: auth-refresh — red CI on #61`). No markdown. Fire it on every terminal outcome, including one where the email already went out, and including a timer stop. A skipped push (you're at the terminal, so it would be redundant) is a normal result, not a failure.
+- **Email — when configured.** `SENDGRID_API_KEY` set → one `POST https://api.sendgrid.com/v3/mail/send` with a hard timeout (`curl --max-time 30`), the key passed only as an `Authorization: Bearer` header and the body via `--data @<file>`, so the key never lands in process listings and the body never lands in shell history. Unset, or the call fails → report one line, "couldn't send notification: <reason>", and continue. Exactly one attempt, never a retry, and never any retry during a timer stop.
+- **From:** `hfritz@r-o.com` (name `Hagen Fritz`) — a verified SendGrid sender; an unverified `From:` is rejected with a 403. **Recipient:** hfritz@r-o.com. **Subject:** `[grind] <plan title>: <complete | stopped | blocked>`.
 - **Body:** the outcome in one sentence, the per-slice table (merged PRs as links), what remains (for stopped/blocked), the blocking reason and PR link (for blocked), and the resume command.
-- A notification failure is never fatal and never blocks the exit path it rides on.
+- A notification failure on either channel is never fatal, never blocks the other channel, and never blocks the exit path it rides on.
 
 ## Rules
 
@@ -406,7 +403,7 @@ Every terminal outcome — `grind-complete`, `grind-stopped`, `grind-blocked` �
 - **One worktree per PR**, created off `origin/<default-branch>`, removed on merge. `/grind` runs from the primary checkout and never checks out a feature branch there.
 - **Halt, don't skip; stop, don't die.** A blocked slice stops the run for a human. A failed budget gate stops it for the clock — cleanly, at a phase boundary, resumable. The two are distinct states with distinct stamps.
 - **Red CI halts.** `/grind` pushes no CI-fix commits and never masks a failure — no deleted tests, loosened assertions, skips, or timeout bumps. With CI present, no local suite runs; with no CI, the local suite is the gate.
-- **Every durable write precedes the email it announces.** Table note, then stamp, then one send attempt.
+- **Every durable write precedes the notification it announces.** Table note, then stamp, then one send attempt per channel.
 - **Verify every subagent claim** against `gh` or `git` before acting on it. A returned "done" is a hypothesis.
 - **The reviewer fleet posts comments, never `--approve` or `--request-changes`.** `/grind` owns the triage decision; a blocking review state from a subagent can deadlock the merge.
 - **Triage is `/grind`'s own judgment**, never delegated, and it is recorded in the review doc's `Status:` lines and on the PR **before** the fix agent is dispatched. The fix agent receives accepted findings only.
