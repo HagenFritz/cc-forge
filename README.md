@@ -2,49 +2,41 @@
 
 A personal reference collection of Claude Code skills, agents, and hooks for structured development workflows, code review, and research automation.
 
-This repo is meant to be **referenced and cherry-picked**, not installed as a package. Browse the skills and agents below, copy the ones you want into your own `~/.claude/`, and adapt them. The whole thing is built around a `brainstorm → blueprint → work → review → compound` loop with GitHub integration on top.
+This repo is a **personal showcase**, not a package for others to install. Browse the skills and agents below, copy the ideas (or individual folders) you want into your own `~/.claude/`, and adapt them. The whole thing is built around a `brainstorm → blueprint → work → review → compound` loop with GitHub integration on top. Fair warning: the workflows are tuned to one person's setup and won't translate wholesale.
 
-## How to use it
+## How it's wired (skills-directory plugin)
 
-Two ways: install the whole set as a plugin (one command, everything wired), or cherry-pick individual skills by copying folders.
+The clone is symlinked into Claude Code's skills directory, where any folder containing `.claude-plugin/plugin.json` loads as a plugin **in place** — no marketplace, no install step, no cache copy:
 
-### Install everything (recommended)
-
-Clone the repo, then point Claude Code's plugin system at your local checkout:
-
-```text
-/plugin marketplace add /path/to/your/clone/cc-forge
-/plugin install cc-forge
+```bash
+ln -s /path/to/your/clone/cc-forge ~/.claude/skills/cc-forge
 ```
 
-This installs **all skills, all agents, and the caveman hook** — the hook is wired automatically via `hooks/hooks.json`, so there's no `settings.json` editing. Restart Claude Code and you're done.
+The next `claude` session loads it as `forge@skills-dir`: all skills (namespaced `/forge:<name>`), all agents, and the caveman hook (wired automatically via `hooks/hooks.json`). Verify with `claude plugin list`.
 
-(The marketplace is named `cc-forge-local` with `source: "./"`, so add it by the **path to your clone**, not a remote `owner/repo` reference.)
+Because the plugin is read from the clone itself, **editing a file or pulling a commit is the deploy** — the next session just has it. Mid-session, `SKILL.md` edits take effect immediately; changes to agents, hooks, or manifests need `/reload-plugins` (or a new session).
 
-> **Applying repo changes to the installed plugin.** Editing files in this clone does **not** make them live — the plugin loads from a cache copy under `~/.claude/plugins/cache/`, and agents/skills are read once at session start. `/plugin update` does **not** help for a local directory-source plugin: it compares the `version` string in `.claude-plugin/plugin.json`, so if that hasn't bumped it reports "already at the latest version" and rebuilds nothing — even when new commits added agents or skills. That's why a newly added agent shows up as `Agent type '…' not found`.
->
-> To pick up any repo change (added, renamed, or deleted files), force a clean reinstall, then **restart Claude Code** so the new agents/skills load:
+> **Migrating from the old marketplace install?** Earlier versions of this repo were installed via `/plugin marketplace add` + `/plugin install`, which copies the plugin into `~/.claude/plugins/cache/` — a snapshot that goes stale the moment the clone changes, and that `/plugin update` won't refresh for a directory-source plugin (it compares the manifest `version` string, which never bumps). If that's your setup, remove it and symlink instead:
 >
 > ```bash
-> /plugin uninstall cc-forge
+> claude plugin uninstall cc-forge@cc-forge-local
+> claude plugin marketplace remove cc-forge-local
 > rm -rf ~/.claude/plugins/cache/cc-forge-local/
-> /plugin install cc-forge
+> ln -s /path/to/your/clone/cc-forge ~/.claude/skills/cc-forge
 > ```
->
-> A reinstall alone can leave stale metadata pointing at an already-deleted cache dir; the `rm -rf` guarantees the cache rebuilds from your clone's current `HEAD` (uncommitted working-tree edits included).
 
 ### Cherry-pick individual pieces
 
-Skills and agents are plain Markdown that Claude Code loads from `~/.claude/skills/` and `~/.claude/agents/`. To grab just one, copy its folder:
+Skills and agents are plain Markdown. To grab just one into your own setup, copy its folder:
 
 ```bash
 cp -r skills/blueprint ~/.claude/skills/        # one skill
 cp -r agents/research ~/.claude/agents/    # one agent category
 ```
 
-Restart Claude Code after copying. Skills become available as `/<name>` slash commands; agents are dispatchable via the Task tool.
+Restart Claude Code after copying. Skills copied this way are un-namespaced (`/blueprint`, not `/forge:blueprint`); agents are dispatchable via the Task tool — but note skills that reference agents use the `forge:<category>:<name>` qualified form, which only resolves when the whole repo loads as a plugin.
 
-> Copying the `/caveman` skill this way gets the prompt but **not** its persistence hook — that needs one manual step ([Caveman hook setup](#caveman-hook-setup)). The plugin install above wires it for you; this manual step is only for the cherry-pick route.
+> Copying the `/caveman` skill this way gets the prompt but **not** its persistence hook — that needs one manual step ([Caveman hook setup](#caveman-hook-setup)). The symlink setup above wires it for you; this manual step is only for the cherry-pick route.
 
 ## Skills
 
@@ -122,11 +114,11 @@ Specialized subagents live in `agents/`, grouped by category. Copy a category fo
 | `workflow/` | lint, spec-flow-analyzer | Linting and spec/flow analysis |
 | `test/` | test-plan-critic | Annotates a test plan with viability scores and a drop list |
 
-Skills reference agents by fully-qualified name (`cc-forge:<category>:<agent>`), so if you copy a skill that dispatches agents, copy the referenced agent category too.
+Skills reference agents by fully-qualified name (`forge:<category>:<agent>`), so if you copy a skill that dispatches agents, copy the referenced agent category too.
 
 ## Caveman hook setup
 
-> **Skip this if you installed via the plugin** (`/plugin install cc-forge`) — the hook is already wired by `hooks/hooks.json`. This section is only for the cherry-pick route, where you copied the `/caveman` skill folder by hand.
+> **Skip this if the repo is symlinked into `~/.claude/skills/`** — the hook is already wired by `hooks/hooks.json`. This section is only for the cherry-pick route, where you copied the `/caveman` skill folder by hand.
 
 `/caveman` persists its mode by re-injecting a reminder on every prompt via a `UserPromptSubmit` hook. When you copy the skill folder manually, the hook isn't wired — do these two one-time steps:
 
@@ -196,7 +188,7 @@ Restart Claude Code. The hook reads a flag file at `~/.claude/.caveman-active` (
 skills/          Slash commands (one SKILL.md per skill)
 agents/          Subagents grouped by category (research/review/workflow/test)
 hooks/           Hook scripts (currently just the caveman mode tracker)
-.claude-plugin/  Plugin + marketplace metadata (optional one-command install path)
+.claude-plugin/  Plugin manifest (makes the symlinked clone load as forge@skills-dir)
 docs/            Plans, brainstorms, reviews, initiatives generated at runtime
 ```
 
