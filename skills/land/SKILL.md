@@ -30,7 +30,7 @@ Typical flow: open the PR with `/ship` → (remote-review flow: run `/catch-up` 
 3. **Resolve the PR:**
    - **With a PR number arg** (`/land 42`): `gh pr view <N> --json number,title,url,body,state,headRefName`. If `state` is not `OPEN`, stop: "PR #<N> is <state>, not open."
    - **Without:** resolve the open PR for the current branch (`gh pr view --json ...`). If none, stop: "No open PR found for branch `<branch>`. Open one with /ship first, or pass a PR number."
-4. **Capture the linked issue** as `<issue>`: parse `Closes #N` / `Fixes #N` / `Resolves #N` / `Related to #N` from the PR body; fall back to the numeric second segment of `headRefName`. Verify it exists (`gh issue view <issue>`); unresolvable or missing → `<issue>` is empty and the Phase 5 stamp skips silently, per [the issue-log spec](../issue-log/SKILL.md).
+4. **Capture the linked issue** as `<issue>`: parse the PR body for an issue reference per [the issue-log spec](../issue-log/SKILL.md)'s issue-number resolution — a GitHub closing-keyword reference (written by humans and other tools, never by these skills) or a `Related to #N` line; fall back to the numeric second segment of `headRefName`. Verify it exists (`gh issue view <issue>`); unresolvable or missing → `<issue>` is empty and the Phase 5 stamp skips silently, per [the issue-log spec](../issue-log/SKILL.md).
 
 ### Phase 2: The gates
 
