@@ -101,7 +101,7 @@ Precedence, evaluated top-down; first hit wins:
 
 1. Explicit argument to the skill
 2. Branch name: split on `/`, second segment if a positive integer (`feat/57/issue-log-stamps` → 57)
-3. PR body: `Closes #N` / `Fixes #N` / `Resolves #N`
+3. PR body: any GitHub closing-keyword reference (`close`/`fix`/`resolve` and their variants, followed by `#N`), or a `Related to #N` line. **Read-only** — skills parse these, never write a closing keyword into a body (see [ship's pr-template.md](../ship/pr-template.md): `Related to #N` is the only issue line a skill writes).
 4. Doc frontmatter (`issue:` in side-quest docs)
 5. Issue established in session context (e.g. via `/read-issue`, `/triage-issue`) — last resort: a number derived from the branch or PR always outranks a remembered one, so a stale earlier issue never wins over the branch you're on.
 
