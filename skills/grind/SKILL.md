@@ -236,13 +236,15 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
 
 30. **Budget gate** (triage + fix, 25m), then **triage the findings yourself** — from the review doc (from the raw lists only in the degraded case). This is `/grind`'s judgment call and it does not delegate it. For each finding decide **accept**, **reject**, or **defer**:
 
+    **Accept is the default verdict.** A finding that is real and fixable within this slice's files gets accepted, whatever its priority — the fix agent is already being dispatched, and a small P3 costs nothing extra to fold in. Reject and defer are the exceptions and each needs a stated reason.
+
     | Verdict | Use when |
     |---------|----------|
-    | **Accept** | The finding is correct and in scope for this slice. All P1s that survive scrutiny are accepted — a real correctness or security bug is never deferred past merge. |
-    | **Reject** | The reviewer misread the code, the "bug" is intentional per the plan, or the suggestion contradicts the plan's Key Technical Decisions or Scope Boundaries. |
-    | **Defer** | Real and worth doing, but outside this slice's units — it belongs to a later slice, or to a tracking issue. |
+    | **Accept** | The finding is correct and touchable from this slice's diff. All P1s that survive scrutiny are accepted — a real correctness or security bug is never deferred past merge. P2s and P3s are accepted too unless a reject or defer condition below actually applies. |
+    | **Reject** | The reviewer misread the code, the "bug" is intentional per the plan, or the suggestion contradicts the plan's Key Technical Decisions or Scope Boundaries. Not for "low priority" or "nice to have" — those are accepts. |
+    | **Defer** | The fix would touch units this slice does not own, or is large enough to need its own plan. "Outside this slice" means the code lives elsewhere — not merely that the finding is minor. |
 
-    Read the actual code before accepting or rejecting a P1. A reviewer agent working from a diff can misjudge context the surrounding file makes obvious; equally, do not reject a finding merely because acting on it is inconvenient.
+    Read the actual code before accepting or rejecting a P1. A reviewer agent working from a diff can misjudge context the surrounding file makes obvious; equally, do not reject or defer a finding merely because acting on it is inconvenient. When a verdict is genuinely borderline, accept it.
 
 31. **Record the triage durably, then announce it — both before any fix is dispatched:**
     - Write each verdict into the review doc as its `Status:` line, using `/review-walk`'s vocabulary: accepted → `in-progress`, rejected → `wont-fix` (with a `Skip reason:`), deferred → `deferred` (with a `Defer reason:`). The doc is now the durable triage record — a killed process resumes from these lines without re-reviewing.
@@ -276,7 +278,7 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
     ```
     Omit empty sections. Describe fixes in plain what-changed terms drawn from the fix agent's report and the diff, not the reviewer's problem statement.
 
-36. **File deferred findings** as tracking issues when any exist, using the same shape as `/side-quest`, and link them in a PR comment so they're discoverable from the merged PR.
+36. **Never file a GitHub issue for a deferred finding.** Deferred findings live in the review doc's `Status: deferred` lines and in the PR comment from step 35 — that is the whole record. Do not call `/side-quest`, do not open a tracking issue, do not create one at the end of the run. Surfacing them in the final report (step 46) is how the user learns about them and decides what to file.
 
 37. **Do not re-review.** One review pass per PR. Reviewing the fixes with a fresh fleet invites an unbounded loop; the final look in Phase 6 is the backstop.
 
@@ -372,7 +374,7 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
     |---|-------|----|-----------------|--------|
     | 1 | Add token refresh | [#61](url) | 1 P1, 2 P2 (1 deferred) | merged |
 
-    Follow it with: total PRs merged, total commits, any deferred findings filed as tracking issues (with links), any slice that merged ungated (no CI, no test command), and anything from the plan's `Requirements Trace` that no merged slice covers. That last one matters most — a plan can grind to completion with a requirement quietly unimplemented, and this is the only place it surfaces.
+    Follow it with: total PRs merged, total commits, every deferred finding listed inline (title, reason, and the review doc it lives in — **not** filed as issues; the user decides what to file), any slice that merged ungated (no CI, no test command), and anything from the plan's `Requirements Trace` that no merged slice covers. That last one matters most — a plan can grind to completion with a requirement quietly unimplemented, and this is the only place it surfaces.
 
 47. Stamp the run's completion, then send the notification:
     ```markdown
@@ -382,7 +384,7 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
 
     **Plan:** <plan file path>
     **Merged:** <count> PRs — <comma-separated PR links>
-    **Follow-ups:** <tracking issue links, or "none">
+    **Deferred findings:** <count, or "none"> — see the review docs; not filed as issues
     ```
 
 ### Notification
