@@ -1,10 +1,12 @@
 # Agents
 
-Specialized subagents dispatched by skills via the `Task` tool. Each is a Markdown file with YAML frontmatter (`name`, `description`, `model`) and a prompt body. Fully-qualified name: `forge:<category>:<agent-name>`. See [README.md](README.md) for the full catalog.
+Specialized subagents dispatched by skills via the `Task` tool. Each is a Markdown file with YAML frontmatter (`name`, `description`, `model`, optional `effort`) and a prompt body. Fully-qualified name: `forge:<category>:<agent-name>`. See [README.md](README.md) for the full catalog.
 
 Categories: `research/` (6), `review/` (15), `test/` (1), `workflow/` (2).
 
-Model pins: all of `review/` runs `claude-sonnet-5` except `review-synthesizer` (`claude-opus-4-8`); `workflow/lint` runs `haiku`; everything else inherits the session model.
+Model pins use **bare family aliases** (`opus`, `sonnet`, `haiku`), never dated IDs — an alias tracks the latest model in its family, so pins never go stale and need no manual bumping. Every agent is pinned; none inherit. All of `review/` runs `sonnet` except `review-synthesizer` (`opus`) and `adversarial-reviewer` (`opus` + `max` — the fleet's hardest reasoning, on a conditional agent so the cost stays bounded); `workflow/lint` runs `haiku`. The rest carry an explicit `effort`, tiered by whether the work is mechanical or judgment: `sonnet` + `high` for `learnings-researcher` and `git-history-analyzer` (prescribed search-and-summarize); `opus` + `high` for `/blueprint`'s `repo-research-analyst`, `framework-docs-researcher`, `best-practices-researcher`, `spec-flow-analyzer` (output gates downstream decisions) and `test-plan-critic` (its drop list deletes tests); `opus` + `max` for `issue-intelligence-analyst` (root-cause clustering that grounds all of `/ideate`'s fan-out). See [README.md](README.md) for the full table.
+
+Caveat: an alias resolves per-provider. On the Anthropic API `opus`→Opus 5 and `sonnet`→Sonnet 5, but on Bedrock and Google Cloud's Agent Platform `sonnet` resolves to Sonnet 4.5. Set `ANTHROPIC_DEFAULT_SONNET_MODEL` / `ANTHROPIC_DEFAULT_OPUS_MODEL` if that matters for your provider.
 
 `/deep-review` loads its reviewer roster from each project's `cc-forge.local.md`, plus an always-run set (correctness, reliability, test-coverage, learnings-researcher) and conditional agents (adversarial on large/sensitive diffs). The `python-reviewer` / `typescript-reviewer` and language-specific security/performance variants are opt-in per project stack. Synthesis is delegated to `review-synthesizer`, always-run and never part of the roster.
 

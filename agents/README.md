@@ -1,8 +1,26 @@
 # Agents
 
-Specialized subagents the skills dispatch via the `Task` tool. Each is a Markdown file with YAML frontmatter (`name`, `description`, `model`) and a prompt body. Fully-qualified name: `forge:<category>:<agent-name>`.
+Specialized subagents the skills dispatch via the `Task` tool. Each is a Markdown file with YAML frontmatter (`name`, `description`, `model`, optional `effort`) and a prompt body. Fully-qualified name: `forge:<category>:<agent-name>`.
 
-Models are pinned per agent: everything under `review/` runs `claude-sonnet-5` (1M context, opus-level review quality at lower cost) except `review-synthesizer`, which runs `claude-opus-4-8`; `workflow/lint` runs `haiku`; the rest `inherit` the session model. Pins are plain frontmatter — edit them if your org's model allowlist differs or the IDs deprecate. Note a pin also applies when *other* skills dispatch the same agent, and it overrides (even downgrades) whatever model the main session runs.
+Models are pinned per agent using **bare family aliases** (`opus`, `sonnet`, `haiku`) rather than dated model IDs. An alias always resolves to the latest model in its family, so pins track model releases automatically instead of needing a manual bump each generation.
+
+| Agents | Pin |
+|---|---|
+| all of `review/` except the synthesizer and the adversarial reviewer | `sonnet` — 1M context, opus-level review quality at lower cost |
+| `review/review-synthesizer` | `opus` — highest-judgment step in `/deep-review` |
+| `review/adversarial-reviewer` | `opus` + `effort: max` — race conditions, TOCTOU, and cascade failures are the fleet's hardest reasoning; runs only on large or sensitive diffs, so the cost is bounded |
+| `workflow/lint` | `haiku` — mechanical, fast |
+| `research/learnings-researcher` | `sonnet` + `effort: high` — deterministic grep-filter-read pipeline |
+| `research/git-history-analyzer` | `sonnet` + `effort: high` — runs prescribed git incantations and summarizes; callers supply the commands |
+| `research/repo-research-analyst`, `research/framework-docs-researcher`, `research/best-practices-researcher`, `workflow/spec-flow-analyzer` | `opus` + `effort: high` — `/blueprint`'s research fan-out, whose output gates downstream planning decisions |
+| `test/test-plan-critic` | `opus` + `effort: high` — scores every case against the diff and writes a drop list the user acts on |
+| `research/issue-intelligence-analyst` | `opus` + `effort: max` — clusters issues by root cause rather than symptom; grounds all of `/ideate`'s fan-out |
+
+No agent uses `inherit`; every model is pinned so a run's cost and quality don't shift with the session model.
+
+Pins are plain frontmatter — edit them if your org's model allowlist differs. Note a pin also applies when *other* skills dispatch the same agent, and it overrides (even downgrades) whatever model the main session runs. `effort` accepts `low`/`medium`/`high`/`xhigh`/`max` and overrides the session effort level.
+
+An alias resolves per-provider, and not every provider is current: on the Anthropic API `opus`→Opus 5 and `sonnet`→Sonnet 5, but `sonnet` resolves to Sonnet 4.6 on Claude Platform on AWS and Sonnet 4.5 on Bedrock and Google Cloud's Agent Platform. Set `ANTHROPIC_DEFAULT_SONNET_MODEL` / `ANTHROPIC_DEFAULT_OPUS_MODEL` to override, or `CLAUDE_CODE_SUBAGENT_MODEL` to force every subagent onto one model for a session.
 
 Several were ported from [EveryInc/compound-engineering-plugin](https://github.com/EveryInc/compound-engineering-plugin), whose stack is Rails/Ruby. The Rails-specific language has been generalized; security and performance reviewers are split into Python and TypeScript variants to match this repo's stack.
 
