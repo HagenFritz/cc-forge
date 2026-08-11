@@ -380,6 +380,24 @@ If artifact-backed mode was used and the user did not ask to inspect the scratch
 - clean up the temporary scratch directory after the plan is safely written
 - if cleanup is not practical on the current platform, say where the artifacts were left and that they are temporary workflow output
 
+### Phase 7: Stamp the Issue
+
+Substantive changes only — a pass that changed nothing stamps nothing. Post the plan-deepened stamp per [the issue-log spec](../issue-log/SKILL.md): resolve the issue number per the spec (skip silently when nothing resolves). GitHub tracker only — when the tracker is Linear, skip with a one-line note. Compose the body below, write it to a temp file with the Write tool, and post:
+
+```markdown
+<!-- cc-forge-log v1: {"skill":"deepen-blueprint","event":"plan-deepened","paths":["docs/plans/<plan-filename>"]} -->
+
+### 🔬 /deepen-blueprint — <plan title>
+
+**Doc:** `docs/plans/<plan-filename>` — <N> sections deepened
+**Summary:** <2-3 sentences: what got stronger and why>
+**Questions resolved:** <one line per open question reclassified to resolved, with its basis; "none" if none>
+**Restructures:** <one line per structural change — units reordered or split, sections added or replaced; "none" if none>
+```
+```bash
+gh issue comment <issue-number> --repo <owner>/<repo> --body-file <temp-file>
+```
+
 ## Post-Enhancement Options
 
 If substantive changes were made, present next steps using the platform's blocking question tool when available (see Interaction Method). Otherwise, present numbered options in chat and wait for the user's reply before proceeding.

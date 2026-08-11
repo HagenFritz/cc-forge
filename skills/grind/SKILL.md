@@ -53,14 +53,14 @@ Run these checks before touching anything. Any failure stops the run — a half-
 5. **Resolve the linked issue** per [the issue-log spec](../issue-log/SKILL.md)'s issue-number resolution. Remember it as `<issue>`; it may be empty. Every stamp below skips silently when it is.
 6. **Detect the test command** for the repo (`package.json` scripts, `Makefile`, `pytest.ini`, `Cargo.toml`, etc.). It is used in exactly one place: as the merge gate for a PR that reports **no CI checks** (Phase 6). When the repo has CI, `/grind` never runs the local suite itself — though build and fix subagents still leave it green.
 7. **Detect the email transport** and announce the result. `SENDGRID_API_KEY` set in the environment → email is **on**; unset → warn now, up front: "No SENDGRID_API_KEY — terminal outcomes will be stamped and pushed, but not emailed." Either way `PushNotification` still fires, so a terminal outcome is never silent. The detection is a preflight signal; the send itself re-checks (see Notification).
-8. **Start the clock** (unless `--no-timer`): record the current time in this session's working memory. The start time is **never persisted** — not to the plan doc, not to a file — so a resumed run on a fresh process starts a fresh clock.
+8. **Record run metadata.** Capture the current time — it goes in the grind-started stamp's `**Started:**` line, and (unless `--no-timer`) starts the lifetime timer in this session's working memory. Also capture this session's id from the session context (Claude Code exposes it as the `claude.ai/code/session_…` URL in the commit-trailer guidance); the stamp's resume command is `claude --resume <session-id>` — omit that line when no id is exposed. The stamped time is log, not clock: the timer is **never read from persisted state**, so a resumed run on a fresh process starts a fresh clock.
 
 ### The Lifetime Timer
 
-The VM's process lease is ~2 hours; the disk survives, the process does not. The timer's job is to ensure no phase is ever killed mid-write. It stops the run at the last phase boundary that leaves a 30-minute buffer.
+The VM's process lease is ~2 hours; the disk survives, the process does not. The timer's job is to ensure no phase is ever killed mid-write. The run works the **full 90 minutes** — no gate fires earlier — and a phase additionally may not start unless its minimum budget fits before the 1h55m mark, so whatever is in flight when the threshold passes still finishes inside the wall.
 
-- **Stop threshold:** 1h30m elapsed.
-- **Budget gates:** before starting each phase of each slice, check elapsed time against that phase's minimum budget. If `elapsed > 1h30m − minimum`, do not start the phase — go to the stop flow (Phase 8).
+- **Stop threshold:** 1h30m elapsed. Nothing stops before it.
+- **Budget gates:** before starting each phase of each slice: if `elapsed ≥ 1h30m`, or `elapsed + minimum > 1h55m`, do not start the phase — go to the stop flow (Phase 8).
 
 | Phase | Minimum budget to start |
 |-------|------------------------|
@@ -121,6 +121,8 @@ The VM's process lease is ~2 hours; the disk survives, the process does not. The
     ### ⚙️ /grind — grinding <count> PRs
 
     **Plan:** <plan file path>
+    **Started:** <YYYY-MM-DD HH:MM local>
+    **Session:** `claude --resume <session-id>`
     **Slices:** <one line per slice: "N. <slice name> — units <list>">
     ```
     ```bash
@@ -153,7 +155,7 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
     ```
     Branching off `origin/<default-branch>` is what makes serial execution work: slice N+1's worktree contains slice N's merged code. Then symlink `docs/` from the primary checkout into the worktree (as `/tree` does), since it's gitignored and the plan lives there.
 
-17. **Dispatch the build subagent** — `Agent` with `model: "opus"`, `effort: "max"`, `subagent_type: "general-purpose"`, `run_in_background: false`. `/grind` blocks on it; there is nothing to interleave in a serial run. Budget gates cannot fire while it blocks, so the 30-minute buffer is what covers a dispatched agent overrunning its phase budget — an agent that outlasts that is malfunctioning, not slow.
+17. **Dispatch the build subagent** — `Agent` with `model: "opus"`, `effort: "max"`, `subagent_type: "general-purpose"`, `run_in_background: false`. `/grind` blocks on it; there is nothing to interleave in a serial run. Budget gates cannot fire while it blocks, so the headroom between the 1h55m fit line and the ~2h wall is what covers a dispatched agent overrunning its phase budget — an agent that outlasts that is malfunctioning, not slow.
 
     The brief must contain, and nothing may be left implicit:
     - The absolute worktree path, and the instruction to do **all** work there — never in the primary checkout.
@@ -394,7 +396,7 @@ Every terminal outcome — `grind-complete`, `grind-stopped`, `grind-blocked` �
 - **Push — always.** Call `PushNotification` with a one-line message under 200 characters: outcome, plan title, and the number that matters (`grind complete: auth-refresh — 4 PRs merged` / `grind stopped: auth-refresh — 2 of 5 slices, resume to continue` / `grind blocked: auth-refresh — red CI on #61`). No markdown. Fire it on every terminal outcome, including one where the email already went out, and including a timer stop. A skipped push (you're at the terminal, so it would be redundant) is a normal result, not a failure.
 - **Email — when configured.** `SENDGRID_API_KEY` set → one `POST https://api.sendgrid.com/v3/mail/send` with a hard timeout (`curl --max-time 30`), the key passed only as an `Authorization: Bearer` header and the body via `--data @<file>`, so the key never lands in process listings and the body never lands in shell history. Unset, or the call fails → report one line, "couldn't send notification: <reason>", and continue. Exactly one attempt, never a retry, and never any retry during a timer stop.
 - **From:** `hfritz@r-o.com` (name `Hagen Fritz`) — a verified SendGrid sender; an unverified `From:` is rejected with a 403. **Recipient:** hfritz@r-o.com. **Subject:** `[grind] <plan title>: <complete | stopped | blocked>`.
-- **Body:** the outcome in one sentence, the per-slice table (merged PRs as links), what remains (for stopped/blocked), the blocking reason and PR link (for blocked), and the resume command.
+- **Body:** the outcome in one sentence, the per-slice table (merged PRs as links), what remains (for stopped/blocked), the blocking reason and PR link (for blocked), and both resume commands: `claude --resume <session-id>` (from Phase 0; omit when no id was exposed) and `/grind <plan path>`.
 - A notification failure on either channel is never fatal, never blocks the other channel, and never blocks the exit path it rides on.
 
 ## Rules
@@ -410,7 +412,7 @@ Every terminal outcome — `grind-complete`, `grind-stopped`, `grind-blocked` �
 - **The reviewer fleet posts comments, never `--approve` or `--request-changes`.** `/grind` owns the triage decision; a blocking review state from a subagent can deadlock the merge.
 - **Triage is `/grind`'s own judgment**, never delegated, and it is recorded in the review doc's `Status:` lines and on the PR **before** the fix agent is dispatched. The fix agent receives accepted findings only.
 - **One review pass per PR.** Synthesis failures degrade (inline synthesis, then raw findings) — they never halt the run while raw findings exist, and they never trigger a second fleet.
-- **The timer is in-memory and per-invocation.** Never persist the start time; a resume starts a fresh clock. No gate sits between merge success and the end of cleanup.
+- **The timer is in-memory and per-invocation.** The grind-started stamp's `**Started:**` line is log, not clock — never read it (or any persisted time) back as timer state; a resume starts a fresh clock. No gate sits between merge success and the end of cleanup.
 - **No force-push, no pushes to `main`, no `--no-verify`, no `git add -A`** — for `/grind` or any subagent it dispatches.
 - **The plan doc is the state; GitHub and the review doc are the checkpoints.** Update the row at every transition; on resume, reconcile against `gh` and the disk rather than trusting the table.
 - **Report the real outcome.** Only claim "merged" after `gh pr view` confirms it. Red is red.

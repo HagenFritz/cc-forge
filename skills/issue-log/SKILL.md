@@ -64,6 +64,7 @@ Optional keys:
 |---|---|---|---|
 | brainstorm | `requirements-written` | 🧠 | Doc path, full requirements list (direct port from the doc) |
 | blueprint | `plan-written` | 📋 | Plan path, unit count, every unit enumerated with a one-sentence summary |
+| deepen-blueprint | `plan-deepened` | 🔬 | Plan path, sections-deepened count, short summary, questions resolved, major restructures |
 | tree | `worktree-created` | 🌳 | Branch, worktree path (also in `paths`) |
 | branch-from-issue | `branch-created` | 🌱 | Branch |
 | work | `unit-complete` | 🔨 | **Did** (always), **Solved** (only when a problem was solved) |
@@ -73,7 +74,7 @@ Optional keys:
 | side-quest | `side-quest-filed` | 🧭 | What was found, tracking-issue link (`tracking`, `followup:true`) |
 | ship | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
 | land | `pr-merged` | ✅ | 2-3 sentence summary of what landed + follow-ups (`pr`) |
-| grind | `grind-started` | ⚙️ | Plan path, slice count (`slices`), one line per slice |
+| grind | `grind-started` | ⚙️ | Plan path, start time, session resume command, slice count (`slices`), one line per slice |
 | grind | `unit-complete` | 🔨 | Same shape as work's row: **Did** (always), **Solved** (only when a problem was solved) |
 | grind | `unit-blocked` | ⚠️ | **Blocked:** reason; optional `blocked_by` |
 | grind | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
@@ -85,7 +86,7 @@ Optional keys:
 
 Event names are these exact strings. New events join this table before any skill emits them.
 
-Document-producing skills (brainstorm, blueprint, deep-review, side-quest) start the human body with a `**Doc:**` field holding the repo-relative doc path, and carry the same path in the marker's `paths`.
+Document-producing skills (brainstorm, blueprint, deepen-blueprint, deep-review, side-quest) start the human body with a `**Doc:**` field holding the repo-relative doc path, and carry the same path in the marker's `paths`.
 
 Grind's `unit-complete`/`unit-blocked` stamps are posted by its build subagent mid-build (grind blocks on that agent, so only the agent can stamp in real time). The subagent authenticates as the same `gh` login, so the reader contract's author check is unaffected; grind embeds the filled templates and encoding rules in the agent's brief rather than assuming it reads this spec.
 
