@@ -74,7 +74,7 @@ Optional keys:
 | side-quest | `side-quest-filed` | 🧭 | What was found, tracking-issue link (`tracking`, `followup:true`) |
 | ship | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
 | land | `pr-merged` | ✅ | 2-3 sentence summary of what landed + follow-ups (`pr`) |
-| grind | `grind-started` | ⚙️ | Plan path, slice count (`slices`), one line per slice |
+| grind | `grind-started` | ⚙️ | Plan path, start time, session resume command, slice count (`slices`), one line per slice |
 | grind | `unit-complete` | 🔨 | Same shape as work's row: **Did** (always), **Solved** (only when a problem was solved) |
 | grind | `unit-blocked` | ⚠️ | **Blocked:** reason; optional `blocked_by` |
 | grind | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
