@@ -1,7 +1,8 @@
 ---
 name: git-history-analyzer
 description: "Performs archaeological analysis of git history to trace code evolution, identify contributors, and understand why code patterns exist. Use when you need historical context for code changes."
-model: inherit
+model: sonnet
+effort: high
 ---
 
 <examples>

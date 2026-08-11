@@ -1,7 +1,7 @@
 ---
 name: review-synthesizer
 description: "Synthesizes the findings from all review agents into a prioritized, grouped review document and writes it to docs/reviews/. Use as the final step of /deep-review after every review agent has reported. Distinct from the review specialists: it does not review code — it consolidates their findings into the document."
-model: claude-opus-4-8
+model: opus
 tools: Read, Write, Glob, Grep
 ---
 
