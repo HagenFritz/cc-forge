@@ -1,6 +1,6 @@
 ---
 name: grind
-description: "Execute an entire implementation plan autonomously as a sequence of PRs, mirroring the manual skill chain unattended: a max-effort Opus subagent builds each slice unit-by-unit (committing, pushing, and stamping the issue per unit) and opens a ship-conformant PR; the deep-review agent fleet reviews it; grind triages the findings itself, posts every verdict and outcome to the PR, dispatches a second Opus subagent for accepted fixes, and squash-merges on green CI — halting, never self-repairing, on red. A default-on lifetime timer stops the run cleanly before the VM's ~2-hour wall (--no-timer to disable), and every terminal outcome — complete, stopped, or blocked — always fires a push notification and emails when SendGrid is configured. Use when the user says 'grind this plan', 'grind it out', 'run the whole plan', 'build all the PRs', or invokes /grind."
+description: "Execute an entire implementation plan autonomously as a sequence of PRs, mirroring the manual skill chain unattended: a max-effort Opus subagent builds each slice unit-by-unit (committing, pushing, and stamping the issue per unit) and opens a ship-conformant PR; the deep-review agent fleet reviews it; grind triages the findings itself, posts every verdict and outcome to the PR, dispatches a second Opus subagent for accepted fixes, and squash-merges on green CI — halting, never self-repairing, on red. A default-on lifetime timer stops the run cleanly before the VM's ~2-hour wall (--no-timer to disable), and every terminal outcome — complete, stopped, or blocked — always fires a push notification and emails when SendGrid is configured, the email always carrying the resume command. Use when the user says 'grind this plan', 'grind it out', 'run the whole plan', 'build all the PRs', or invokes /grind."
 argument-hint: "[plan file path] [--no-timer]"
 allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Agent, AskUserQuestion, PushNotification, TaskCreate, TaskUpdate, TaskList
 ---
@@ -11,7 +11,7 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Agent, AskUserQuestion, Push
 
 `/grind` takes a plan document and drives it to fully merged `main`, one PR at a time, without stopping for approval between PRs. For each PR slice it: creates a worktree; dispatches a **max-effort Opus** subagent that implements the slice unit-by-unit — committing, **pushing**, and stamping the issue after every unit — and opens a ship-conformant PR; runs the **`/deep-review` agent fleet** over the PR and posts the review; **triages the findings itself**, records every verdict durably before acting on it, dispatches a second max-effort Opus subagent for accepted fixes and reports each finding's outcome on the PR; then squash-merges once CI is green and moves to the next slice.
 
-Two run-level guards wrap the loop. A **lifetime timer** (default on) stops the run cleanly at a phase boundary before the VM's ~2-hour wall instead of letting the process be killed mid-write — the stop is a healthy, resumable state, not a failure. And every terminal outcome — **complete**, **stopped** (timer), or **blocked** (needs a human) — posts a final issue stamp and notifies on **two independent channels** — a push that always fires, plus an email when SendGrid is configured — so an unattended run never ends silently.
+Two run-level guards wrap the loop. A **lifetime timer** (default on) stops the run cleanly at a phase boundary before the VM's ~2-hour wall instead of letting the process be killed mid-write — the stop is a healthy, resumable state, not a failure. And every terminal outcome — **complete**, **stopped** (timer), or **blocked** (needs a human) — posts a final issue stamp and notifies on **two independent channels** — a push that always fires, plus an email when SendGrid is configured, always carrying the `claude --resume` command — so an unattended run never ends silently.
 
 The plan document is the durable state. `/grind` writes a `## PR Breakdown` table into it and updates each row as the PR advances; the review doc, worktrees, and unpushed-nothing per-unit cadence mean every checkpoint also exists on GitHub or on disk. An interrupted run — stopped, blocked, or hard-killed — is resumed by re-invoking `/grind` on the same plan.
 
@@ -53,25 +53,35 @@ Run these checks before touching anything. Any failure stops the run — a half-
 5. **Resolve the linked issue** per [the issue-log spec](../issue-log/SKILL.md)'s issue-number resolution. Remember it as `<issue>`; it may be empty. Every stamp below skips silently when it is.
 6. **Detect the test command** for the repo (`package.json` scripts, `Makefile`, `pytest.ini`, `Cargo.toml`, etc.). It is used in exactly one place: as the merge gate for a PR that reports **no CI checks** (Phase 6). When the repo has CI, `/grind` never runs the local suite itself — though build and fix subagents still leave it green.
 7. **Detect the email transport** and announce the result. `SENDGRID_API_KEY` set in the environment → email is **on**; unset → warn now, up front: "No SENDGRID_API_KEY — terminal outcomes will be stamped and pushed, but not emailed." Either way `PushNotification` still fires, so a terminal outcome is never silent. The detection is a preflight signal; the send itself re-checks (see Notification).
-8. **Record run metadata.** Capture the current time — it goes in the grind-started stamp's `**Started:**` line, and (unless `--no-timer`) starts the lifetime timer in this session's working memory. Also capture this session's id from the session context (Claude Code exposes it as the `claude.ai/code/session_…` URL in the commit-trailer guidance); the stamp's resume command is `claude --resume <session-id>` — omit that line when no id is exposed. The stamped time is log, not clock: the timer is **never read from persisted state**, so a resumed run on a fresh process starts a fresh clock.
+8. **Record run metadata.** Capture the current time — it goes in the grind-started stamp's `**Started:**` line, and (unless `--no-timer`) is written to the scratchpad as the timer anchor: `date +%s > <scratchpad>/grind-start` (see The Lifetime Timer). Also capture this session's id from the session context (Claude Code exposes it as the `claude.ai/code/session_…` URL in the commit-trailer guidance); the stamp's resume command is `claude --resume <session-id>`, and the same id goes in every email's resume block — capture it now, because it cannot be recovered later in the run. The stamped time is log, not clock: gates read the anchor file and nothing else, and a resumed run writes a fresh anchor.
 
 ### The Lifetime Timer
 
-The VM's process lease is ~2 hours; the disk survives, the process does not. The timer's job is to ensure no phase is ever killed mid-write. The run works the **full 90 minutes** — no gate fires earlier — and a phase additionally may not start unless its minimum budget fits before the 1h55m mark, so whatever is in flight when the threshold passes still finishes inside the wall.
+The VM's process lease is ~2 hours; the disk survives, the process does not. The timer's job is to ensure no phase is ever killed mid-write. The run works the **full 90 minutes** — no gate fires before then — and past 90m a phase may start only if its budget fits before the 1h55m mark, so whatever is in flight when the threshold passes still finishes inside the wall.
 
-- **Stop threshold:** 1h30m elapsed. Nothing stops before it.
-- **Budget gates:** before starting each phase of each slice: if `elapsed ≥ 1h30m`, or `elapsed + minimum > 1h55m`, do not start the phase — go to the stop flow (Phase 8).
+**Elapsed time is measured, never estimated.** Every reading is a real clock call. Do not infer elapsed time from how much work has happened, how many phases have run, or how long something felt — those judgments are unreliable and are not an input to any gate.
 
-| Phase | Minimum budget to start |
-|-------|------------------------|
-| Build | 45m |
+- **Anchor.** In Phase 0 step 8, write the start epoch to the scratchpad: `date +%s > <scratchpad>/grind-start` (the path is this session's scratchpad directory). This anchor is per-invocation — a resume writes a fresh one, and no gate ever reads a time out of a stamp or plan doc.
+- **Reading the clock at a gate.** One `Bash` call, arithmetic done by the shell, not by you:
+
+  ```bash
+  echo $(( ( $(date +%s) - $(cat <scratchpad>/grind-start) ) / 60 ))
+  ```
+
+  That integer is `elapsed` in minutes. Use the number it printed. If the anchor file is missing or unreadable (a compaction lost the scratchpad, say), treat the timer as **expired** and go to the stop flow — never fall back to guessing.
+- **Stop threshold:** 90m elapsed. Nothing stops before it.
+- **Budget gates:** before starting each phase of each slice, read the clock, then: if `elapsed < 90`, **proceed** — no other check. If `elapsed ≥ 90`, the run may still finish work that fits: proceed only when `elapsed + budget ≤ 115`, otherwise go to the stop flow (Phase 8).
+
+| Phase | Budget to start |
+|-------|-----------------|
+| Build | 30m |
 | Review | 25m |
 | Triage + fix | 25m |
 | Merge | 25m (the CI watch alone is capped at 20m) |
 
-- The budgets are directional defaults — tune them against observed runs, conservatively: a wrong-but-low gate costs an early stop, a wrong-but-high gate costs a mid-write kill.
+- Budgets bound the **gate arithmetic**, not the subagents — a dispatched agent is never clocked, interrupted, or cut off mid-phase. The gate's only question is whether there is room to begin.
 - **No gate between merge success and the end of cleanup** — that boundary is atomic (Phase 6).
-- `--no-timer` disables every gate; nothing else changes.
+- `--no-timer` disables every gate; nothing else changes — no anchor is written and no clock is read.
 
 ### Phase 1: Break the plan into PRs
 
@@ -146,7 +156,7 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
 
 ### Phase 3: Build the PR
 
-15. **Budget gate** (build, 45m), then **update the row** to `building` in the plan doc.
+15. **Budget gate** (build, 30m), then **update the row** to `building` in the plan doc.
 
 16. **Create the worktree.** Follow the same convention as `/tree` — branch `{prefix}/{issue}/{short-description}` (drop the `{issue}` segment when there's no linked issue), worktree at `../{repo-name}-worktrees/{branch-name}/`:
     ```bash
@@ -155,7 +165,7 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
     ```
     Branching off `origin/<default-branch>` is what makes serial execution work: slice N+1's worktree contains slice N's merged code. Then symlink `docs/` from the primary checkout into the worktree (as `/tree` does), since it's gitignored and the plan lives there.
 
-17. **Dispatch the build subagent** — `Agent` with `model: "opus"`, `effort: "max"`, `subagent_type: "general-purpose"`, `run_in_background: false`. `/grind` blocks on it; there is nothing to interleave in a serial run. Budget gates cannot fire while it blocks, so the headroom between the 1h55m fit line and the ~2h wall is what covers a dispatched agent overrunning its phase budget — an agent that outlasts that is malfunctioning, not slow.
+17. **Dispatch the build subagent** — `Agent` with `model: "opus"`, `effort: "max"`, `subagent_type: "general-purpose"`, `run_in_background: false`. `/grind` blocks on it; there is nothing to interleave in a serial run. Subagents are never clocked — the phase budget gated the *start*, and once dispatched the agent runs to completion. The next clock reading happens at the following gate, on real elapsed time, whatever that turns out to be.
 
     The brief must contain, and nothing may be left implicit:
     - The absolute worktree path, and the instruction to do **all** work there — never in the primary checkout.
@@ -391,12 +401,19 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
 
 ### Notification
 
-Every terminal outcome — `grind-complete`, `grind-stopped`, `grind-blocked` — notifies on **two independent channels** after its stamp is posted. The stamp is the durable record; the channels are the reach. They are not fallbacks for each other: push always fires, whether or not the email succeeded, because the two land in different places (terminal and phone vs. inbox) and an unattended run should reach whichever one you're near.
+Every terminal outcome — `grind-complete`, `grind-stopped`, `grind-blocked` — notifies on **two independent channels** after its stamp is posted. The stamp is the durable record; the channels are the reach. They are not fallbacks for each other: push always fires, whether or not the email succeeded, because the two land in different places (terminal and phone vs. inbox) and an unattended run should reach whichever one you're near. A blocked run emails too — the process can be cut off before you ever see the terminal, and the inbox is what survives that.
 
 - **Push — always.** Call `PushNotification` with a one-line message under 200 characters: outcome, plan title, and the number that matters (`grind complete: auth-refresh — 4 PRs merged` / `grind stopped: auth-refresh — 2 of 5 slices, resume to continue` / `grind blocked: auth-refresh — red CI on #61`). No markdown. Fire it on every terminal outcome, including one where the email already went out, and including a timer stop. A skipped push (you're at the terminal, so it would be redundant) is a normal result, not a failure.
 - **Email — when configured.** `SENDGRID_API_KEY` set → one `POST https://api.sendgrid.com/v3/mail/send` with a hard timeout (`curl --max-time 30`), the key passed only as an `Authorization: Bearer` header and the body via `--data @<file>`, so the key never lands in process listings and the body never lands in shell history. Unset, or the call fails → report one line, "couldn't send notification: <reason>", and continue. Exactly one attempt, never a retry, and never any retry during a timer stop.
 - **From:** `hfritz@r-o.com` (name `Hagen Fritz`) — a verified SendGrid sender; an unverified `From:` is rejected with a 403. **Recipient:** hfritz@r-o.com. **Subject:** `[grind] <plan title>: <complete | stopped | blocked>`.
-- **Body:** the outcome in one sentence, the per-slice table (merged PRs as links), what remains (for stopped/blocked), the blocking reason and PR link (for blocked), and both resume commands: `claude --resume <session-id>` (from Phase 0; omit when no id was exposed) and `/grind <plan path>`.
+- **Body — the resume block is mandatory.** Every email, on every outcome, ends with both commands on their own lines, verbatim:
+
+  ```
+  claude --resume <session-id>
+  /grind <plan path>
+  ```
+
+  `<session-id>` is the one captured in Phase 0 step 8. **Do not paraphrase, summarize, or drop these lines** — they are the reason the email exists, and an email that arrives without them has failed at its job even if it sent successfully. If Phase 0 exposed no session id, print the `claude --resume` line as `claude --resume <no session id captured>` rather than omitting it, so the gap is visible instead of silent. Above the resume block: the outcome in one sentence, the per-slice table (merged PRs as links), what remains (for stopped/blocked), and the blocking reason with its PR link (for blocked).
 - A notification failure on either channel is never fatal, never blocks the other channel, and never blocks the exit path it rides on.
 
 ## Rules
@@ -412,7 +429,7 @@ Every terminal outcome — `grind-complete`, `grind-stopped`, `grind-blocked` �
 - **The reviewer fleet posts comments, never `--approve` or `--request-changes`.** `/grind` owns the triage decision; a blocking review state from a subagent can deadlock the merge.
 - **Triage is `/grind`'s own judgment**, never delegated, and it is recorded in the review doc's `Status:` lines and on the PR **before** the fix agent is dispatched. The fix agent receives accepted findings only.
 - **One review pass per PR.** Synthesis failures degrade (inline synthesis, then raw findings) — they never halt the run while raw findings exist, and they never trigger a second fleet.
-- **The timer is in-memory and per-invocation.** The grind-started stamp's `**Started:**` line is log, not clock — never read it (or any persisted time) back as timer state; a resume starts a fresh clock. No gate sits between merge success and the end of cleanup.
+- **The timer is measured, never estimated.** Every gate reads the scratchpad anchor with a real `date` call and lets the shell do the arithmetic. Never judge elapsed time from how much work has happened — that guess is not an input to any gate. The anchor is per-invocation: the grind-started stamp's `**Started:**` line is log, not clock, and a resume writes a fresh anchor. A missing anchor means stop, not guess. No gate sits between merge success and the end of cleanup.
 - **No force-push, no pushes to `main`, no `--no-verify`, no `git add -A`** — for `/grind` or any subagent it dispatches.
 - **The plan doc is the state; GitHub and the review doc are the checkpoints.** Update the row at every transition; on resume, reconcile against `gh` and the disk rather than trusting the table.
 - **Report the real outcome.** Only claim "merged" after `gh pr view` confirms it. Red is red.
