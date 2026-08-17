@@ -49,6 +49,7 @@ Restart Claude Code after copying. Skills copied this way are un-namespaced (`/b
 | `/brainstorm` | Explores requirements and approaches through dialogue, then writes a right-sized requirements doc | A vague or ambitious feature idea; you want to think through options before committing to scope |
 | `/blueprint` | Turns a feature description or requirements doc into a structured implementation plan grounded in repo patterns | Requirements are roughly defined and you need a technical approach broken into units |
 | `/deepen-blueprint` | Stress-tests an existing plan and selectively strengthens weak sections with targeted research | A Standard/Deep or high-risk plan needs more confidence around decisions, sequencing, or risk |
+| `/walk-blueprint` | **Optional.** Walks a `/blueprint` plan interactively, one implementation unit at a time: each unit's fields verbatim, a plain-English teach moment, then accept / modify / remove / add term / skip. `modify` rewrites the unit in place and `remove` tombstones it as `retired` without renumbering — both after a before/after confirm; `skip` is reported as *unreviewed*, never accepted. Unfamiliar terms go to a personal glossary at `~/.claude/glossary.md` without losing your place. Writes `**Reviewed:**` inline in the plan so it's resumable | You want to actually understand a plan — or correct it — before any code is written. Skipping it changes nothing about how the plan runs |
 | `/work` | Executes a work plan unit-by-unit via orchestrated dispatch: one max-effort Opus subagent per unit (strictly serial), with the orchestrator reviewing each diff, committing, stamping the issue, and carrying a rolling digest of prior units into every next brief | You have a plan and want it implemented |
 | `/grind` | Executes a whole plan **autonomously as a sequence of PRs**. Slices the plan into PR-sized groups, confirms that breakdown once, then per slice runs unattended: worktree → max-effort Opus subagent builds and opens the PR → Fable subagent reviews and posts comments → `/grind` triages the feedback itself → Opus subagent applies accepted fixes → final look → squash-merge on green CI. Serial (slice N merges before N+1 branches), resumable via a `## PR Breakdown` table in the plan doc, and halts the whole run on a blocked slice | You have a plan you trust and want it ground all the way to merged `main` without babysitting each PR. Needs a repo without required-reviews branch protection |
 | `/deep-review` | Exhaustive multi-agent code review using worktrees; writes a structured review doc | Complex, risky, or large changes that warrant deep review |
@@ -157,8 +158,9 @@ Restart Claude Code. The hook reads a flag file at `~/.claude/.caveman-active` (
 
 **Feature development:**
 ```
-/brainstorm → /blueprint → /work → /review → /review-walk → /ship
+/brainstorm → /blueprint → [/walk-blueprint] → /work → /review → /review-walk → /ship
 ```
+Bracketed steps are optional. `/walk-blueprint` is a guided read-through of the plan before implementation starts — useful for understanding or correcting a plan you didn't write yourself; leave it out and the rest of the flow is identical.
 
 **Multi-feature initiative:**
 ```
@@ -176,7 +178,7 @@ Restart Claude Code. The hook reads a flag file at `~/.claude/.caveman-active` (
 
 **Worktree-isolated workflow** (primary checkout stays on `main` throughout):
 ```
-/brainstorm → /blueprint → /tree <issue-number>
+/brainstorm → /blueprint → [/walk-blueprint] → /tree <issue-number>
   → cd into the printed worktree path, start a new Claude Code session there
   → /work → /deep-review → /ship → /land   # /land removes the worktree on merge
 ```
