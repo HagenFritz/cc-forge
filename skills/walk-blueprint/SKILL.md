@@ -307,5 +307,132 @@ treat it as the lighter action.
 
 ## Step 7: Capture a Term to the Glossary
 
-<!-- Filled in by the glossary unit: file location, entry format, creation-on-first-use,
-     append-without-duplicate behavior, and the capture prompt. -->
+This is where `Add term` (6g) routes. It is a **side buffer**: it writes to one file
+outside the repo and touches nothing else. Capturing a term does **not** take the plan
+backup (Step 4), does **not** write `**Reviewed:**`, and does **not** advance the unit
+— the plan doc is not opened at all. A walk that only captures terms leaves the plan
+byte-identical and produces no `.bak`.
+
+### 7a. Where the glossary lives
+
+```
+~/.claude/glossary.md
+```
+
+It lives **outside the repo on purpose.** Terms accumulate across every plan the user
+ever walks — cc-forge, work repos, side projects — and the whole value is one personal
+reference that grows over a career, not a per-repo file that resets with each clone. A
+term first met in a work repo should already be there the next time it shows up in a
+side project.
+
+Consequences worth stating to the user once, the first time the file is created:
+
+- It is **unversioned** — no git, no backup, no history. It is the user's file to
+  hand-edit, reorder, or delete freely.
+- Nothing else in this skill reads it. Losing it costs notes, never review progress.
+
+### 7b. Entry format
+
+The file is a flat list of `##` sections, one per term, each with three parts:
+
+```markdown
+# Glossary
+
+Terms captured while walking implementation plans. Written by `/walk-blueprint`.
+
+## Idempotency
+
+An operation you can safely run twice and get the same result as running it once.
+Retrying a failed payment charge is only safe if the charge is idempotent.
+
+*Seen in:* 2026-08-17-001-walk-blueprint-skill-plan.md (Unit 2)
+
+## Squash merge
+
+Collapsing every commit on a branch into a single commit on the main branch, so the
+branch's step-by-step history disappears and only the finished change lands.
+
+*Seen in:* 2026-06-11-001-land-skill-plan.md (Unit 4)
+```
+
+Rules for the shape:
+
+- **Heading** — `## <Term>`, the term as the user typed it, nothing else on the line.
+  No backticks, no trailing punctuation.
+- **Definition** — one plain-English paragraph written for someone meeting the term
+  cold. No jargon-defined-by-jargon. A concrete second sentence ("Retrying a failed
+  payment charge is only safe if…") is worth more than a longer abstract one. Do not
+  scope the definition to this plan — the reader will meet it again elsewhere.
+- **Provenance** — a single italic `*Seen in:*` line naming the plan file (basename
+  only, no directory) and the unit ordinal in parentheses.
+- Entries are separated by a blank line. Order is **append order** — never re-sort the
+  file; the user may have arranged it themselves.
+
+### 7c. Creating the file
+
+Never assume the file exists. Read it first; if it is missing, write it with exactly
+this header before the first entry:
+
+```markdown
+# Glossary
+
+Terms captured while walking implementation plans. Written by `/walk-blueprint`.
+```
+
+Then mention the creation once, in the same confirmation line as the first entry.
+
+### 7d. Dedupe — enrich, never duplicate
+
+**Read the whole file before every write.** Compare the new term against existing
+`## ` headings **case-insensitively and trimmed**, so "Idempotency" and "idempotency"
+are the same entry. There must never be two `##` sections for one term.
+
+- **No match** → append a new entry at the end of the file.
+- **Match** → do not add a section. Append this sighting to the matched entry's
+  `*Seen in:*` block as a new line, keeping the existing heading and definition:
+
+  ```markdown
+  *Seen in:* 2026-06-11-001-land-skill-plan.md (Unit 4)
+  2026-08-17-001-walk-blueprint-skill-plan.md (Unit 2)
+  ```
+
+  Sightings accumulate one per line under the single `*Seen in:*` label, in the order
+  they were captured. Never repeat the label. If this exact plan file *and* ordinal is
+  already listed, add nothing — just confirm the term is already recorded.
+
+- **Match with a different definition** → **keep the stored definition.** The first
+  capture wins; a later walk does not silently rewrite what the user already has.
+  Record the sighting, and say so in the confirmation line:
+  > "Already in the glossary (definition kept as-is) — added this plan to *Seen in:*."
+
+  Only replace the definition if the user explicitly asks for it after seeing that.
+  Never merge two definitions into one paragraph.
+
+### 7e. The capture interaction
+
+Speed is the requirement. This runs mid-review and its entire purpose is to not derail
+the walk, so it costs the user **one answer**.
+
+1. Ask for the term, and nothing else:
+   > "What term should I capture?"
+
+2. **Draft the definition — do not ask for it.** The user is capturing this term
+   *because they do not know it*; asking them to define it inverts the whole point.
+   Write the definition yourself from the unit's context plus general knowledge, in the
+   7b voice.
+
+3. Read `~/.claude/glossary.md` (creating it per 7c if absent), apply 7d, and write.
+
+4. Confirm in **one line**, then immediately re-ask the Step 5c menu on the same unit:
+   > "Captured **Idempotency** to `~/.claude/glossary.md`."
+   > or
+   > "Enriched **Idempotency** in `~/.claude/glossary.md` — now seen in 2 plans."
+   > or, on first-ever use:
+   > "Created `~/.claude/glossary.md` and captured **Idempotency**."
+
+   Do not print the drafted definition back, do not ask the user to approve it, and do
+   not summarize the file. If they want to change the wording they can say so, and the
+   entry is one hand-edit away in a file they own.
+
+Repeatable any number of times on one unit (6g). Each capture is an independent
+read-modify-write of the glossary; nothing is batched until walk end.
