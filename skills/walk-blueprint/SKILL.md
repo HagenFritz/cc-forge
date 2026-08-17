@@ -436,3 +436,123 @@ the walk, so it costs the user **one answer**.
 
 Repeatable any number of times on one unit (6g). Each capture is an independent
 read-modify-write of the glossary; nothing is batched until walk end.
+
+## Step 8: Finish the Walk
+
+Reached when every unit is terminal — either walked through in this session or
+already terminal when Step 3 checked.
+
+### 8a. Report the Summary
+
+**Re-read the plan from disk and derive every count from its `**Reviewed:**` lines.**
+Never count from session memory. A walk resumed across sessions has verdicts on units
+this session never rendered, and a user may have hand-edited state between turns; only
+the doc knows the whole plan's totals.
+
+Read the current text and bucket every unit by its `**Reviewed:**` value:
+
+```bash
+grep -n -E '^\*\*Reviewed:\*\*' docs/plans/<file>.md
+```
+
+Report:
+
+- **Accepted / modified / retired** — the three reviewed verdicts, with counts.
+- **Skipped** — reported as **unreviewed**. Never folded into accepted; the user
+  declined to give a verdict, which is not the same as approving the unit.
+- **Never reached** — units carrying **no `**Reviewed:**` line at all**. Distinct from
+  skipped: nobody looked at these. Keep the two buckets separate and name them
+  separately, so "12 units, 9 accepted" never hides three units the walk never showed.
+- **Retired units still cited** — count the retired units whose `**Review note:**`
+  records citations from other units' `**Dependencies:**` (6f writes them there). Read
+  the notes; do not re-scan the plan. These are the dangling references tombstoning
+  leaves behind, and nothing has fixed them.
+- **Terms added** — how many terms this session captured to `~/.claude/glossary.md`.
+  This one count *is* session-scoped: the glossary is append-only and shared across
+  plans, so a re-read cannot tell this walk's captures from an earlier walk's.
+- **Backup** — if a `.bak` was taken (Step 4), name its path in one line so the user
+  knows it exists and can delete it once satisfied.
+
+Example shape:
+
+> "Walk complete — 12 units: 7 accepted, 2 modified, 1 retired, 1 skipped
+> (unreviewed), 1 never reached. 1 retired unit is still cited by other units'
+> `Dependencies:` — see its review note. 3 terms captured to
+> `~/.claude/glossary.md`. Backup at `docs/plans/<file>.md.bak`."
+
+### 8b. Stamp the Walk Outcome
+
+The stamp fires only here, at final summary — a walk abandoned mid-way posts nothing,
+and a resumed walk stamps only when it reaches this step. Counts come from 8a, so they
+describe the whole plan rather than this session's slice. Issue-number resolution
+(including the silent skip when none resolves), posting mechanics, marker encoding, and
+failure handling are defined in [the issue-log spec](../issue-log/SKILL.md).
+
+Compose the body below, write it to a temp file with the Write tool, and post:
+
+```markdown
+<!-- cc-forge-log v1: {"skill":"walk-blueprint","event":"blueprint-walk-complete","paths":["docs/plans/<file>.md"]} -->
+
+### 🚶 /walk-blueprint — walk complete
+
+**Summary:** <n> units walked — <n> accepted, <n> modified, <n> retired, <n> skipped
+**Unreviewed:** <n> skipped, <n> never reached
+**Retired still cited:** <n> — <Unit N, Unit N> named in other units' Dependencies
+**Terms added:** <n> — <term, term, term>
+```
+
+```bash
+gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
+```
+
+Omit `**Retired still cited:**` when nothing was retired or nothing cites what was, and
+omit `**Terms added:**` when no term was captured. There is no `**Doc:**` field — the
+walk produces no document of its own, and the walked plan's path rides in `paths`.
+
+## Fallback Mode Details
+
+Fallback is entered from Step 2 when the plan has no `- [ ] **Unit N:` items at all.
+Deltas against the main path:
+
+- **No review state is written.** There is nothing to anchor a `**Reviewed:**` line to —
+  the whole Step 6 protocol keys off a unique `Unit N:` ordinal, and without units there
+  is no safe place to put state and no way to resume from it. Skip Steps 4, 6, and 8b
+  entirely: no backup, no writes, no stamp. Say this to the user up front rather than
+  degrading quietly:
+  > "No units to anchor review state to — this is a read-only walk. Nothing will be
+  > written to the plan, and no progress is saved if we stop."
+- Walk the plan's `##` sections in document order instead of units, rendering each
+  verbatim and teaching it per Step 5b.
+- The action question narrows to **Add term** / **Next** / **Stop**. Accept, Modify and
+  Remove are all off the table — the first two have nowhere to record a verdict, and the
+  third has no block to tombstone.
+- **Add term (Step 7) works unchanged.** It never touched the plan doc anyway, so it is
+  the one part of the walk that is fully intact here. In practice it is most of what
+  fallback mode is good for.
+- Report a summary at the end (8a) covering only sections seen and terms captured. No
+  verdict counts exist to report.
+
+The useful framing for the user: fallback mode is a guided read-through with a glossary
+attached, not a review. If they want verdicts recorded, the plan needs re-running
+through `/blueprint`.
+
+## Rules
+
+- **Never write code and never execute the plan.** That is `/work`. This skill only
+  reads plans, edits their review state, and writes the glossary.
+- **Never renumber, reorder, or delete units**, and never add one. Ordinals are
+  load-bearing: other units cite them, and `/work` composes issue-stamp keys from unit
+  headings.
+- **Never fabricate a missing field.** An absent `**Execution note:**` or
+  `**Test scenarios:**` is normal. Render what exists; never infer the rest.
+- **Never modify or retire without the before/after confirm.** Both actions destroy plan
+  text that is not in git. The user sees old and new, labeled, and says apply.
+- **Never edit another unit's `**Dependencies:**`** when retiring. Dependency fallout is
+  warn-only and recorded in the retired unit's `**Review note:**`.
+- **Stop the walk on an ambiguous anchor.** More than one match for an `Edit` anchor
+  means refusing to write and surfacing it (6a). Never guess which match is right.
+- **The plan doc is the source of truth.** If the user edits it between turns, re-read
+  before the next action so the change is picked up — and rebuild every anchor from that
+  read.
+- **Skipped is not accepted.** A skip records `skipped` and is reported as unreviewed at
+  walk end.
