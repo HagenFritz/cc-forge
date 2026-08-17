@@ -65,6 +65,7 @@ Optional keys:
 | brainstorm | `requirements-written` | 🧠 | Doc path, full requirements list (direct port from the doc) |
 | blueprint | `plan-written` | 📋 | Plan path, unit count, every unit enumerated with a one-sentence summary |
 | deepen-blueprint | `plan-deepened` | 🔬 | Plan path, sections-deepened count, short summary, questions resolved, major restructures |
+| walk-blueprint | `blueprint-walk-complete` | 🚶 | Summary line + counts of units accepted, modified, retired, skipped; terms added to the glossary |
 | tree | `worktree-created` | 🌳 | Branch, worktree path (also in `paths`) |
 | branch-from-issue | `branch-created` | 🌱 | Branch |
 | work | `unit-complete` | 🔨 | **Did** (always), **Solved** (only when a problem was solved) |
