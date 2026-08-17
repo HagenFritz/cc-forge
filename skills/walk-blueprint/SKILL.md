@@ -39,7 +39,11 @@ being walked hands its verdict to both halves, and nothing detects that.
 
   The filename convention is `YYYY-MM-DD-NNN-<type>-<slug>-plan.md`, so a
   lexicographic sort picks the most recent doc deterministically (no `mtime`
-  ambiguity if the file was edited mid-walk).
+  ambiguity if the file was edited mid-walk). It also orders same-day plans by their
+  `NNN` sequence, which `mtime` gets wrong whenever an earlier plan was edited later.
+
+  The glob is repo-root-relative. Run it from the repo root; from a worktree, note that
+  `docs/` is a symlink to the primary checkout's, so the same command resolves there.
 
 - If no plan docs exist, STOP and tell the user to run `/blueprint` first.
 - Confirm the resolved path back to the user before continuing:
@@ -59,11 +63,16 @@ Detection is **structural**, never by the doc's `date:` or by any version marker
 | **Standard** | One or more units match `- [ ] **Unit N:` / `- [x] **Unit N:` | Full walk: render, teach, act, write review state per unit. |
 | **Fallback** | No such matches | Degraded read-only-ish walk; see `## Fallback Mode Details`. |
 
+**Both checkbox states count.** A plan whose units are all `- [x]` is a fully built plan,
+not an old-shape one — it is still Standard, and still walkable. Fallback requires *no*
+`**Unit N:` checkbox items of either state.
+
 Announce the mode briefly:
 
 > "Plan has N units in the standard shape — walking them in order."
 > or
-> "This plan predates the current unit shape (no `- [ ] **Unit` items) — falling back."
+> "This plan predates the current unit shape (no `- [ ]` / `- [x] **Unit` items) —
+> falling back."
 
 Note the units' order as they appear in the doc. **Plan order is walk order.** Never
 reorder, and never renumber.
@@ -77,9 +86,15 @@ where to start:
    interrupted after claiming the unit but before recording a verdict. Announce:
    > "Resuming at Unit 4 (last left pending)."
    If more than one unit is `pending`, resume at the **first** in plan order and say so.
+
+   A `pending` unit takes the entry point even when earlier units are non-terminal —
+   finishing the interrupted verdict comes first. **Those earlier units are not
+   abandoned:** after the `pending` unit gets its verdict, fall back to rule 2 and
+   continue from the first non-terminal unit in plan order, which walks back to them.
+   The walk is over when rule 3 holds, never when the last unit is reached.
 2. Else, the entry point is the first non-terminal unit in plan order. Terminal
    values are `accepted`, `modified`, `retired`, `skipped`. A missing
-   `**Reviewed:**` line is non-terminal.
+   `**Reviewed:**` line is non-terminal, and so is `pending`.
 3. If every unit is terminal, report completion and exit — jump straight to the final
    summary:
    > "Walk already complete. All N units are accepted / modified / retired / skipped."
@@ -158,14 +173,21 @@ Then execute the chosen action using the Review-State Write Protocol (Step 6).
 The plan doc is the durable progress store. Every advancing action writes a
 `**Reviewed:**` line into the unit using `Edit`.
 
-The written block sits directly under the unit's checkbox line:
+The written block sits directly under the unit's checkbox line, separated from it by a
+blank line, and followed by a blank line before the unit's first field:
 
 ```
 - [ ] **Unit 3: Wire the glossary writer**
 
 **Reviewed:** `accepted`
 **Review note:** <why — required for modified, retired; optional for skipped>
+
+**Goal:** …
 ```
+
+`**Reviewed:**` and `**Review note:**` are adjacent with **no** blank line between them —
+they are one block. The blank lines around that block are what keep it from being
+absorbed into the heading or the first field when the plan renders.
 
 `**Reviewed:**` takes exactly one of: `pending`, `accepted`, `modified`, `retired`,
 `skipped`.
@@ -182,11 +204,22 @@ Before **every** `Edit`, count matches for the exact `old_string` you are about 
 use:
 
 ```bash
-grep -c -F "<exact anchor text>" docs/plans/<file>.md
+grep -c -F -- "<exact anchor text>" docs/plans/<file>.md
 ```
 
+The `--` is **required**, not stylistic: every unit anchor starts with `- `, and without
+it `grep` reads the anchor as an option bundle and exits 2 with `invalid option` instead
+of printing a count. An error here reads as "no output", which is the one outcome this
+check must never produce silently.
+
 (For a multi-line anchor, count on the ordinal-bearing line — `- [ ] **Unit 3:` — and
-confirm the following lines from the fresh read.)
+confirm the following lines from the fresh read. Match the checkbox as it actually is:
+`/work` may already have built the unit, so the line can read `- [x]`.)
+
+Read the **printed count**, not the presence of output — and treat a non-zero exit
+alongside no count as a broken invocation, never as a result. `grep` exits 1 on a clean
+zero match (printing `0`) and 2 on a usage error (printing nothing); only the first is
+an answer.
 
 - **Exactly 1 match** → proceed with the `Edit`.
 - **0 matches** → the doc changed under you. Re-read and rebuild the anchor; if it
@@ -214,13 +247,21 @@ Insert it directly below the checkbox line:
 
 ```
 - [ ] **Unit 3: Wire the glossary writer**
+
+**Goal:** …
 ```
 →
 ```
 - [ ] **Unit 3: Wire the glossary writer**
 
 **Reviewed:** `pending`
+
+**Goal:** …
 ```
+
+Anchor the `Edit` on the checkbox line *plus* the following blank line and the first
+field label — the checkbox line alone leaves the insertion point ambiguous about which
+blank line is which.
 
 If the unit already carries a `**Reviewed:**` line (a re-walk), edit its value in
 place rather than inserting a second one.
@@ -240,10 +281,17 @@ Modify is **destructive** — it replaces plan text that cannot be recovered fro
 2. Take the backup (Step 4) if not yet taken, then claim the unit `pending` (6c).
 3. **Draft** the replacement text. The skill drafts; the user approves. The user is
    reviewing, not authoring.
-4. **Carry every untouched field through verbatim.** If the requested change is about
+4. **Edit only the region that changes; never regenerate the whole unit.** Scope the
+   `Edit` to the smallest span containing the change — one bullet, one field — and leave
+   every other field out of the `old_string` entirely. Text never passed to an `Edit`
+   cannot be corrupted by one.
+
+   **Carry every untouched field through verbatim.** If the requested change is about
    `**Approach:**`, then `**Test scenarios:**`, `**Verification:**`, `**Files:**` and
    the rest must come out byte-identical. A regenerated block that quietly drops or
    rewords a field the user never mentioned is a silent data loss, not an improvement.
+   Rewriting the unit wholesale is the single most likely way to cause that, which is
+   why the edit is scoped instead.
 5. Show a **before/after** of the changed region — the old text and the drafted
    replacement, clearly labeled.
 6. Ask via `AskUserQuestion`: **Apply** / **Revise** (re-draft from further feedback,
@@ -267,7 +315,26 @@ treat it as the lighter action.
    cross-reference each other by ordinal, including ranges (`Dependencies: Units 3–6`),
    and `/work` composes issue-stamp keys from the unit's heading text. Removing the
    block or shifting ordinals invalidates both. The unit keeps its position, its
-   ordinal, and its heading; its body is marked retired.
+   ordinal, its heading, and **its entire body verbatim** — every field stays exactly
+   as written.
+
+   The tombstone is the state block and nothing else: `**Reviewed:** retired` plus its
+   note, inserted in the usual place, with a `~~RETIRED~~` marker appended to the
+   heading text so a reader scanning the plan sees it without reading state lines:
+
+   ```
+   - [x] **Unit 4: Review phase — deep-review machinery, unattended** ~~RETIRED~~
+
+   **Reviewed:** `retired`
+   **Review note:** retired — superseded by Unit 2; cited by Units 3, 5, 6; those were not updated
+
+   **Goal:** …
+   ```
+
+   The marker goes **after** the closing `**` so the ordinal-bearing anchor text is
+   unchanged and 6a still matches on `- [x] **Unit 4:`. Do not strike through, comment
+   out, or blank the fields — a retired unit still has to be readable to explain why it
+   was retired, and `/work` must still be able to find its heading.
 4. **Scan for citations.** Search the plan for other units naming this ordinal in
    their `**Dependencies:**` (including ranges that span it):
 
@@ -277,6 +344,14 @@ treat it as the lighter action.
 
    Read the hits and work out which ones cover this ordinal. **Never auto-edit another
    unit** — dependency handling is warn-only.
+
+   **Grep for the label only, never for the ordinal.** Narrowing the pattern to the
+   number (`grep "Dependencies:.*4"`) looks tighter and is wrong: it finds the literal
+   `Unit 4` and silently misses `Units 3–6` and `Units 2–7`, which both span it —
+   exactly the citations that matter most, since a range hides the ordinal it covers.
+   The unfiltered list is short (one line per unit); reading it is the check. Note also
+   that ranges are written with an **en-dash** (`–`, U+2013), not a hyphen, so an
+   ASCII-hyphen pattern matches nothing at all.
 5. Show a **before/after** of the tombstoned block and ask via `AskUserQuestion`:
    **Retire** / **Cancel**. On Cancel, restore the prior `**Reviewed:**` state and
    change nothing.
@@ -370,8 +445,9 @@ Rules for the shape:
 
 ### 7c. Creating the file
 
-Never assume the file exists. Read it first; if it is missing, write it with exactly
-this header before the first entry:
+Never assume the file exists. Check with `ls ~/.claude/glossary.md` rather than `Read` —
+a `Read` on a missing file errors, and absence is the expected first-run case, not a
+failure. If it is missing, write it with exactly this header before the first entry:
 
 ```markdown
 # Glossary
@@ -392,12 +468,19 @@ are the same entry. There must never be two `##` sections for one term.
   `*Seen in:*` block as a new line, keeping the existing heading and definition:
 
   ```markdown
-  *Seen in:* 2026-06-11-001-land-skill-plan.md (Unit 4)
-  2026-08-17-001-walk-blueprint-skill-plan.md (Unit 2)
+  *Seen in:*
+  - 2026-06-11-001-land-skill-plan.md (Unit 4)
+  - 2026-08-17-001-walk-blueprint-skill-plan.md (Unit 2)
   ```
 
   Sightings accumulate one per line under the single `*Seen in:*` label, in the order
-  they were captured. Never repeat the label. If this exact plan file *and* ordinal is
+  they were captured. Never repeat the label.
+
+  **A second sighting converts the line into a list.** The one-line form in 7b holds
+  only while there is exactly one sighting; a bare newline after it would be a markdown
+  soft break, rendering the second plan's name jammed onto the first line and outside
+  the italics. On the first enrich, move the label onto its own line and rewrite the
+  existing sighting as the first `-` item. If this exact plan file *and* ordinal is
   already listed, add nothing — just confirm the term is already recorded.
 
 - **Match with a different definition** → **keep the stored definition.** The first
@@ -440,7 +523,10 @@ read-modify-write of the glossary; nothing is batched until walk end.
 ## Step 8: Finish the Walk
 
 Reached when every unit is terminal — either walked through in this session or
-already terminal when Step 3 checked.
+already terminal when Step 3 checked — or when the user ends the walk early. An early
+end still runs 8a: the counts are derived from the doc, so a partial walk reports
+truthfully rather than not at all, with the unwalked units falling into the
+never-reached and left-pending buckets.
 
 ### 8a. Report the Summary
 
@@ -463,6 +549,11 @@ Report:
 - **Never reached** — units carrying **no `**Reviewed:**` line at all**. Distinct from
   skipped: nobody looked at these. Keep the two buckets separate and name them
   separately, so "12 units, 9 accepted" never hides three units the walk never showed.
+- **Left pending** — units still reading `**Reviewed:** pending`. A normal walk reaches
+  8a with none, but a hand-edit or an abandoned earlier walk can leave one, and the
+  grep will surface it. Report it in its own bucket; never fold it into any other and
+  never drop it. **The bucket counts must sum to the plan's total unit count** — if
+  they do not, a value is unaccounted for and the summary is wrong.
 - **Retired units still cited** — count the retired units whose `**Review note:**`
   records citations from other units' `**Dependencies:**` (6f writes them there). Read
   the notes; do not re-scan the plan. These are the dangling references tombstoning
@@ -480,10 +571,15 @@ Example shape:
 > `Dependencies:` — see its review note. 3 terms captured to
 > `~/.claude/glossary.md`. Backup at `docs/plans/<file>.md.bak`."
 
+Omit a bucket that is zero rather than printing `0 pending`, but never omit a non-zero
+one to keep the sentence short.
+
 ### 8b. Stamp the Walk Outcome
 
-The stamp fires only here, at final summary — a walk abandoned mid-way posts nothing,
-and a resumed walk stamps only when it reaches this step. Counts come from 8a, so they
+The stamp fires only here, at final summary — a walk that dies without reaching Step 8
+(a crash, a closed session) posts nothing, and a resumed walk stamps only when it reaches
+this step. A walk the user deliberately ends early *does* reach Step 8, so it stamps, with
+the unwalked units counted in the unreviewed line. Counts come from 8a, so they
 describe the whole plan rather than this session's slice. Issue-number resolution
 (including the silent skip when none resolves), posting mechanics, marker encoding, and
 failure handling are defined in [the issue-log spec](../issue-log/SKILL.md).
@@ -496,7 +592,7 @@ Compose the body below, write it to a temp file with the Write tool, and post:
 ### 🚶 /walk-blueprint — walk complete
 
 **Summary:** <n> units walked — <n> accepted, <n> modified, <n> retired, <n> skipped
-**Unreviewed:** <n> skipped, <n> never reached
+**Unreviewed:** <n> skipped, <n> never reached, <n> left pending
 **Retired still cited:** <n> — <Unit N, Unit N> named in other units' Dependencies
 **Terms added:** <n> — <term, term, term>
 ```
@@ -511,7 +607,8 @@ walk produces no document of its own, and the walked plan's path rides in `paths
 
 ## Fallback Mode Details
 
-Fallback is entered from Step 2 when the plan has no `- [ ] **Unit N:` items at all.
+Fallback is entered from Step 2 when the plan has no `**Unit N:` checkbox items at all —
+neither `- [ ]` nor `- [x]`.
 Deltas against the main path:
 
 - **No review state is written.** There is nothing to anchor a `**Reviewed:**` line to —
