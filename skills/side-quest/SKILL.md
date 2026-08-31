@@ -93,9 +93,18 @@ If the doc's `tracking:` frontmatter is already filled (a previous or interrupte
 1. Draft the tracking issue:
    - **Title:** the side-quest title from Phase 1.
    - **Body:** the doc's `## Description` section (include `## Impact / Why it matters` when it adds signal).
-2. Ask with a single `AskUserQuestion` call:
-   - **Question 1:** "File this as a GitHub tracking issue?" — options **Create** (set the `preview` field to the drafted title, label `follow-up`, and body) and **Skip**.
-   - **Question 2** (only when an originating issue resolved in Context Gathering): "Does this side-quest depend on the current work (#[number]) landing first?" — options **Yes** / **No**.
+2. Ask with two **sequential** `AskUserQuestion` calls — one question each. They are not combined, because `preview` is only supported on a single-select question and a preview switches the UI to a side-by-side layout that a second question in the same call cannot share.
+   - **Call 1:** "File this as a GitHub tracking issue?" Set the `preview` field on the **Create** option to a metadata stub only — never the issue body. The body is far larger than the preview panel and will fail to render:
+     ```
+     Title: <title>
+     Label: follow-up
+     Body: <N> lines
+     ```
+     - Options:
+       - **Create** (description: "File this tracking issue") — carries the stub preview
+       - **Skip** (description: "Don't file an issue")
+     - Also allow **Other** (automatic) for free-form input. On Other: first print the full composed issue body as ordinary message text (not in a `preview` field) so the user can read what they are revising — print it at most once per revision round, and skip the print if this round's body has already been printed. Then treat the input as revision notes, regenerate the title/body accordingly, and re-ask with the updated stub.
+   - **Call 2** — only when Call 1 was answered **Create** *and* an originating issue resolved in Context Gathering: "Does this side-quest depend on the current work (#[number]) landing first?" — options **Yes** / **No**. No preview.
 3. If the user skips: leave `tracking:` empty and go to Phase 4 — the stamp still posts, covering what exists.
 4. If the user confirms, write the body below to a temp file with the Write tool, then create the issue:
    ```markdown
@@ -110,7 +119,7 @@ If the doc's `tracking:` frontmatter is already filled (a previous or interrupte
      --label "follow-up" \
      --body-file <temp-file>
    ```
-   - Include the `Blocked by` line only when Question 2 was answered **Yes**; omit it otherwise.
+   - Include the `Blocked by` line only when Call 2 was answered **Yes**; omit it otherwise (including when Call 2 was never asked).
    - If the command errors because the `follow-up` label doesn't exist, re-run without `--label` and tell the user the label is missing on this repo.
    - Capture the tracking-issue number from the URL in the output.
 5. Update the doc's `tracking:` frontmatter to `<owner>/<repo>#<tracking-issue>` with the Edit tool.

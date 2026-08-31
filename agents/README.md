@@ -8,13 +8,13 @@ Models are pinned per agent using **bare family aliases** (`opus`, `sonnet`, `ha
 |---|---|
 | all of `review/` except the synthesizer and the adversarial reviewer | `sonnet` — 1M context, opus-level review quality at lower cost |
 | `review/review-synthesizer` | `opus` — highest-judgment step in `/deep-review` |
-| `review/adversarial-reviewer` | `opus` + `effort: max` — race conditions, TOCTOU, and cascade failures are the fleet's hardest reasoning; runs only on large or sensitive diffs, so the cost is bounded |
+| `review/adversarial-reviewer` | `opus` + `effort: high` — race conditions, TOCTOU, and cascade failures are the fleet's hardest reasoning; runs only on large or sensitive diffs, so the cost is bounded |
 | `workflow/lint` | `haiku` — mechanical, fast |
 | `research/learnings-researcher` | `sonnet` + `effort: high` — deterministic grep-filter-read pipeline |
 | `research/git-history-analyzer` | `sonnet` + `effort: high` — runs prescribed git incantations and summarizes; callers supply the commands |
 | `research/repo-research-analyst`, `research/framework-docs-researcher`, `research/best-practices-researcher`, `workflow/spec-flow-analyzer` | `opus` + `effort: high` — `/blueprint`'s research fan-out, whose output gates downstream planning decisions |
 | `test/test-plan-critic` | `opus` + `effort: high` — scores every case against the diff and writes a drop list the user acts on |
-| `research/issue-intelligence-analyst` | `opus` + `effort: max` — clusters issues by root cause rather than symptom; grounds all of `/ideate`'s fan-out |
+| `research/issue-intelligence-analyst` | `opus` + `effort: high` — clusters issues by root cause rather than symptom; grounds all of `/ideate`'s fan-out |
 
 No agent uses `inherit`; every model is pinned so a run's cost and quality don't shift with the session model.
 
