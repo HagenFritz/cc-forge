@@ -277,19 +277,38 @@ Resolve `<owner>/<repo>` from `git remote get-url origin`. Then ask once via
 Skip any deferred item whose doc entry already carries a `Tracking:` line — a
 resumed walk must not re-file issues that exist.
 
-**Then confirm the content, not just the count.** The prompt above approves the
-*batch*; it does not show the user a single word of what will be filed. Before
-the first `gh issue create`, compose every issue body and show them via one more
-`AskUserQuestion`, with the full drafted title + body of each in a `preview`:
+**Then confirm what will be filed, not just the count.** The prompt above
+approves the *batch*; it names not one of the issues it would create. Before the
+first `gh issue create`, compose every issue body and ask once more via
+`AskUserQuestion`. Set the `preview` field on the **File them** option to a
+metadata stub only — never the bodies. The bodies are far larger than the
+preview panel and will fail to render:
 
-- **File them** — create exactly what was previewed.
+```
+<title> (<N> lines)
+<title> (<N> lines)
+```
+
+One line per item, in doc order.
+
+- **File them** (description: "Create these issues as listed") — carries the
+  stub preview
 - **Edit** — the user revises a title or body in free-form; recompose and
-  re-confirm.
+  re-confirm. First print the full composed title + body of the item being
+  revised as ordinary message text (not in a `preview` field) so the user can
+  read what they are revising — print it at most once per revision round, and
+  skip the print if this round's body has already been printed. If the input
+  names no item and the batch holds more than one, print nothing and ask which
+  item they mean. Then treat the input as revision notes, regenerate that
+  item's title and body accordingly, and re-ask with the updated stub.
 - **Cancel** — file nothing, leave every `Status:` line untouched.
 
-Batching all previews into one prompt keeps this to two questions total, however
+Batching every item into one prompt keeps this to two questions total, however
 many items are deferred. Do not skip this second confirm because the first was
-answered "Create all" — that answer is consent to the batch, not to its contents.
+answered "Create all" — that answer is consent to a count, while this one shows
+which issues those are. It is a weaker guarantee than showing the bodies: the
+titles establish identity, not contents, and the bodies are one **Edit** away
+for a user who wants to read them before saying yes.
 
 For each item being created, build the body from the shared
 [issue template](../issue-from-context/issue-template.md) — same structure
@@ -321,6 +340,13 @@ gh issue create \
   rest; after the loop, report which deferred items did **not** get a tracking
   issue. Step 8b's stamp must reflect the shortfall (e.g. `Tracking: 2 of 4
   filed — P2-3, P2-5 failed`), never silently list only the successes.
+
+After the loop, report every created issue's URL from its `gh issue create`
+output, one per line, so each is one click away:
+
+```
+<P<X>-<N> title> — <issue-url>
+```
 
 ### 8b. Stamp the Walk Outcome
 
@@ -376,8 +402,8 @@ When running in fallback mode (no `## Groups` section or no enriched fields):
 - Never skip the user's chosen action (e.g., don't "implement" when they said
   "defer").
 - **Never create a GitHub issue without an explicit, informed yes.** Two confirms
-  gate it (§8a): one for the batch, one showing the drafted title + body of every
-  issue. Deferring a finding is not consent to file anything; filing nothing is
+  gate it (§8a): one for the batch, one listing the drafted title of every issue.
+  Deferring a finding is not consent to file anything; filing nothing is
   the default and a perfectly good outcome. This holds even when the user's
   project instructions are silent on issues — and where those instructions
   forbid unprompted issue creation, they win outright.
