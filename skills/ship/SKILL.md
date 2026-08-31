@@ -83,8 +83,10 @@ Do NOT proceed with any commits or pushes on main/master.
          Title: <title>
          Branch: <branch-name> → main
          Issue: #<issue-number>  (or "No linked issue" if none)
-         Body: <N> lines
+         Summary: <plain-language summary of what the PR does, at most 3 sentences,
+                  wrapped to the panel width>
          ```
+       - Write the `Summary:` value from the PR body composed in step 10c. Three sentences is a ceiling, not a target — one sentence is enough for a simple PR. Keep it plain and short; the preview panel is narrow.
        - Options:
          - **Confirm** (description: "Create this PR as shown") — carries the stub preview
          - **Cancel** (description: "Abort without creating the PR")
