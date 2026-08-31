@@ -91,22 +91,21 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
    - If context is thin, ask one clarifying question before proceeding; if still thin, stop and tell the user to gather more context
 
 5a. **Preview and confirm the issue**
-   - Use `AskUserQuestion` with a single question. Set the `preview` field on the "Confirm" option to show the full draft:
+   - Use `AskUserQuestion` with a single question. Set the `preview` field on the "Confirm" option to a metadata stub only — never the issue body. The body is far larger than the preview panel and will fail to render:
      ```
      Title: <title>
      Label: <label>
      Type: <type>
      Assignees: <logins>
-
-     <body rendered as-is>
+     Body: <N> lines
      ```
    - `Title` is the final prefixed title from step 5. Include the `Assignees` line only when `--who` was given; show the resolved logins.
    - Options:
-     - **Confirm** (description: "Create this issue as shown") — include the full preview on this option
+     - **Confirm** (description: "Create this issue as shown") — carries the stub preview
      - **Cancel** (description: "Abort without creating")
    - Also allow "Other" (automatic) for the user to type a revised title or notes
    - If user cancels, stop.
-   - If user provides custom input via Other, treat it as revision notes and regenerate the title/body accordingly, then re-show the preview.
+   - If user provides custom input via Other, first print the full composed issue body as ordinary message text (not in a `preview` field) so the user can read what they are revising — print it at most once per revision round, and skip the print if this round's body has already been printed. Then treat the input as revision notes, regenerate the title/body accordingly, and re-ask with the updated stub.
 
 6. **Create the issue**
    - Create the issue with label (HEREDOC for body):

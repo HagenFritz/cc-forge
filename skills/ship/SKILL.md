@@ -77,22 +77,21 @@ Do NOT proceed with any commits or pushes on main/master.
        - **Primary Changes**: only changes from the current repository.
        - **Related Changes**: if changes were detected in other repositories (from Phase 1 step 4), add a brief note. Do NOT include specific file or change details from other repos.
 
-    d. **Show confirmation preview** using `AskUserQuestion` with a single question:
-       - Set the `preview` field on the **Confirm** option to show the full draft:
+    d. **Show confirmation prompt** using `AskUserQuestion` with a single question:
+       - Set the `preview` field on the **Confirm** option to a metadata stub only — never the PR body. The body is far larger than the preview panel and will fail to render:
          ```
          Title: <title>
          Branch: <branch-name> → main
          Issue: #<issue-number>  (or "No linked issue" if none)
-
-         <full PR body>
+         Body: <N> lines
          ```
        - Options:
-         - **Confirm** (description: "Create this PR as shown") — include the full preview on this option
+         - **Confirm** (description: "Create this PR as shown") — carries the stub preview
          - **Cancel** (description: "Abort without creating the PR")
        - Also allow **Other** (automatic) for free-form input.
        - **If Confirm:** proceed to step 10e.
        - **If Cancel:** output "PR creation cancelled. Branch has been pushed to remote." and stop.
-       - **If Other:** treat the free-form input as a revised title and/or body revision notes. Regenerate the title and body accordingly and re-show the preview (loop back to step 10d). Repeat until the user confirms or cancels.
+       - **If Other:** first print the full composed PR body as ordinary message text (not in a `preview` field) so the user can read what they are revising — print it at most once per revision round, and skip the print if this round's body has already been printed. Then treat the free-form input as a revised title and/or body revision notes, regenerate the title and body accordingly, and re-ask with the updated stub (loop back to step 10d). Repeat until the user confirms or cancels.
 
     e. **Create the PR:**
        ```
