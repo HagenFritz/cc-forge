@@ -93,8 +93,21 @@ This skill **reads** the review doc — it never edits it. `/review-walk` owns t
     - ...
     ```
     Omit any section with no members. For "Fixed", describe what changed in plain terms — derive it from the issue's `Fix:` field and the actual diff hunk for that file, not a verbatim paste of the reviewer's problem statement.
-14. **Confirm before posting** via `AskUserQuestion`, showing the composed comment in a `preview`: **Post comment** / **Edit** (free-form revised body, then re-confirm) / **Skip comment** (fixes are already pushed; just don't comment). On Post: `gh pr comment <N> --body "<comment>"`.
-15. **Report the final state:** commits pushed (or "already pushed"), comment posted (or skipped), and the reminder: "The worktree that shipped this PR is now behind — run `/catch-up` there before `/land`."
+14. **Confirm before posting** via `AskUserQuestion`. Set the `preview` field on the **Post comment** option to a metadata stub only — never the comment. The comment is far larger than the preview panel and will fail to render:
+    ```
+    PR: #<N> <pr-title>
+    Fixed: <N>
+    Deferred: <M>
+    Skipped: <K>
+    ```
+    The counts are the decision-relevant content — they are what the comment is composed from.
+    - Options:
+      - **Post comment** (description: "Post this comment on the PR") — carries the stub preview
+      - **Edit** (description: "Revise the comment body, then re-confirm")
+      - **Skip comment** (description: "Fixes are already pushed; just don't comment")
+    - On **Post comment**: `gh pr comment <N> --body "<comment>"`.
+    - On **Edit**: first print the full composed comment as ordinary message text (not in a `preview` field) so the user can read what they are revising — print it at most once per revision round, and skip the print if this round's body has already been printed. Then treat the input as revision notes, regenerate the comment accordingly, and re-ask with the updated stub.
+15. **Report the final state:** the PR URL from step 4 (so it's one click away), commits pushed (or "already pushed"), comment posted (or skipped), and the reminder: "The worktree that shipped this PR is now behind — run `/catch-up` there before `/land`."
 
 ## Rules
 
