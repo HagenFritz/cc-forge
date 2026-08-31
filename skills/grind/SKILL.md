@@ -1,6 +1,6 @@
 ---
 name: grind
-description: "Execute an entire implementation plan autonomously as a sequence of PRs, mirroring the manual skill chain unattended: a max-effort Opus subagent builds each slice unit-by-unit (committing, pushing, and stamping the issue per unit) and opens a ship-conformant PR; the deep-review agent fleet reviews it; grind triages the findings itself, posts every verdict and outcome to the PR, dispatches a second Opus subagent for accepted fixes, and squash-merges on green CI — halting, never self-repairing, on red. A default-on lifetime timer stops the run cleanly before the VM's ~2-hour wall (--no-timer to disable), and every terminal outcome — complete, stopped, or blocked — always fires a push notification and emails when SendGrid is configured, the email always carrying the resume command. Use when the user says 'grind this plan', 'grind it out', 'run the whole plan', 'build all the PRs', or invokes /grind."
+description: "Execute an entire implementation plan autonomously as a sequence of PRs, mirroring the manual skill chain unattended: an Opus subagent builds each slice unit-by-unit (committing, pushing, and stamping the issue per unit) and opens a ship-conformant PR; the deep-review agent fleet reviews it; grind triages the findings itself, posts every verdict and outcome to the PR, dispatches a second Opus subagent for accepted fixes, and squash-merges on green CI — halting, never self-repairing, on red. A default-on lifetime timer stops the run cleanly before the VM's ~2-hour wall (--no-timer to disable), and every terminal outcome — complete, stopped, or blocked — always fires a push notification and emails when SendGrid is configured, the email always carrying the resume command. Use when the user says 'grind this plan', 'grind it out', 'run the whole plan', 'build all the PRs', or invokes /grind."
 argument-hint: "[plan file path] [--no-timer]"
 allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Agent, AskUserQuestion, PushNotification, TaskCreate, TaskUpdate, TaskList
 ---
@@ -9,7 +9,7 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Agent, AskUserQuestion, Push
 
 **Note: The current year is 2026.**
 
-`/grind` takes a plan document and drives it to fully merged `main`, one PR at a time, without stopping for approval between PRs. For each PR slice it: creates a worktree; dispatches a **max-effort Opus** subagent that implements the slice unit-by-unit — committing, **pushing**, and stamping the issue after every unit — and opens a ship-conformant PR; runs the **`/deep-review` agent fleet** over the PR and posts the review; **triages the findings itself**, records every verdict durably before acting on it, dispatches a second max-effort Opus subagent for accepted fixes and reports each finding's outcome on the PR; then squash-merges once CI is green and moves to the next slice.
+`/grind` takes a plan document and drives it to fully merged `main`, one PR at a time, without stopping for approval between PRs. For each PR slice it: creates a worktree; dispatches an **Opus** subagent that implements the slice unit-by-unit — committing, **pushing**, and stamping the issue after every unit — and opens a ship-conformant PR; runs the **`/deep-review` agent fleet** over the PR and posts the review; **triages the findings itself**, records every verdict durably before acting on it, dispatches a second Opus subagent for accepted fixes and reports each finding's outcome on the PR; then squash-merges once CI is green and moves to the next slice.
 
 Two run-level guards wrap the loop. A **lifetime timer** (default on) stops the run cleanly at a phase boundary before the VM's ~2-hour wall instead of letting the process be killed mid-write — the stop is a healthy, resumable state, not a failure. And every terminal outcome — **complete**, **stopped** (timer), or **blocked** (needs a human) — posts a final issue stamp and notifies on **two independent channels** — a push that always fires, plus an email when SendGrid is configured, always carrying the `claude --resume` command — so an unattended run never ends silently.
 
@@ -165,7 +165,7 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
     ```
     Branching off `origin/<default-branch>` is what makes serial execution work: slice N+1's worktree contains slice N's merged code. Then symlink `docs/` from the primary checkout into the worktree (as `/tree` does), since it's gitignored and the plan lives there.
 
-17. **Dispatch the build subagent** — `Agent` with `model: "opus"`, `effort: "max"`, `subagent_type: "general-purpose"`, `run_in_background: false`. `/grind` blocks on it; there is nothing to interleave in a serial run. Subagents are never clocked — the phase budget gated the *start*, and once dispatched the agent runs to completion. The next clock reading happens at the following gate, on real elapsed time, whatever that turns out to be.
+17. **Dispatch the build subagent** — `Agent` with `model: "opus"` and `subagent_type: "general-purpose"`. Dispatch is asynchronous: wait for the subagent's completion notification before doing anything else, since there is nothing to interleave in a serial run. Subagents are never clocked — the phase budget gated the *start*, and once dispatched the agent runs to completion. The next clock reading happens at the following gate, on real elapsed time, whatever that turns out to be.
 
     The brief must contain, and nothing may be left implicit:
     - The absolute worktree path, and the instruction to do **all** work there — never in the primary checkout.
@@ -264,7 +264,7 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
 
 32. **If nothing was accepted**, the verdict comment already records the outcome — go to Phase 6.
 
-33. **If anything was accepted**, set the row to `addressing` and **dispatch the fix subagent** — `Agent` with `model: "opus"`, `effort: "max"`, `subagent_type: "general-purpose"`, `run_in_background: false`.
+33. **If anything was accepted**, set the row to `addressing` and **dispatch the fix subagent** — `Agent` with `model: "opus"` and `subagent_type: "general-purpose"`. Wait for its completion notification before proceeding.
 
     The brief:
     - The absolute worktree path — the branch is still checked out there.

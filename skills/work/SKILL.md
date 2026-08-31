@@ -1,6 +1,6 @@
 ---
 name: work
-description: Execute work plans unit-by-unit through orchestrated dispatch — the main session briefs one max-effort Opus subagent per implementation unit (strictly serial), reviews each diff, commits, stamps the issue, and carries a rolling digest of prior units into every next brief; the orchestrator never writes code itself
+description: Execute work plans unit-by-unit through orchestrated dispatch — the main session briefs one Opus subagent per implementation unit (strictly serial), reviews each diff, commits, stamps the issue, and carries a rolling digest of prior units into every next brief; the orchestrator never writes code itself
 argument-hint: "[plan file, specification, or todo file path]"
 ---
 
@@ -67,9 +67,9 @@ This command takes a work document (plan, specification, or todo file) and execu
 
    **The orchestrator** (this session) briefs workers, reviews their diffs, commits, stamps, updates plan checkboxes, and maintains the digest. It **never writes code** — no exceptions: a typo or drive-by fix spotted while reviewing a diff rides the next worker's brief as an addendum, or gets a micro-dispatch of its own when no units remain. One absolute rule is followable; "except trivial" invites drift.
 
-   **The worker** — `Agent` with `model: "opus"`, `effort: "max"`, `subagent_type: "general-purpose"`, `run_in_background: false` — implements exactly one unit in the shared working tree, writes and runs tests, runs the System-Wide Test Check (see Phase 2), and returns its report. Workers never touch git and never post stamps.
+   **The worker** — `Agent` with `model: "opus"` and `subagent_type: "general-purpose"` — implements exactly one unit in the shared working tree, writes and runs tests, runs the System-Wide Test Check (see Phase 2), and returns its report. Workers never touch git and never post stamps.
 
-   **Strictly serial:** one worker at a time. Commit-per-unit in a shared tree makes concurrent workers a race; unit N+1's brief needs unit N's digest anyway.
+   **Strictly serial:** one worker at a time. Dispatch is asynchronous, so serialization is the orchestrator's job: wait for the worker's completion notification and finish reviewing its diff before dispatching the next unit. Commit-per-unit in a shared tree makes concurrent workers a race; unit N+1's brief needs unit N's digest anyway.
 
    For genuinely large plans needing persistent inter-agent communication (agents challenging each other's approaches, shared coordination across 10+ tasks), see Swarm Mode below which uses Agent Teams.
 
