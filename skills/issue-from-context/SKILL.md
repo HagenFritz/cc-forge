@@ -97,9 +97,11 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
      Label: <label>
      Type: <type>
      Assignees: <logins>
-     Body: <N> lines
+     Summary: <plain-language summary of what the issue is about, at most 1 sentence,
+              wrapped to the panel width>
      ```
    - `Title` is the final prefixed title from step 5. Include the `Assignees` line only when `--who` was given; show the resolved logins.
+   - Write the `Summary:` value from the issue body composed in step 5. One sentence is a hard cap, not a ceiling to approach. Keep it plain and short; the preview panel is narrow.
    - Options:
      - **Confirm** (description: "Create this issue as shown") — carries the stub preview
      - **Cancel** (description: "Abort without creating")
