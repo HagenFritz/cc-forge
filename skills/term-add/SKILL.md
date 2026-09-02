@@ -20,7 +20,9 @@ around it.
 
 ## Step 1: Resolve the term
 
-The argument is the term. Normalize it: fix obvious spelling mistakes and apply standard glossary casing (lowercase unless it's a proper noun or acronym), but otherwise preserve multi-word phrases and punctuation.
+The argument is the term. Normalize it per the spec's
+[heading rule](../glossary/SKILL.md#entry-format) — typos fixed, glossary casing
+applied, phrases and punctuation kept — before anything else happens.
 
 With no argument, ask exactly one question, in prose (not `AskUserQuestion`):
 
