@@ -3,7 +3,6 @@ name: ifc
 description: Alias for issue-from-context — creates a GitHub issue from conversation context.
 argument-hint: "[--prefix <str>] [--who <names>] [context]"
 user-invocable: true
-disable-model-invocation: true
 ---
 
 # /ifc
