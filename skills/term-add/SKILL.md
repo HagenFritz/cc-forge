@@ -20,8 +20,7 @@ around it.
 
 ## Step 1: Resolve the term
 
-The argument is the term, taken as typed — a multi-word phrase, a phrase with a colon, or
-punctuation all become the heading verbatim.
+The argument is the term. Normalize it: fix obvious spelling mistakes and apply standard glossary casing (lowercase unless it's a proper noun or acronym), but otherwise preserve multi-word phrases and punctuation.
 
 With no argument, ask exactly one question, in prose (not `AskUserQuestion`):
 
