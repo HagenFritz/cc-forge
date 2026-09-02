@@ -446,6 +446,9 @@ Report:
 - **Terms added** — how many terms this session captured to `~/.claude/glossary.md`.
   This one count *is* session-scoped: the glossary is shared across every plan the
   user walks, so a re-read cannot tell this walk's captures from an earlier walk's.
+  Count Step 7's confirmation lines, which name the term. A capture that reported the
+  term was already present counts too — the user looked it up, which is what the number
+  is for — and the term is named in the 8b list like any other.
 - **Backup** — if a `.bak` was taken (Step 4), name its path in one line so the user
   knows it exists and can delete it once satisfied.
 

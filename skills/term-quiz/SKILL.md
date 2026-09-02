@@ -47,11 +47,12 @@ Shuffle the selection so boxes interleave rather than running in blocks, and —
 keep a term and its `Related` partner non-adjacent. Drop the adjacency rule silently when
 the set is too small to satisfy it.
 
-Open with one line naming the split:
+Open with **one** line. When the glossary holds at least `n` terms, name the split:
 
 > 5 due, topping up with 3 more — 8 terms.
 
-When fewer terms exist than `n`, say so:
+When it holds fewer than `n`, that line is replaced by — not added to — this one, which
+already implies every term was taken:
 
 > 3 terms in the glossary — asking all 3 of the 8 requested.
 
@@ -105,7 +106,9 @@ spec's [Leitner table](../glossary/SKILL.md#leitner-boxes) with its date command
 with no `*Quiz:*` line, or an unparseable one, gets a canonical line written for it.
 
 **Feedback**, immediately after the write: name what the answer got right, then name
-specifically what was missing or wrong, then the new state in one clause.
+specifically what was missing or wrong, then the new state in one clause. After an
+"I don't know" there is nothing to credit — skip straight to giving the term plainly,
+then the new state. Never open by praising an answer that was not attempted.
 
 > Right that it's about safe repetition. What's missing is the *same result* part — running
 > it twice has to leave the world exactly as running it once did. Box 1, due tomorrow.
@@ -116,7 +119,10 @@ After a miss only, offer recognition as a rescue — never as the question itsel
 `AskUserQuestion`, single-select, no preview, with three options: the correct definition and
 two distractors taken from **other entries' definitions**.
 
-- Labels are 1–4 word handles; the definition text goes in the option `description`.
+- Labels are 1–4 word handles; the definition text goes in the option `description`,
+  trimmed to its first clause — one line each, long enough to choose between and short
+  enough not to overflow. All three descriptions are trimmed the same way, so length
+  never gives the answer away.
 - Reject any distractor whose meaning overlaps the correct answer — a near-synonym makes the
   question unfair and teaches nothing.
 - Fewer than two surviving distractors → **skip the scaffold entirely**. The feedback in 3c
@@ -129,9 +135,10 @@ already graded and already written.
 
 Reached at the end of the list or on "stop", either way.
 
-1. **Re-ask every missed term once**, as cued recall, in the order they were missed. Same
-   feedback shape as 3c. **No grading, no write** — this is a last look, not a second
-   chance.
+1. **Re-ask every missed term once**, as cued recall, in the order they were missed.
+   Feedback names what the answer got right and what it still misses, as in 3c, but
+   **ends there — no box, no due date**, because nothing is written. **No grading, no
+   write** — this is a last look, not a second chance.
 2. **Re-read the file** and print one line per term that was graded this session. Derive the
    box and due date from the file, never from session memory, so the summary cannot
    over-report a write that failed:

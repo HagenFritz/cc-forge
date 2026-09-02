@@ -60,8 +60,9 @@ compute a date in your head, and never use the date injected into the session.
 
 ## Step 4: Report
 
-Print the written entry back verbatim — it is at most six lines, and standalone it *is*
-the deliverable — then one confirmation line, in exactly one of these shapes:
+Print the written entry back verbatim — heading through `*Quiz:*`, a handful of lines,
+and standalone it *is* the deliverable — then one confirmation line, in exactly one of
+these shapes:
 
 > Created `~/.claude/glossary.md` and captured **Idempotency**.
 

@@ -38,13 +38,16 @@ Consequences, stated to the user once the first time the file is created:
 
 ## File header
 
-A newly created file starts with exactly this, and nothing else:
+A newly created file starts with exactly this:
 
 ```markdown
 # Glossary
 
 Terms captured for learning. Written by `/term-add` and `/term-quiz`.
 ```
+
+The header is followed by a blank line, then the first entry — the same blank-line
+separator that runs between entries.
 
 ## Entry format
 
@@ -98,7 +101,10 @@ any more; it is preserved verbatim where it already exists (see **Reading rules*
   no `**Not:**`, no `**Related:**`, and no `*Quiz:*` line.
 - A **missing or unparseable** `*Quiz:*` line reads as **box 1, due today**. The next
   writer that grades the term rewrites it canonically (appending it if absent).
-- A box outside 1–6 **clamps** to the nearest end of the range.
+- A box outside 1–6 **clamps** to the nearest end of the range. Clamping applies only to
+  a line that is otherwise well-formed: if either half fails to parse, the whole line is
+  unparseable and the rule above wins. `*Quiz:* box 9 · due 2026-09-05` is box 6 due
+  2026-09-05; `*Quiz:* box 9 · due whenever` is box 1 due today.
 
 ## Dedupe
 
@@ -113,6 +119,10 @@ entry.
 - **Never merge two definitions.** A later capture does not rewrite what the user
   already has. Replace a stored definition only when the user explicitly asks after
   being told it was kept.
+- On a match, the **stored heading's casing wins** — it is never rewritten to match what
+  the user just typed, and it is the spelling any confirmation line names. `/term-add
+  Idempotency` against a stored `## idempotency` leaves the heading alone and reports
+  **idempotency**.
 
 ## Creating the file
 
@@ -146,6 +156,12 @@ session that only reads leaves nothing behind.
    the file changes.
 4. A `*Quiz:*` line is inserted as the **last line of its section**, and a rewritten one
    replaces the existing line in place.
+5. **A `*Quiz:*` line is never unique on its own.** Two terms captured on the same day
+   carry byte-identical lines, so that is the normal state, not a corner case. Match the
+   line together with the section line above it — the `**Related:**`, `**Not:**`,
+   `**Example:**`, `*Seen in:*`, or definition line it follows — so the edit hits exactly
+   one place. Never edit a bare `*Quiz:*` string, and stop rather than guess if the
+   two-line match is still not unique.
 
 ## Dates
 
@@ -192,6 +208,18 @@ When a writer is invoked by another skill in **quiet mode**, the contract is:
 
 Standalone invocation is the opposite: the drafted entry is the deliverable and is
 printed back.
+
+## Known limitations
+
+- **"explain more" makes the re-ask a recognition test.** Teaching the term and then
+  re-asking the same question puts the answer in the turn immediately above it, so the
+  grade that follows measures reading, not recall, and a correct answer still promotes
+  the box. Accepted deliberately: the alternative is refusing to explain, which is worse
+  for someone learning. The next session's ask is the honest one.
+- **The `.bak` is per session, not per file lifetime.** A session that captures and then
+  quizzes takes its backup before the first mutating write of *that* session, so the copy
+  reflects mid-session state rather than the state the user started the day with. It is a
+  recovery path for the run in progress, not an archive.
 
 ## Versioning
 
