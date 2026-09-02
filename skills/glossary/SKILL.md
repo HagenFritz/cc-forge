@@ -67,8 +67,13 @@ once. Retrying a failed payment charge is only safe when the charge is idempoten
 
 Fields, in this order:
 
-- **Heading** — `## <Term>`, the term as the user typed it, nothing else on the line.
-  No backticks, no trailing punctuation.
+- **Heading** — `## <Term>`, nothing else on the line. No backticks, no trailing
+  punctuation. The term is **normalized** before it is written or compared: obvious
+  spelling mistakes are fixed, and standard glossary casing is applied — lowercase
+  unless the term is a proper noun or an acronym (`git worktree`, `back-pressure`,
+  `Kubernetes`, `CQRS`). Multi-word phrases and internal punctuation are kept as typed.
+  Every writer normalizes; a mistyped `/term-add idempotancy` lands as
+  `## idempotency`.
 - **Definition** (required) — **at most two sentences**, plain English, written for
   someone meeting the term cold. Any technical word that must appear is explained in the
   same sentence. No jargon-defined-by-jargon, no scoping to where the term was met. When
@@ -108,9 +113,9 @@ any more; it is preserved verbatim where it already exists (see **Reading rules*
 
 ## Dedupe
 
-**One section per term.** Compare a candidate term against existing `## ` headings
-**case-insensitively and trimmed**, so "Idempotency" and "idempotency" are the same
-entry.
+**One section per term.** Normalize the candidate term first (see **Entry format**),
+then compare it against existing `## ` headings **case-insensitively and trimmed**, so
+"Idempotency", "idempotency", and a typo of either all resolve to the same entry.
 
 - **No match** → append a new section at the end of the file.
 - **Match** → keep the stored definition. **First capture wins.** Fill in only the
