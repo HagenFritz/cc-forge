@@ -258,14 +258,14 @@ This command takes a work document (plan, specification, or todo file) and execu
 
 2. **Display Work Summary**
 
-   Run `git diff --stat` (against the branch point or last commit before `/work` started) and present a summary table. Resolve each file's absolute path with `git rev-parse --show-toplevel` + the relative path so the link actually opens — a repo-relative path alone won't resolve in the user's editor:
+   Run `git diff --stat` (against the branch point or last commit before `/work` started) and present a summary table. Resolve each file's absolute path with `git rev-parse --show-toplevel` + the relative path, and show that absolute path as the visible cell text — the terminal renders only the visible text of a markdown link, so a relative path there is neither clickable nor resolvable in the user's editor:
 
    | File | +/- | Unit | Tests | Summary |
    |------|-----|------|-------|---------|
-   | [`path/to/file.ts`](/absolute/path/to/repo/path/to/file.ts) | +45 / -12 | Auth middleware | pass | Added token refresh logic |
+   | `/absolute/path/to/repo/path/to/file.ts` | +45 / -12 | Auth middleware | pass | Added token refresh logic |
 
    **Column definitions:**
-   - **File** — relative path as link text, but the link target must be the absolute filesystem path
+   - **File** — the full absolute filesystem path, shown verbatim in backticks. Never a repo-relative path, and never a markdown link whose visible text is relative
    - **+/-** — insertions and deletions for that file
    - **Unit** — which plan implementation unit the change maps to (or "—" if not from a plan)
    - **Tests** — pass / fail / no tests (whether tests covering this file were run and their result)

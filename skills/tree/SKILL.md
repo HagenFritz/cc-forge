@@ -1,7 +1,6 @@
 ---
 name: tree
 description: Create a git worktree for an issue or task on its own branch, in a sibling directory, ready for a dedicated Claude Code session
-disable-model-invocation: true
 user-invocable: true
 argument-hint: "[issue-number]"
 allowed-tools: Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
