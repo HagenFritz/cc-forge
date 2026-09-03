@@ -26,6 +26,11 @@ const POLL_TIMEOUT_MS = 5000
 const REGISTRY_MAX_BYTES = 4 * 1024 * 1024
 const SESSION_FILE_MAX_BYTES = 64 * 1024
 const SESSIONS_DIR = path.join(os.homedir(), '.claude', 'sessions')
+const PROJECTS_DIR = process.env.DASH_PROJECTS_DIR || path.join(os.homedir(), '.claude', 'projects')
+
+const TAIL_BYTES = 256 * 1024
+const TAIL_RETRY_BYTES = 1024 * 1024
+const SUMMARY_MAX_CHARS = 400
 
 const DEFAULT_WIDTH = 80
 const STATE_WIDTH = 8
@@ -222,13 +227,99 @@ function ageMsFor(row, observed, now) {
   return Math.max(0, now - base)
 }
 
-// --- Summary (Unit 2) ----------------------------------------------------
+// --- Summary --------------------------------------------------------------
 //
-// Stub: the transcript tail reader lands in Unit 2. The column exists now so
-// the layout is settled before it has content.
+// The last assistant text of a session's transcript, read from a bounded tail
+// scanned backward so a multi-megabyte file costs one small positional read.
+// The path transform is lossy and each session id also names a sibling
+// directory, so the exact .jsonl path is opened and the folder never listed.
+// Every failure — missing file, permissions, drift in the line format — is a
+// blank summary; a row never turns into an error.
+
+const summaryCache = new Map()
+
+function transcriptPath(row) {
+  if (!UUID_RE.test(row.id) || !row.cwd) return null
+  return path.join(PROJECTS_DIR, row.cwd.replace(/[^a-zA-Z0-9]/g, '-'), `${row.id}.jsonl`)
+}
 
 function summaryFor(row) {
+  const file = transcriptPath(row)
+  if (file === null) return ''
+  try {
+    const st = fs.lstatSync(file)
+    if (st.isSymbolicLink() || !st.isFile()) return ''
+    const cached = summaryCache.get(file)
+    if (cached && cached.size === st.size && cached.mtimeMs === st.mtimeMs) return cached.text
+    const text = sanitize(readLastAssistantText(file, st.size))
+    summaryCache.set(file, { size: st.size, mtimeMs: st.mtimeMs, text })
+    return text
+  } catch (e) {
+    return ''
+  }
+}
+
+function readLastAssistantText(file, size) {
+  const O_NOFOLLOW = typeof fs.constants.O_NOFOLLOW === 'number' ? fs.constants.O_NOFOLLOW : 0
+  let fd
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | O_NOFOLLOW)
+    const st = fs.fstatSync(fd)
+    if (!st.isFile()) return ''
+    for (const want of [TAIL_BYTES, TAIL_RETRY_BYTES]) {
+      const text = scanTail(fd, size, want)
+      if (text) return text
+      if (want >= size) break
+    }
+    return ''
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd)
+  }
+}
+
+function scanTail(fd, size, want) {
+  const length = Math.min(want, size)
+  const start = size - length
+  const buf = Buffer.allocUnsafe(length)
+  const read = fs.readSync(fd, buf, 0, length, start)
+  const lines = buf.toString('utf8', 0, read).split('\n')
+  // A tail that starts mid-file starts mid-line; the last line may be
+  // half-written. Both are dropped rather than parsed.
+  if (start > 0) lines.shift()
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const text = assistantTextOf(lines[i])
+    if (text) return text
+  }
   return ''
+}
+
+function assistantTextOf(line) {
+  if (!line || line[0] !== '{') return ''
+  let entry
+  try {
+    entry = JSON.parse(line)
+  } catch (e) {
+    return ''
+  }
+  if (!entry || entry.type !== 'assistant' || entry.isSidechain === true) return ''
+  const content = entry.message && entry.message.content
+  if (!Array.isArray(content)) return ''
+  for (let i = content.length - 1; i >= 0; i--) {
+    const block = content[i]
+    if (block && block.type === 'text' && typeof block.text === 'string' && block.text.trim()) return block.text
+  }
+  return ''
+}
+
+function sanitize(text) {
+  if (!text) return ''
+  const flat = text
+    .replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, '')
+    .replace(/\x1b[@-Z\\-_]/g, '')
+    .replace(/[\x00-\x1f\x7f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return truncate(flat, SUMMARY_MAX_CHARS)
 }
 
 // --- Sort and naming -----------------------------------------------------
@@ -441,6 +532,7 @@ function runOnce(opts) {
   tick(state, opts)
   const width = opts.width || process.stdout.columns || DEFAULT_WIDTH
   process.stdout.write(buildFrame(state, width, Date.now()).join('\n') + '\n')
+  return state.poll === 'never-good' ? 1 : 0
 }
 
 // --- Entry ---------------------------------------------------------------
@@ -456,7 +548,7 @@ function main() {
   if (!opts.once) {
     process.stderr.write('dash: the live loop arrives in a later unit; printing one frame.\n')
   }
-  runOnce(opts)
+  process.exitCode = runOnce(opts)
 }
 
-main()
+if (require.main === module) main()
