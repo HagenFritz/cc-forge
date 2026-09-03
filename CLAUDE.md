@@ -9,6 +9,7 @@ Personal reference collection of Claude Code skills, agents, and hooks with GitH
 agents/           Specialized subagents (research, review, workflow, test)
 skills/           Slash commands (SKILL.md files)
 hooks/            Hook scripts (.cjs) + hooks.json (auto-wired when the plugin loads)
+dashboard/        Live terminal dashboard for monitoring sessions (not plugin-loaded)
 docs/             Plans, brainstorms, reviews, initiatives generated at runtime
 ```
 
@@ -71,7 +72,7 @@ Core workflow: brainstorm -> blueprint -> work -> review -> compound
 
 This is a personal showcase repo, not a package — there's no build step or install CLI. The clone is symlinked into `~/.claude/skills/cc-forge`, which makes Claude Code load it **in place** as a skills-directory plugin, `forge@skills-dir` — no marketplace, no cache copy (`ln -s <clone> ~/.claude/skills/cc-forge`, once per machine; verify with `claude plugin list`).
 
-Because there is no cache, **editing a file or pulling a commit is the deploy** — the next session has it automatically. Mid-session: `SKILL.md` edits are live immediately; agent, hook, and manifest changes need `/reload-plugins`. Never use `/plugin install` / `/plugin update` for this repo — the marketplace route copies to a cache that goes stale on every edit. If one resurfaces: `claude plugin uninstall`, `claude plugin marketplace remove`, `rm -rf ~/.claude/plugins/cache/<name>/`, then re-symlink.
+Because there is no cache, **editing a file or pulling a commit is the deploy** — the next session has it automatically. Mid-session: `SKILL.md` edits are live immediately; agent, hook, and manifest changes need `/reload-plugins`. The dashboard (`node dashboard/dash.js`) is run by hand in its own terminal tab and is not plugin-loaded, so `/reload-plugins` does not apply to it. Never use `/plugin install` / `/plugin update` for this repo — the marketplace route copies to a cache that goes stale on every edit. If one resurfaces: `claude plugin uninstall`, `claude plugin marketplace remove`, `rm -rf ~/.claude/plugins/cache/<name>/`, then re-symlink.
 
 The `/caveman` hook is wired automatically via `hooks/hooks.json` when the plugin loads. When adding a new hook in the future, add its script to `hooks/` and declare it in `hooks/hooks.json` (using `${CLAUDE_PLUGIN_ROOT}` for the path) so it's picked up automatically.
 

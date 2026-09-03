@@ -12,7 +12,7 @@ The clone is symlinked into Claude Code's skills directory and loads in place as
 ln -s /path/to/your/clone/cc-forge ~/.claude/skills/cc-forge
 ```
 
-Editing a file or pulling a commit is the deploy. `SKILL.md` edits are live immediately; agent, hook, and manifest changes need `/reload-plugins`.
+Editing a file or pulling a commit is the deploy. `SKILL.md` edits are live immediately; agent, hook, and manifest changes need `/reload-plugins`. The dashboard (`node dashboard/dash.js`) is run by hand in its own terminal tab and is not plugin-loaded, so `/reload-plugins` does not apply to it.
 
 ## Skills
 
@@ -125,6 +125,7 @@ Subagents live in `agents/`, grouped by category. Skills reference them as `forg
 skills/          Slash commands (one SKILL.md per skill)
 agents/          Subagents grouped by category (research/review/workflow/test)
 hooks/           Hook scripts (the caveman mode tracker)
+dashboard/       Live terminal dashboard for monitoring sessions (not plugin-loaded)
 .claude-plugin/  Plugin manifest (makes the symlinked clone load as forge@skills-dir)
 docs/            Plans, brainstorms, reviews, initiatives generated at runtime
 ```
