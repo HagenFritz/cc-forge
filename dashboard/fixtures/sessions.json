@@ -1,0 +1,57 @@
+[
+  {
+    "pid": 900001,
+    "cwd": "/Users/example/Projects/checkout",
+    "kind": "interactive",
+    "startedAt": 1788289750720,
+    "sessionId": "11111111-1111-4111-8111-111111111111",
+    "name": "checkout-refactor",
+    "status": "busy"
+  },
+  {
+    "pid": 900002,
+    "cwd": "/Users/example/Projects/billing",
+    "kind": "interactive",
+    "startedAt": 1788289760720,
+    "sessionId": "22222222-2222-4222-8222-222222222222",
+    "name": "checkout-refactor",
+    "status": "busy"
+  },
+  {
+    "pid": 900003,
+    "cwd": "/Users/example/Misc/cc-forge",
+    "kind": "interactive",
+    "startedAt": 1788289770720,
+    "sessionId": "33333333-3333-4333-8333-333333333333",
+    "name": "dashboard-w1",
+    "status": "waiting",
+    "waitingFor": "input needed"
+  },
+  {
+    "pid": 900004,
+    "cwd": "/Users/example/Projects/ai-agents",
+    "kind": "interactive",
+    "startedAt": 1788289780720,
+    "sessionId": "44444444-4444-4444-8444-444444444444",
+    "name": "ce-updates",
+    "status": "idle"
+  },
+  {
+    "pid": 900005,
+    "cwd": "/Users/example/Projects/ai-agents-worktrees/feat-nightly-sync",
+    "kind": "background",
+    "startedAt": 1788289790720,
+    "sessionId": "55555555-5555-4555-8555-555555555555",
+    "name": "nightly-sync",
+    "status": "busy"
+  },
+  {
+    "pid": 900006,
+    "cwd": "/Users/example/Projects/sandbox",
+    "kind": "interactive",
+    "startedAt": 1788289800720,
+    "sessionId": "66666666-6666-4666-8666-666666666666",
+    "name": "",
+    "status": "compacting"
+  }
+]
