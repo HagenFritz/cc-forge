@@ -35,6 +35,7 @@ const SUMMARY_MAX_CHARS = 400
 
 const DEFAULT_WIDTH = 80
 const STATE_WIDTH = 8
+const STATE_CAP = 16
 const AGE_WIDTH = 6
 const NAME_CAP = 24
 const NAME_MIN = 8
@@ -76,6 +77,8 @@ const ERROR_BODIES = {
   missing: 'claude not found on PATH — install Claude Code, or check your PATH.',
   unsupported: 'claude agents --json failed — this build may not support the agent registry.',
   'bad-json': 'claude agents --json returned output this dashboard could not parse.',
+  'fixture-missing': '--fixture file could not be read — check the path.',
+  'fixture-bad-json': '--fixture file is not a JSON array of session rows.',
 }
 
 // --- Argument parsing ----------------------------------------------------
@@ -140,14 +143,14 @@ function readFixture(fixturePath) {
   try {
     raw = fs.readFileSync(fixturePath, 'utf8')
   } catch (e) {
-    return { ok: false, error: 'missing' }
+    return { ok: false, error: 'fixture-missing' }
   }
   try {
     const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return { ok: false, error: 'bad-json' }
+    if (!Array.isArray(parsed)) return { ok: false, error: 'fixture-bad-json' }
     return { ok: true, rows: parsed }
   } catch (e) {
-    return { ok: false, error: 'bad-json' }
+    return { ok: false, error: 'fixture-bad-json' }
   }
 }
 
@@ -412,22 +415,26 @@ function pad(text, width) {
 }
 
 function layout(rows, width) {
+  // An unknown status is the one thing the user most needs to read intact, so
+  // the state column grows to fit the widest one present rather than clipping
+  // it to the width the three known statuses happen to need.
+  const stateWidth = Math.min(STATE_CAP, Math.max(STATE_WIDTH, ...rows.map((r) => Array.from(r.status).length)))
   const wantName = Math.min(NAME_CAP, Math.max(4, ...rows.map((r) => Array.from(r.nameCell).length)))
   const wantDir = Math.min(DIR_CAP, Math.max(3, ...rows.map((r) => Array.from(r.dirCell).length)))
 
-  const beforeName = STATE_WIDTH + COLUMN_GAP + AGE_WIDTH + COLUMN_GAP
+  const beforeName = stateWidth + COLUMN_GAP + AGE_WIDTH + COLUMN_GAP
   const nameWidth = Math.max(NAME_MIN, Math.min(wantName, width - beforeName))
   const fixed = beforeName + nameWidth
   const afterDir = width - fixed - COLUMN_GAP - wantDir
   const showSummary = afterDir - COLUMN_GAP >= SUMMARY_MIN
   if (showSummary) {
-    return { nameWidth, dirWidth: wantDir, showDir: true, showSummary: true, summaryWidth: afterDir - COLUMN_GAP }
+    return { stateWidth, nameWidth, dirWidth: wantDir, showDir: true, showSummary: true, summaryWidth: afterDir - COLUMN_GAP }
   }
 
   // Summary goes first; dir then shrinks into whatever is left and is dropped
   // only when there is no room for a usable stub of it.
   const dirWidth = Math.min(wantDir, width - fixed - COLUMN_GAP)
-  return { nameWidth, dirWidth, showDir: dirWidth >= DIR_MIN, showSummary: false, summaryWidth: 0 }
+  return { stateWidth, nameWidth, dirWidth, showDir: dirWidth >= DIR_MIN, showSummary: false, summaryWidth: 0 }
 }
 
 function renderLine(cells, cols, width) {
@@ -440,7 +447,7 @@ function renderLine(cells, cols, width) {
 
 function buildTable(rows, width) {
   const cols = layout(rows, width)
-  const widths = [STATE_WIDTH, AGE_WIDTH, cols.nameWidth]
+  const widths = [cols.stateWidth, AGE_WIDTH, cols.nameWidth]
   const headers = ['STATE', 'AGE', 'NAME']
   if (cols.showDir) {
     widths.push(cols.dirWidth)
