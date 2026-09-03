@@ -12,7 +12,8 @@
 //
 // Error posture: per-row failures stay inside the row and render blank; a
 // failed poll changes the poll state and the footer, never the exit code of a
-// live run. Only argument errors and --once exit non-zero.
+// live run. Only argument errors and --once exit non-zero. Only the restore
+// path ends the process.
 
 'use strict'
 
@@ -51,6 +52,25 @@ const UNKNOWN_STATUS_RANK = 3
 // or a sentinel: 2020-01-01 through fifty years out.
 const EPOCH_MS_MIN = 1577836800000
 const EPOCH_MS_MAX = 3155760000000
+
+const TAB_TITLE = 'claude dashboard'
+
+// OSC 0 sets icon name and window title together; iTerm shows it on the tab.
+// OSC 2 is title-only and is the fallback if a terminal ignores this one.
+const ESC_ALT_ENTER = '\x1b[?1049h'
+const ESC_ALT_LEAVE = '\x1b[?1049l'
+const ESC_CURSOR_HIDE = '\x1b[?25l'
+const ESC_CURSOR_SHOW = '\x1b[?25h'
+const ESC_CURSOR_HOME = '\x1b[H'
+const ESC_CLEAR_EOL = '\x1b[K'
+const ESC_CLEAR_EOS = '\x1b[J'
+const ESC_TITLE_SET = `\x1b]0;${TAB_TITLE}\x07`
+const ESC_TITLE_RESET = '\x1b]0;\x07'
+
+const KEY_CTRL_C = 0x03
+const KEY_Q = 0x71
+const EXIT_SIGNAL_BASE = 128
+const SIGNAL_NUMBERS = { SIGINT: 2, SIGTERM: 15, SIGHUP: 1 }
 
 const ERROR_BODIES = {
   missing: 'claude not found on PATH — install Claude Code, or check your PATH.',
@@ -522,17 +542,147 @@ function newState() {
   return { poll: 'never-good', error: null, lastRows: [], lastGoodAt: null, observed: new Map() }
 }
 
-// --- Lifecycle (Unit 3) --------------------------------------------------
+// --- Terminal writes -----------------------------------------------------
 //
-// The alternate-screen live loop, key handling, resize, and terminal restore
-// land in Unit 3. Until then every invocation renders a single plain frame.
+// A reader that closes early (`dash.js --once | head -1`) makes every later
+// write raise EPIPE, which has no useful handler in a display program: the
+// output has nowhere to go, so the process leaves quietly instead of printing
+// a stack trace over the user's shell. A pipe reports the failure
+// asynchronously as an 'error' event rather than a throw, so both are handled.
+
+function write(text) {
+  try {
+    process.stdout.write(text)
+    return true
+  } catch (e) {
+    if (isBrokenPipe(e)) quitQuietly()
+    return false
+  }
+}
+
+function guardStdout() {
+  process.stdout.on('error', (e) => {
+    if (isBrokenPipe(e)) quitQuietly()
+    throw e
+  })
+}
+
+function isBrokenPipe(e) {
+  return Boolean(e) && (e.code === 'EPIPE' || e.code === 'ERR_STREAM_DESTROYED')
+}
+
+function quitQuietly() {
+  restore()
+  process.exit(0)
+}
+
+// --- Terminal restore ----------------------------------------------------
+//
+// One idempotent function on every exit path. fs.writeSync bypasses the stream
+// layer, which may never flush once the process is already unwinding; an
+// exception inside it must never stop the exit that follows.
+
+let entered = false
+let rawEnabled = false
+let restored = false
+
+function restore() {
+  if (restored) return
+  restored = true
+  try {
+    if (rawEnabled && process.stdin.isTTY) process.stdin.setRawMode(false)
+  } catch (e) {
+    // A stdin already torn down cannot be un-rawed; the escape writes matter more.
+  }
+  try {
+    fs.writeSync(1, ESC_CURSOR_SHOW + (entered ? ESC_ALT_LEAVE : '') + ESC_TITLE_RESET)
+  } catch (e) {
+    // Nothing left to write to; the terminal is whatever the shell inherits.
+  }
+}
+
+function registerRestore() {
+  process.on('exit', restore)
+  for (const signal of Object.keys(SIGNAL_NUMBERS)) {
+    process.on(signal, () => {
+      restore()
+      process.exit(EXIT_SIGNAL_BASE + SIGNAL_NUMBERS[signal])
+    })
+  }
+  const die = (e) => {
+    if (isBrokenPipe(e)) return quitQuietly()
+    restore()
+    process.stderr.write(`dash: ${(e && e.stack) || e}\n`)
+    process.exit(1)
+  }
+  process.on('uncaughtException', die)
+  process.on('unhandledRejection', die)
+}
+
+// --- Lifecycle -----------------------------------------------------------
+//
+// --once prints one plain frame; the live loop owns the alternate screen and
+// re-arms its timer after each tick so a slow poll delays the next one instead
+// of overlapping it. The registry read is synchronous, so a tick cannot
+// re-enter while one is in flight — the re-armed timer is the whole guard.
 
 function runOnce(opts) {
   const state = newState()
   tick(state, opts)
   const width = opts.width || process.stdout.columns || DEFAULT_WIDTH
-  process.stdout.write(buildFrame(state, width, Date.now()).join('\n') + '\n')
+  write(buildFrame(state, width, Date.now()).join('\n') + '\n')
   return state.poll === 'never-good' ? 1 : 0
+}
+
+function runLive(opts) {
+  const state = newState()
+  registerRestore()
+  entered = true
+  write(ESC_ALT_ENTER + ESC_CURSOR_HIDE + ESC_TITLE_SET)
+  listenForQuit()
+  process.on('SIGWINCH', () => paint(state))
+
+  const loop = () => {
+    try {
+      tick(state, opts)
+    } catch (e) {
+      // tick is defensive, so this is drift, not an expected path: surface it
+      // in the footer like a failed poll rather than killing the dashboard.
+      state.error = String((e && e.message) || e)
+      state.poll = state.poll === 'never-good' ? 'never-good' : 'stale'
+    }
+    paint(state)
+    setTimeout(loop, POLL_INTERVAL_MS)
+  }
+  loop()
+}
+
+function paint(state) {
+  const width = process.stdout.columns || DEFAULT_WIDTH
+  const lines = buildFrame(state, width, Date.now())
+  write(ESC_CURSOR_HOME + lines.join(ESC_CLEAR_EOL + '\n') + ESC_CLEAR_EOL + ESC_CLEAR_EOS)
+}
+
+// A raw `data` listener rather than readline.emitKeypressEvents: two bytes are
+// the entire key vocabulary, and readline would also install its own SIGINT
+// and resize handling on top of the ones registered here.
+function listenForQuit() {
+  if (!process.stdin.isTTY) return
+  try {
+    process.stdin.setRawMode(true)
+  } catch (e) {
+    return
+  }
+  rawEnabled = true
+  process.stdin.resume()
+  process.stdin.on('data', (buf) => {
+    for (const byte of buf) {
+      if (byte === KEY_CTRL_C || byte === KEY_Q) {
+        restore()
+        process.exit(0)
+      }
+    }
+  })
 }
 
 // --- Entry ---------------------------------------------------------------
@@ -545,10 +695,16 @@ function main() {
     process.stderr.write(`dash: ${e.message}\n`)
     process.exit(2)
   }
-  if (!opts.once) {
-    process.stderr.write('dash: the live loop arrives in a later unit; printing one frame.\n')
+  guardStdout()
+  if (!opts.once && !process.stdout.isTTY) {
+    process.stderr.write('dash: stdout is not a terminal; printing one frame as with --once.\n')
+    opts.once = true
   }
-  process.exitCode = runOnce(opts)
+  if (opts.once) {
+    process.exitCode = runOnce(opts)
+    return
+  }
+  runLive(opts)
 }
 
 if (require.main === module) main()
