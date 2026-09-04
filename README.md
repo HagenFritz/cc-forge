@@ -12,7 +12,7 @@ The clone is symlinked into Claude Code's skills directory and loads in place as
 ln -s /path/to/your/clone/cc-forge ~/.claude/skills/cc-forge
 ```
 
-Editing a file or pulling a commit is the deploy. `SKILL.md` edits are live immediately; agent, hook, and manifest changes need `/reload-plugins`. The dashboard (`node dashboard/dash.js`) is run by hand in its own terminal tab and is not plugin-loaded, so `/reload-plugins` does not apply to it.
+Editing a file or pulling a commit is the deploy. `SKILL.md` edits are live immediately; agent, hook, and manifest changes need `/reload-plugins`. The dashboard is run by hand in its own terminal tab and is not plugin-loaded, so `/reload-plugins` does not apply to it. Launch it with `ccdash` — a one-line `~/.local/bin` wrapper you install once per machine, named that because `/bin/dash` shadows `dash` on PATH ([`dashboard/CLAUDE.md`](dashboard/CLAUDE.md) has the two commands) — or directly with `node dashboard/dash.js`. Live keys: `j`/`k` to move the highlight, Enter to focus the highlighted session's iTerm tab, `r` to rename that tab, `q` to quit. Flags: `--once`, `--width <n>`, `--fixture <path>`, and `--alert-idle` to bell on idle transitions as well as waiting ones.
 
 ## Skills
 
@@ -125,7 +125,7 @@ Subagents live in `agents/`, grouped by category. Skills reference them as `forg
 skills/          Slash commands (one SKILL.md per skill)
 agents/          Subagents grouped by category (research/review/workflow/test)
 hooks/           Hook scripts (the caveman mode tracker)
-dashboard/       Live terminal dashboard for monitoring sessions (not plugin-loaded)
+dashboard/       Live terminal dashboard for monitoring sessions (run as `ccdash`, not plugin-loaded)
 .claude-plugin/  Plugin manifest (makes the symlinked clone load as forge@skills-dir)
 docs/            Plans, brainstorms, reviews, initiatives generated at runtime
 ```
