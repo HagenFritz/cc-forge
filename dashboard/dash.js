@@ -21,7 +21,9 @@
 'use strict'
 
 const { execFile, execFileSync } = require('child_process')
+const crypto = require('crypto')
 const fs = require('fs')
+const http = require('http')
 const path = require('path')
 const os = require('os')
 
@@ -52,6 +54,17 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const PID_RE = /^[0-9]{1,10}$/
 const TMUX_SESSION_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const VM_HOST = 'ro-devbox'
+
+const LISTEN_HOST = '127.0.0.1'
+const LISTEN_PORT_MIN = 1024
+const LISTEN_PORT_MAX = 65535
+const TOKEN_PATH = path.join(os.homedir(), '.claude', '.dash-token')
+const TOKEN_BYTES = 32
+const TOKEN_RE = /^[0-9a-f]{64}$/
+const TOKEN_MAX_BYTES = 128
+const VM_TOKEN_HEADER = 'x-dash-token'
+const VM_BODY_MAX_BYTES = 4096
+
 const STATUS_RANK = { waiting: 0, idle: 1, busy: 2 }
 const UNKNOWN_STATUS_RANK = 3
 
@@ -130,7 +143,7 @@ const ERROR_BODIES = {
 // port) and they all extend here.
 
 function parseArgs(argv) {
-  const opts = { once: false, width: null, fixture: null, alertIdle: false }
+  const opts = { once: false, width: null, fixture: null, alertIdle: false, listen: null }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--once') {
@@ -142,6 +155,13 @@ function parseArgs(argv) {
       const n = Number.parseInt(raw, 10)
       if (!Number.isFinite(n) || n < 20) throw new Error(`--width needs an integer >= 20, got ${raw}`)
       opts.width = n
+    } else if (arg === '--listen') {
+      const raw = argv[++i]
+      const n = Number.parseInt(raw, 10)
+      if (!Number.isFinite(n) || n < LISTEN_PORT_MIN || n > LISTEN_PORT_MAX) {
+        throw new Error(`--listen needs a port between ${LISTEN_PORT_MIN} and ${LISTEN_PORT_MAX}, got ${raw}`)
+      }
+      opts.listen = n
     } else if (arg === '--fixture') {
       const raw = argv[++i]
       if (!raw) throw new Error('--fixture needs a path')
@@ -150,6 +170,7 @@ function parseArgs(argv) {
       throw new Error(`unknown argument: ${arg}`)
     }
   }
+  if (opts.listen !== null && opts.once) throw new Error('--listen cannot be combined with --once — a one-shot frame cannot receive events')
   return opts
 }
 
@@ -642,6 +663,8 @@ function frameLines(state, width, now) {
   } else {
     lines.push(`polled ${stamp(now)}  ·  ${state.lastRows.length} session${state.lastRows.length === 1 ? '' : 's'}`)
   }
+  const vmNote = vmFooterNote(state)
+  if (vmNote) lines.push(vmNote)
   if (state.transient) lines.push(state.transient)
   if (state.mode === 'rename') lines.push(RENAME_PROMPT + state.renameBuffer)
   return lines
@@ -693,6 +716,11 @@ function newState() {
     lastGoodAt: null,
     observed: new Map(),
     vmRows: new Map(),
+    vmToken: null,
+    vmAccepted: 0,
+    vmAuthRejects: 0,
+    listenError: null,
+    listenNote: null,
     mode: 'normal',
     interactive: false,
     highlight: { id: null, index: -1 },
@@ -700,6 +728,164 @@ function newState() {
     renameTarget: null,
     transient: null,
   }
+}
+
+// --- VM listener ---------------------------------------------------------
+//
+// The first network input in this repo. Everything in this section is
+// transport: authenticate, bound the body, hand one parsed object to
+// applyVmEvent. Bound to 127.0.0.1, so the callers it can reach are local
+// processes and whatever the ssh reverse forward carries.
+//
+// The token defends exactly two boundaries: a remote-triggered local request
+// from a context that cannot read the filesystem (a browser tab, a postinstall
+// script that poked a localhost port), and a non-root process on the devbox
+// that reaches the forwarded port but cannot read the token there. A same-uid
+// process on this Mac reads the token file and is not defended against — it
+// could equally replace this script.
+//
+// The custom auth header is itself the CSRF defense: a browser cannot attach
+// one cross-origin without a successful preflight, and the non-POST rejection
+// kills the preflight. Requiring application/json forces a preflight for the
+// same reason. The Origin check is a belt, not the buckle — curl sends no
+// Origin at all — so it is never the thing to keep if the others are relaxed.
+
+let listenServer = null
+
+function readToken() {
+  try {
+    const st = fs.lstatSync(TOKEN_PATH)
+    if (st.isSymbolicLink() || !st.isFile() || st.size > TOKEN_MAX_BYTES) return null
+    const O_NOFOLLOW = typeof fs.constants.O_NOFOLLOW === 'number' ? fs.constants.O_NOFOLLOW : 0
+    let fd
+    let raw
+    try {
+      fd = fs.openSync(TOKEN_PATH, fs.constants.O_RDONLY | O_NOFOLLOW)
+      const buf = Buffer.alloc(TOKEN_MAX_BYTES)
+      const n = fs.readSync(fd, buf, 0, TOKEN_MAX_BYTES, 0)
+      raw = buf.slice(0, n).toString('utf8')
+    } finally {
+      if (fd !== undefined) fs.closeSync(fd)
+    }
+    const token = raw.trim()
+    return TOKEN_RE.test(token) ? token : null
+  } catch (e) {
+    return null
+  }
+}
+
+// 0600 at open time rather than a chmod afterwards: a secret that is briefly
+// world-readable has already leaked.
+function writeToken() {
+  const dir = path.dirname(TOKEN_PATH)
+  fs.mkdirSync(dir, { recursive: true })
+  try {
+    if (fs.lstatSync(TOKEN_PATH).isSymbolicLink()) return null
+  } catch (e) {
+    if (e.code !== 'ENOENT') return null
+  }
+  const token = crypto.randomBytes(TOKEN_BYTES).toString('hex')
+  const temp = path.join(dir, `.dash-token.${process.pid}.${Date.now()}`)
+  const O_NOFOLLOW = typeof fs.constants.O_NOFOLLOW === 'number' ? fs.constants.O_NOFOLLOW : 0
+  const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | O_NOFOLLOW
+  let fd
+  try {
+    fd = fs.openSync(temp, flags, 0o600)
+    fs.writeSync(fd, token + '\n')
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd)
+  }
+  fs.renameSync(temp, TOKEN_PATH)
+  return token
+}
+
+function resolveToken(state) {
+  const existing = readToken()
+  if (existing !== null) return existing
+  let token
+  try {
+    token = writeToken()
+  } catch (e) {
+    token = null
+  }
+  if (token !== null) state.listenNote = `new token at ${TOKEN_PATH} — copy it to the VM as 0600 for VM rows to appear`
+  return token
+}
+
+function startListener(state, port) {
+  state.vmToken = resolveToken(state)
+  if (state.vmToken === null) {
+    state.listenError = `could not read or create ${TOKEN_PATH} — VM rows are off for this run`
+    return null
+  }
+  const server = http.createServer((req, res) => handleVmRequest(state, req, res))
+  server.on('error', (e) => {
+    state.listenError = e.code === 'EADDRINUSE'
+      ? `port ${port} is already in use — VM rows are off for this run`
+      : `VM listener error: ${stripControls(String((e && (e.code || e.message)) || e))}`
+  })
+  server.listen(port, LISTEN_HOST)
+  listenServer = server
+  return server
+}
+
+function rejectVm(res, code) {
+  res.statusCode = code
+  res.end()
+}
+
+function handleVmRequest(state, req, res) {
+  if (req.method !== 'POST') return rejectVm(res, 405)
+  const token = req.headers[VM_TOKEN_HEADER]
+  if (typeof token !== 'string' || token !== state.vmToken) {
+    state.vmAuthRejects += 1
+    return rejectVm(res, 401)
+  }
+  const type = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase()
+  if (type !== 'application/json') return rejectVm(res, 415)
+  if (req.headers.origin !== undefined) return rejectVm(res, 403)
+
+  const chunks = []
+  let size = 0
+  req.on('data', (chunk) => {
+    if (req.destroyed) return
+    size += chunk.length
+    // Cut off while streaming: measuring after the fact means the hostile bytes
+    // are already in this process's heap.
+    if (size > VM_BODY_MAX_BYTES) {
+      rejectVm(res, 413)
+      req.destroy()
+      return
+    }
+    chunks.push(chunk)
+  })
+  req.on('error', () => { /* a client that vanished mid-body is not an event */ })
+  req.on('end', () => {
+    if (req.destroyed) return
+    let payload
+    try {
+      payload = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    } catch (e) {
+      return rejectVm(res, 400)
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return rejectVm(res, 400)
+    applyVmEvent(state, payload, Date.now())
+    res.statusCode = 204
+    res.end()
+  })
+}
+
+// Unit 3b replaces this body with the state machine; for now an accepted
+// request only proves it reached here.
+function applyVmEvent(state, payload, now) {
+  state.vmAccepted += 1
+}
+
+function vmFooterNote(state) {
+  const parts = []
+  if (state.listenError) parts.push(state.listenError)
+  if (state.listenNote) parts.push(state.listenNote)
+  return parts.join('  ·  ')
 }
 
 // --- Highlight -----------------------------------------------------------
@@ -998,6 +1184,7 @@ function runLive(opts) {
   const state = newState()
   state.interactive = true
   registerRestore()
+  if (opts.listen !== null) startListener(state, opts.listen)
   entered = true
   write(ESC_ALT_ENTER + ESC_CURSOR_HIDE + ESC_TITLE_SET)
   listenForKeys(state)
@@ -1165,7 +1352,7 @@ function main() {
   }
   guardStdout()
   if (!opts.once && !process.stdout.isTTY) {
-    process.stderr.write('dash: stdout is not a terminal; printing one frame as with --once.\n')
+    process.stderr.write(`dash: stdout is not a terminal; printing one frame as with --once${opts.listen === null ? '' : ' (--listen is inactive)'}.\n`)
     opts.once = true
   }
   if (opts.once) {
@@ -1177,4 +1364,7 @@ function main() {
 
 if (require.main === module) main()
 
-module.exports = { validateVmRow }
+// The only testing seam this file has: a VM payload in (validateVmRow), an
+// event applied to a state (applyVmEvent over newState), and the listener
+// itself, which cannot otherwise be reached without a pty.
+module.exports = { validateVmRow, applyVmEvent, newState, startListener }
