@@ -126,7 +126,9 @@ Use `AskUserQuestion` to confirm the user wants to enter the issue loop.
 For each member issue in `Suggested order:`, in order, skipping any already-terminal:
 
 1. **Present the issue.** Show its title, `Category:`, `Status:`, `File(s):`,
-   `Plain English:`, `Problem:`, and `Fix:`. Use the doc's text verbatim.
+   `Plain English:`, `Problem:`, and `Fix:`. Use the doc's text verbatim. Also show
+   `Sweep:` when present — its reason is why [`/review-sweep`](../review-sweep/SKILL.md)
+   left this finding for a human.
 
 2. **Noise marker for low confidence.** If `Confidence: low`, prefix the
    presentation with:
@@ -389,7 +391,7 @@ When running in fallback mode (no `## Groups` section or no enriched fields):
 - Skip Step 4 entirely.
 - Skip Step 5a/5b/5c (no teach moment, no group block, no re-read for grounding).
 - Walk issues in strict `P1-* → P2-* → P3-*` numeric order.
-- Apply the four-action question as in enriched mode.
+- Apply the four-action question as in enriched mode, showing `Sweep:` when present.
 - For the noise marker: if the issue has no `Confidence:` field, skip the marker
   entirely (don't fabricate confidence).
 - Status updates work the same way.
