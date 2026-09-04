@@ -3,9 +3,11 @@
 //
 // Polls the local session registry via `claude agents --json`, enriches each
 // row from ~/.claude/sessions/<pid>.json, and renders one table row per live
-// session sorted waiting / idle / busy. `--once` prints a single plain frame
-// and exits; `--fixture <path>` feeds rows from a JSON file through the same
-// pipeline so the program can be checked without live sessions.
+// session sorted waiting / idle / busy. Enter focuses the highlighted row's
+// iTerm tab and a session turning `waiting` rings the bell (`--alert-idle`
+// extends that to idle). `--once` prints a single plain frame and exits, with
+// no keys and no bell; `--fixture <path>` feeds rows from a JSON file through
+// the same pipeline so the program can be checked without live sessions.
 //
 // Zero dependencies, Node >= 22, stdlib only. Run by hand:
 //   node dashboard/dash.js
@@ -17,7 +19,7 @@
 
 'use strict'
 
-const { execFileSync } = require('child_process')
+const { execFile, execFileSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 const os = require('os')
@@ -73,6 +75,8 @@ const ESC_REVERSE_OFF = '\x1b[27m'
 
 const KEY_CTRL_C = 0x03
 const KEY_ESC = 0x1b
+const KEY_ENTER = 0x0d
+const KEY_ENTER_LF = 0x0a
 const KEY_J = 0x6a
 const KEY_K = 0x6b
 const KEY_Q = 0x71
@@ -80,6 +84,11 @@ const SEQ_UP = '\x1b[A'
 const SEQ_DOWN = '\x1b[B'
 const ESC_SEQ_TIMEOUT_MS = 50
 const ESC_SEQ_MAX_BYTES = 3
+const BELL = '\x07'
+const FOCUS_TIMEOUT_MS = 3000
+const ITERM_BUNDLE_ID = 'com.googlecode.iterm2'
+const TTY_PATH_RE = /^\/dev\/tty[a-z0-9]+$/
+
 const EXIT_SIGNAL_BASE = 128
 const SIGNAL_NUMBERS = { SIGINT: 2, SIGTERM: 15, SIGHUP: 1 }
 
@@ -98,11 +107,13 @@ const ERROR_BODIES = {
 // port) and they all extend here.
 
 function parseArgs(argv) {
-  const opts = { once: false, width: null, fixture: null }
+  const opts = { once: false, width: null, fixture: null, alertIdle: false }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--once') {
       opts.once = true
+    } else if (arg === '--alert-idle') {
+      opts.alertIdle = true
     } else if (arg === '--width') {
       const raw = argv[++i]
       const n = Number.parseInt(raw, 10)
@@ -239,20 +250,26 @@ function readStatusUpdatedAt(pid) {
 // stamped the first time a session is seen in a status and reset whenever the
 // status changes. Ids absent from a poll are dropped so a returning session
 // does not resume a stale age.
+//
+// Status changes are also collected as transitions before the prior entry is
+// overwritten, which is what makes the bell edge-triggered rather than a
+// re-alert on every poll. A first sighting counts as a transition from null.
 
 function observeRows(observed, rows, now) {
   const seen = new Set()
+  const transitions = []
   for (const row of rows) {
     seen.add(row.id)
     const prior = observed.get(row.id)
     if (!prior || prior.status !== row.status) {
+      transitions.push({ id: row.id, from: prior ? prior.status : null, to: row.status })
       observed.set(row.id, { status: row.status, since: now })
     }
   }
   for (const id of observed.keys()) {
     if (!seen.has(id)) observed.delete(id)
   }
-  return observed
+  return transitions
 }
 
 function ageMsFor(row, observed, now) {
@@ -539,6 +556,7 @@ function frameLines(state, width, now) {
   } else {
     lines.push(`polled ${stamp(now)}  ·  ${state.lastRows.length} session${state.lastRows.length === 1 ? '' : 's'}`)
   }
+  if (state.transient) lines.push(state.transient)
   return lines
 }
 
@@ -555,16 +573,16 @@ function tick(state, opts) {
   if (!result.ok) {
     state.error = result.error
     state.poll = state.poll === 'never-good' ? 'never-good' : 'stale'
-    return state
+    return []
   }
 
   const rows = enrichRows(validateRows(result.rows))
-  observeRows(state.observed, rows, now)
+  const transitions = observeRows(state.observed, rows, now)
   state.lastRows = sortRows(decorateRows(rows, state.observed, now))
   state.lastGoodAt = now
   state.error = null
   state.poll = 'good'
-  return state
+  return transitions
 }
 
 function newState() {
@@ -576,6 +594,7 @@ function newState() {
     observed: new Map(),
     mode: 'normal',
     highlight: { id: null, index: -1 },
+    transient: null,
   }
 }
 
@@ -612,6 +631,76 @@ function moveHighlight(state, delta) {
   const from = state.highlight.index < 0 ? (delta > 0 ? -1 : rows.length) : state.highlight.index
   const index = Math.max(0, Math.min(rows.length - 1, from + delta))
   state.highlight = { id: rows[index].id, index }
+}
+
+// --- Tab focus -----------------------------------------------------------
+//
+// Enter hands the highlighted row to iTerm: pid -> tty via `ps`, tty -> tab via
+// AppleScript. Both calls are async with a timeout because a hung iTerm or a
+// modal dialog would otherwise freeze the paint loop, the poll timer, and every
+// keystroke for as long as it takes. Nothing here can fail loudly: a dead pid,
+// a missing iTerm, or a script error becomes one transient footer line.
+//
+// `ps -o tty=` prints the bare device name (`ttys004 `, padded and newline
+// terminated) or `??` for a process with no controlling terminal, while
+// AppleScript's `tty of s` returns `/dev/ttys004`. The normalized form is
+// checked against a strict pattern before it reaches osascript, so no text
+// derived from process output is ever interpolated unvalidated.
+
+function normalizeTty(raw) {
+  const name = String(raw || '').trim()
+  if (!name || name === '??') return null
+  const full = name.startsWith('/dev/') ? name : `/dev/${name}`
+  return TTY_PATH_RE.test(full) ? full : null
+}
+
+function focusScript(tty) {
+  return [
+    `tell application id "${ITERM_BUNDLE_ID}"`,
+    'repeat with w in windows',
+    'repeat with t in tabs of w',
+    'repeat with s in sessions of t',
+    `if tty of s is "${tty}" then`,
+    'select s',
+    'select t',
+    'select w',
+    'activate',
+    'return "ok"',
+    'end if',
+    'end repeat',
+    'end repeat',
+    'end repeat',
+    'return "no-match"',
+    'end tell',
+  ].join('\n')
+}
+
+function setTransient(state, message) {
+  state.transient = message
+  paint(state)
+}
+
+function focusHighlighted(state) {
+  const row = state.lastRows[state.highlight.index]
+  if (!row) return
+  if (row.pid === null || !PID_RE.test(String(row.pid))) {
+    setTransient(state, 'session exited — no pid to focus.')
+    return
+  }
+  execFile('ps', ['-o', 'tty=', '-p', String(row.pid)], { timeout: FOCUS_TIMEOUT_MS, encoding: 'utf8' }, (err, out) => {
+    const tty = err ? null : normalizeTty(out)
+    if (tty === null) {
+      setTransient(state, 'session exited — no terminal for that pid.')
+      return
+    }
+    execFile('osascript', ['-e', focusScript(tty)], { timeout: FOCUS_TIMEOUT_MS, encoding: 'utf8' }, (scriptErr, scriptOut) => {
+      if (scriptErr) {
+        setTransient(state, 'could not focus the tab — is iTerm running?')
+        return
+      }
+      setTransient(state, String(scriptOut).trim() === 'ok' ? null : `no iTerm tab is attached to ${tty}.`)
+    })
+  })
 }
 
 // --- Terminal writes -----------------------------------------------------
@@ -715,8 +804,9 @@ function runLive(opts) {
   process.on('SIGWINCH', () => paint(state))
 
   const loop = () => {
+    let transitions = []
     try {
-      tick(state, opts)
+      transitions = tick(state, opts)
     } catch (e) {
       // tick is defensive, so this is drift, not an expected path: surface it
       // in the footer like a failed poll rather than killing the dashboard.
@@ -724,10 +814,18 @@ function runLive(opts) {
       state.poll = state.poll === 'never-good' ? 'never-good' : 'stale'
     }
     reconcileHighlight(state)
+    // One bell per tick, not one per transition: three sessions all going
+    // waiting at once is one event to the person hearing it.
+    if (shouldBell(transitions, opts)) write(BELL)
+    state.transient = null
     paint(state)
     setTimeout(loop, POLL_INTERVAL_MS)
   }
   loop()
+}
+
+function shouldBell(transitions, opts) {
+  return transitions.some((t) => t.to === 'waiting' || (opts.alertIdle && t.to === 'idle'))
 }
 
 function paint(state) {
@@ -808,6 +906,10 @@ function handleKey(state, key) {
   if (code === KEY_Q) {
     restore()
     process.exit(0)
+  }
+  if (code === KEY_ENTER || code === KEY_ENTER_LF) {
+    if (state.highlight.index >= 0) focusHighlighted(state)
+    return
   }
   if (code === KEY_J || key === SEQ_DOWN) {
     moveHighlight(state, 1)
