@@ -334,8 +334,9 @@ Review docs are written under `docs/reviews/`, which is gitignored — they are 
 ### Next Steps
 
 1. **Address P1 findings** — critical; must be fixed before merge.
-2. **Walk the review** — run `/review-walk docs/reviews/[filename]` to step through issues group-by-group with implement / defer / skip choices. Status updates land in the review doc, so progress is durable.
-3. **Remote-review flow** (this machine is not the one that will land the PR — e.g. a review VM): run `/review-walk` here in this same session, then **`/push-review`** — which commits the applied fixes, pushes them onto the PR branch, and posts a PR comment mapping each finding to its outcome (fixed / deferred / skipped). Nothing needs to leave this machine by hand; the review doc stays local (gitignored) and the PR comment carries its context. On the landing machine, run **`/catch-up`** in the worktree to fast-forward and see what arrived, then `/land`.
+2. **Sweep the quick wins** — run `/review-sweep docs/reviews/[filename]` to land the quick wins unattended, then `/review-walk` the findings it surfaced.
+3. **Walk the review** — run `/review-walk docs/reviews/[filename]` to step through issues group-by-group with implement / defer / skip choices. Status updates land in the review doc, so progress is durable.
+4. **Remote-review flow** (this machine is not the one that will land the PR — e.g. a review VM): run `/review-walk` here in this same session, then **`/push-review`** — which commits the applied fixes, pushes them onto the PR branch, and posts a PR comment mapping each finding to its outcome (fixed / deferred / skipped). Nothing needs to leave this machine by hand; the review doc stays local (gitignored) and the PR comment carries its context. On the landing machine, run **`/catch-up`** in the worktree to fast-forward and see what arrived, then `/land`.
 ````
 
 ### 6. End-to-End Testing (Optional)
