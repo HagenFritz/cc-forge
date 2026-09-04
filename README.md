@@ -30,6 +30,7 @@ Two reference docs sit alongside the commands and are not invocable: [`skills/is
 | `/grind` | Executes a whole plan **autonomously as a sequence of PRs**: per slice, worktree → Opus builds and opens the PR → review fleet → `/grind` triages → Opus fixes → squash-merge on green CI. Halts on red; resumable via a `## PR Breakdown` table | A plan you trust, ground to merged `main` without babysitting. Needs no required-reviews protection |
 | `/deep-review` | Exhaustive multi-agent code review; writes a review doc | Complex, risky, or large changes |
 | `/review-walk` | Walks a review doc group by group with implement / defer / skip per issue; updates `Status:` inline; offers tracking issues for deferrals | You have a `docs/reviews/*.md` and want to act on it |
+| `/review-sweep` | **Optional.** Takes the quick wins from a review doc unattended: reads the cited code, implements only Small+high/medium (and P1 Medium+high) findings, marks reviewer misreads `wont-fix`, and leaves the rest `open` with a `**Sweep:**` reason. Zero prompts; edits inline and uncommitted | You want the cheap-and-certain fixes applied before walking the rest by hand |
 | `/push-review` | Commits and pushes the review fixes and posts a PR comment of what was fixed, deferred, and skipped | After `/review-walk`, before landing from another machine |
 | `/catch-up` | Fast-forwards a worktree branch and reports incoming commits and review-status changes | Picking up commits pushed from another machine |
 | `/compound` | Documents a recently solved problem so the knowledge compounds | Right after solving something non-obvious |
@@ -104,7 +105,7 @@ Subagents live in `agents/`, grouped by category. Skills reference them as `forg
 
 **Feature development** (bracketed steps optional):
 ```
-/brainstorm → /blueprint → [/walk-blueprint] → /work → /deep-review → /review-walk → /ship → /land
+/brainstorm → /blueprint → [/walk-blueprint] → /work → /deep-review → [/review-sweep] → /review-walk → /ship → /land
 ```
 
 **Multi-feature initiative:**
