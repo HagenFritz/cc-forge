@@ -68,8 +68,18 @@ const ESC_CLEAR_EOS = '\x1b[J'
 const ESC_TITLE_SET = `\x1b]0;${TAB_TITLE}\x07`
 const ESC_TITLE_RESET = '\x1b]0;\x07'
 
+const ESC_REVERSE_ON = '\x1b[7m'
+const ESC_REVERSE_OFF = '\x1b[27m'
+
 const KEY_CTRL_C = 0x03
+const KEY_ESC = 0x1b
+const KEY_J = 0x6a
+const KEY_K = 0x6b
 const KEY_Q = 0x71
+const SEQ_UP = '\x1b[A'
+const SEQ_DOWN = '\x1b[B'
+const ESC_SEQ_TIMEOUT_MS = 50
+const ESC_SEQ_MAX_BYTES = 3
 const EXIT_SIGNAL_BASE = 128
 const SIGNAL_NUMBERS = { SIGINT: 2, SIGTERM: 15, SIGHUP: 1 }
 
@@ -492,7 +502,19 @@ function stamp(now) {
 }
 
 function buildFrame(state, width, now) {
-  return frameLines(state, width, now).map((line) => truncate(line, width))
+  const lines = frameLines(state, width, now).map((line) => truncate(line, width))
+  // Applied after truncation so the escape bytes are never counted as columns.
+  const row = highlightLineIndex(state)
+  if (row !== -1 && lines[row] !== undefined) lines[row] = ESC_REVERSE_ON + lines[row] + ESC_REVERSE_OFF
+  return lines
+}
+
+// The table occupies the top of the frame with one header line, so a row's
+// frame line is its highlight index plus one.
+function highlightLineIndex(state) {
+  if (state.poll === 'never-good' || state.lastRows.length === 0) return -1
+  const index = state.highlight.index
+  return index >= 0 && index < state.lastRows.length ? index + 1 : -1
 }
 
 function frameLines(state, width, now) {
@@ -546,7 +568,50 @@ function tick(state, opts) {
 }
 
 function newState() {
-  return { poll: 'never-good', error: null, lastRows: [], lastGoodAt: null, observed: new Map() }
+  return {
+    poll: 'never-good',
+    error: null,
+    lastRows: [],
+    lastGoodAt: null,
+    observed: new Map(),
+    mode: 'normal',
+    highlight: { id: null, index: -1 },
+  }
+}
+
+// --- Highlight -----------------------------------------------------------
+//
+// The selection is keyed on session id, not row position: rows re-sort as
+// statuses change, so the index is derived from the id after every tick. A
+// vanished session hands the selection to whatever row now sits nearest its
+// old position rather than dropping it.
+
+function reconcileHighlight(state) {
+  const rows = state.lastRows
+  if (rows.length === 0) {
+    state.highlight = { id: null, index: -1 }
+    return state
+  }
+  const found = rows.findIndex((row) => row.id === state.highlight.id)
+  if (found !== -1) {
+    state.highlight.index = found
+    return state
+  }
+  if (state.highlight.index < 0) return state
+  const index = Math.min(state.highlight.index, rows.length - 1)
+  state.highlight = { id: rows[index].id, index }
+  return state
+}
+
+function moveHighlight(state, delta) {
+  const rows = state.lastRows
+  if (rows.length === 0) {
+    state.highlight = { id: null, index: -1 }
+    return
+  }
+  const from = state.highlight.index < 0 ? (delta > 0 ? -1 : rows.length) : state.highlight.index
+  const index = Math.max(0, Math.min(rows.length - 1, from + delta))
+  state.highlight = { id: rows[index].id, index }
 }
 
 // --- Terminal writes -----------------------------------------------------
@@ -646,7 +711,7 @@ function runLive(opts) {
   registerRestore()
   entered = true
   write(ESC_ALT_ENTER + ESC_CURSOR_HIDE + ESC_TITLE_SET)
-  listenForQuit()
+  listenForKeys(state)
   process.on('SIGWINCH', () => paint(state))
 
   const loop = () => {
@@ -658,6 +723,7 @@ function runLive(opts) {
       state.error = String((e && e.message) || e)
       state.poll = state.poll === 'never-good' ? 'never-good' : 'stale'
     }
+    reconcileHighlight(state)
     paint(state)
     setTimeout(loop, POLL_INTERVAL_MS)
   }
@@ -670,10 +736,20 @@ function paint(state) {
   write(ESC_CURSOR_HOME + lines.join(ESC_CLEAR_EOL + '\n') + ESC_CLEAR_EOL + ESC_CLEAR_EOS)
 }
 
-// A raw `data` listener rather than readline.emitKeypressEvents: two bytes are
-// the entire key vocabulary, and readline would also install its own SIGINT
-// and resize handling on top of the ones registered here.
-function listenForQuit() {
+// --- Input ---------------------------------------------------------------
+//
+// A raw `data` listener rather than readline.emitKeypressEvents, which would
+// install its own SIGINT and resize handling on top of the ones registered
+// here. Arrow keys arrive as three bytes that Node may split across events, so
+// an ESC starts a buffer armed with a short timer: a completed sequence
+// dispatches and disarms, a timer expiry dispatches the bare Escape that Unit 3
+// uses to cancel a rename, and anything else is dropped. The timer is unref'd
+// so a pending Escape never holds the process open past `q`.
+
+let escBuf = ''
+let escTimer = null
+
+function listenForKeys(state) {
   if (!process.stdin.isTTY) return
   try {
     process.stdin.setRawMode(true)
@@ -682,14 +758,64 @@ function listenForQuit() {
   }
   rawEnabled = true
   process.stdin.resume()
-  process.stdin.on('data', (buf) => {
-    for (const byte of buf) {
-      if (byte === KEY_CTRL_C || byte === KEY_Q) {
-        restore()
-        process.exit(0)
+  process.stdin.on('data', (buf) => handleInput(state, buf))
+}
+
+function handleInput(state, buf) {
+  for (const byte of buf) {
+    if (escBuf) {
+      escBuf += String.fromCharCode(byte)
+      const key = escBuf === SEQ_UP || escBuf === SEQ_DOWN ? escBuf : null
+      if (key || escBuf.length >= ESC_SEQ_MAX_BYTES) {
+        disarmEscTimer()
+        escBuf = ''
+        if (key) handleKey(state, key)
       }
+      continue
     }
-  })
+    if (byte === KEY_ESC) {
+      escBuf = String.fromCharCode(byte)
+      armEscTimer(state)
+      continue
+    }
+    handleKey(state, String.fromCharCode(byte))
+  }
+}
+
+function armEscTimer(state) {
+  disarmEscTimer()
+  escTimer = setTimeout(() => {
+    escTimer = null
+    escBuf = ''
+    handleKey(state, String.fromCharCode(KEY_ESC))
+  }, ESC_SEQ_TIMEOUT_MS)
+  escTimer.unref()
+}
+
+function disarmEscTimer() {
+  if (escTimer === null) return
+  clearTimeout(escTimer)
+  escTimer = null
+}
+
+function handleKey(state, key) {
+  const code = key.length === 1 ? key.charCodeAt(0) : -1
+  if (code === KEY_CTRL_C) {
+    restore()
+    process.exit(0)
+  }
+  if (state.mode !== 'normal') return
+  if (code === KEY_Q) {
+    restore()
+    process.exit(0)
+  }
+  if (code === KEY_J || key === SEQ_DOWN) {
+    moveHighlight(state, 1)
+    paint(state)
+  } else if (code === KEY_K || key === SEQ_UP) {
+    moveHighlight(state, -1)
+    paint(state)
+  }
 }
 
 // --- Entry ---------------------------------------------------------------
