@@ -31,6 +31,8 @@ const REGISTRY_MAX_BYTES = 4 * 1024 * 1024
 const SESSION_FILE_MAX_BYTES = 64 * 1024
 const SESSIONS_DIR = path.join(os.homedir(), '.claude', 'sessions')
 const PROJECTS_DIR = process.env.DASH_PROJECTS_DIR || path.join(os.homedir(), '.claude', 'projects')
+// THROWAWAY (Unit 1b) — see seedFakeVmRow. Delete when Unit 2 lands.
+const FAKE_VM = process.env.DASH_FAKE_VM === '1'
 
 const TAIL_BYTES = 256 * 1024
 const TAIL_RETRY_BYTES = 1024 * 1024
@@ -529,11 +531,20 @@ function buildTable(rows, width) {
 // body — an error before any good poll is the body itself; an error after one
 // keeps the last good table and moves the error into the footer.
 
+// A row can be both remote and background, and two separate suffixes would cost
+// eight of NAME_CAP's characters. One parenthesized group holds both.
+function nameMarker(row) {
+  const tags = []
+  if (row.remote) tags.push('vm')
+  if (row.kind !== 'interactive') tags.push('bg')
+  return tags.length === 0 ? '' : ` (${tags.join(' ')})`
+}
+
 function decorateRows(rows, observed, now) {
   resolveNames(rows)
   for (const row of rows) {
     row.ageCell = formatAge(ageMsFor(row, observed, now))
-    row.nameCell = row.kind === 'interactive' ? row.label : `${row.label} (bg)`
+    row.nameCell = row.label + nameMarker(row)
     row.dirCell = shortenDir(row.cwd)
     row.summary = summaryFor(row)
   }
@@ -637,6 +648,27 @@ function tick(state, opts) {
   const transitions = observeRows(state.observed, rows, now)
   state.lastRows = sortRows(decorateRows(rows, state.observed, now))
   return transitions
+}
+
+// THROWAWAY (Unit 1b) — delete with DASH_FAKE_VM once Unit 2 lands real
+// validated ingest. It bypasses validateRows deliberately: the point is to see
+// the render path before the ingest path exists.
+function seedFakeVmRow(state) {
+  const id = 'ro-devbox:5f0a1c22-9d34-4b71-8e60-2a1f7c3d5e88'
+  state.vmRows.set(id, {
+    id,
+    pid: null,
+    name: 'w3-emitter',
+    cwd: '/home/hfritz/Misc/cc-forge',
+    kind: 'interactive',
+    status: 'waiting',
+    startedAt: null,
+    statusUpdatedAt: null,
+    summary: '',
+    remote: true,
+    host: 'ro-devbox',
+    tmuxSession: 'main',
+  })
 }
 
 function newState() {
@@ -942,6 +974,7 @@ function registerRestore() {
 
 function runOnce(opts) {
   const state = newState()
+  if (FAKE_VM) seedFakeVmRow(state)
   tick(state, opts)
   const width = opts.width || process.stdout.columns || DEFAULT_WIDTH
   write(buildFrame(state, width, Date.now()).join('\n') + '\n')
@@ -950,6 +983,7 @@ function runOnce(opts) {
 
 function runLive(opts) {
   const state = newState()
+  if (FAKE_VM) seedFakeVmRow(state)
   state.interactive = true
   registerRestore()
   entered = true
