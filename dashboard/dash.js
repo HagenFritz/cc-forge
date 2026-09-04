@@ -29,6 +29,7 @@ const POLL_INTERVAL_MS = 2000
 const POLL_TIMEOUT_MS = 5000
 const REGISTRY_MAX_BYTES = 4 * 1024 * 1024
 const SESSION_FILE_MAX_BYTES = 64 * 1024
+const PAYLOAD_STRING_MAX = 256
 const SESSIONS_DIR = path.join(os.homedir(), '.claude', 'sessions')
 const PROJECTS_DIR = process.env.DASH_PROJECTS_DIR || path.join(os.homedir(), '.claude', 'projects')
 
@@ -49,8 +50,8 @@ const COLUMN_GAP = 4
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const PID_RE = /^[0-9]{1,10}$/
-const VM_HOST_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const TMUX_SESSION_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+const VM_HOST = 'ro-devbox'
 const STATUS_RANK = { waiting: 0, idle: 1, busy: 2 }
 const UNKNOWN_STATUS_RANK = 3
 
@@ -208,9 +209,10 @@ function readFixture(fixturePath) {
 // path to the screen goes through a validated row.
 //
 // Network rows take the same door: `{ remote: true }` adds the host, tmux
-// session, and id namespacing, and everything else runs the same code. The
-// flag comes from the call site and never from the payload, so a local row can
-// never claim to be remote.
+// session, and id namespacing, and everything else runs the same code. Both
+// the flag and the host come from the call site and never from the payload, so
+// a local row can never claim to be remote and a payload can never mint id
+// namespaces of its own.
 
 function validateRows(rawRows, { remote = false } = {}) {
   const rows = []
@@ -218,25 +220,23 @@ function validateRows(rawRows, { remote = false } = {}) {
     if (!raw || typeof raw !== 'object') continue
     const rawId = typeof raw.sessionId === 'string' ? raw.sessionId : ''
     if (!UUID_RE.test(rawId)) continue
-    const host = remote ? stripControls(typeof raw.host === 'string' ? raw.host : '') : ''
-    // The host is half the row id, so an unusable one leaves nothing to key
-    // state on — the same reason a bad sessionId drops the row.
-    if (remote && !VM_HOST_RE.test(host)) continue
-    const status = typeof raw.status === 'string' ? stripControls(raw.status) : ''
+    const status = typeof raw.status === 'string' ? stripControls(raw.status.slice(0, PAYLOAD_STRING_MAX)) : ''
     rows.push({
-      id: remote ? `${host}:${rawId}` : rawId,
+      // UUID_RE is case-insensitive, so the namespaced id is lowercased to keep
+      // one row per session; rawId stays as received for display.
+      id: remote ? `${VM_HOST}:${rawId.toLowerCase()}` : rawId,
       rawId,
       pid: remote ? null : (Number.isInteger(raw.pid) && raw.pid > 0 ? raw.pid : null),
-      name: typeof raw.name === 'string' ? stripControls(raw.name) : '',
-      cwd: typeof raw.cwd === 'string' ? stripControls(raw.cwd) : '',
+      name: typeof raw.name === 'string' ? stripControls(raw.name.slice(0, PAYLOAD_STRING_MAX)) : '',
+      cwd: typeof raw.cwd === 'string' ? stripControls(raw.cwd.slice(0, PAYLOAD_STRING_MAX)) : '',
       // A payload that omits kind is an interactive session; '' would mark it (vm bg).
-      kind: typeof raw.kind === 'string' ? raw.kind : (remote ? 'interactive' : ''),
+      kind: typeof raw.kind === 'string' ? stripControls(raw.kind.slice(0, PAYLOAD_STRING_MAX)) : (remote ? 'interactive' : ''),
       status: status || 'unknown',
       startedAt: isEpochMs(raw.startedAt) ? raw.startedAt : null,
       statusUpdatedAt: null,
       summary: '',
       remote,
-      host: remote ? host : null,
+      host: remote ? VM_HOST : null,
       tmuxSession: remote ? validTmuxSession(raw.tmuxSession) : null,
     })
   }
@@ -424,7 +424,7 @@ function stripControls(text) {
   return text
     .replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, '')
     .replace(/\x1b[@-Z\\-_]/g, '')
-    .replace(/[\x00-\x1f\x7f]/g, ' ')
+    .replace(/[\x00-\x1f\x7f-\x9f]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -456,12 +456,15 @@ function sortRows(rows) {
 }
 
 function resolveNames(rows) {
+  // Counted per source: a VM payload naming itself after a local session must
+  // not push that local row onto its fallback label.
   const counts = new Map()
+  const keyOf = (row) => `${row.remote}:${row.name}`
   for (const row of rows) {
-    if (row.name) counts.set(row.name, (counts.get(row.name) || 0) + 1)
+    if (row.name) counts.set(keyOf(row), (counts.get(keyOf(row)) || 0) + 1)
   }
   for (const row of rows) {
-    row.label = !row.name || counts.get(row.name) > 1
+    row.label = !row.name || counts.get(keyOf(row)) > 1
       ? `${path.basename(row.cwd) || '?'} ${row.rawId.slice(0, 8)}`
       : row.name
   }
