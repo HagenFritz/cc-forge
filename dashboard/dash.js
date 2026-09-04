@@ -90,6 +90,7 @@ const PRINTABLE_MAX = 0x7e
 const RENAME_MAX_CHARS = 64
 const SEQ_UP = '\x1b[A'
 const SEQ_DOWN = '\x1b[B'
+const ESC_CSI_PREFIX = '\x1b['
 const ESC_SEQ_TIMEOUT_MS = 50
 const ESC_SEQ_MAX_BYTES = 3
 const BELL = '\x07'
@@ -942,8 +943,9 @@ function paint(state) {
 // here. Arrow keys arrive as three bytes that Node may split across events, so
 // an ESC starts a buffer armed with a short timer: a completed sequence
 // dispatches and disarms, a timer expiry dispatches the bare Escape that Unit 3
-// uses to cancel a rename, and anything else is dropped. The timer is unref'd
-// so a pending Escape never holds the process open past `q`.
+// uses to cancel a rename, and a byte that cannot continue a sequence dispatches
+// the Escape immediately and is then handled as its own key. The timer is
+// unref'd so a pending Escape never holds the process open past `q`.
 
 let escBuf = ''
 let escTimer = null
@@ -962,6 +964,15 @@ function listenForKeys(state) {
 
 function handleInput(state, buf) {
   for (const byte of buf) {
+    // A second byte that is not CSI means the Escape already stood alone, so it
+    // dispatches now and the byte falls through to be read as its own key —
+    // including another Escape, which re-arms the buffer. Past CSI the sequence
+    // is absorbed to the cap either way, so an unrecognized one is dropped whole.
+    if (escBuf.length === 1 && !ESC_CSI_PREFIX.startsWith(escBuf + String.fromCharCode(byte))) {
+      disarmEscTimer()
+      escBuf = ''
+      handleKey(state, String.fromCharCode(KEY_ESC))
+    }
     if (escBuf) {
       escBuf += String.fromCharCode(byte)
       const key = escBuf === SEQ_UP || escBuf === SEQ_DOWN ? escBuf : null
