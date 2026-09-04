@@ -31,8 +31,6 @@ const REGISTRY_MAX_BYTES = 4 * 1024 * 1024
 const SESSION_FILE_MAX_BYTES = 64 * 1024
 const SESSIONS_DIR = path.join(os.homedir(), '.claude', 'sessions')
 const PROJECTS_DIR = process.env.DASH_PROJECTS_DIR || path.join(os.homedir(), '.claude', 'projects')
-// THROWAWAY (Unit 1b) — see seedFakeVmRow. Delete when Unit 2 lands.
-const FAKE_VM = process.env.DASH_FAKE_VM === '1'
 
 const TAIL_BYTES = 256 * 1024
 const TAIL_RETRY_BYTES = 1024 * 1024
@@ -51,6 +49,8 @@ const COLUMN_GAP = 4
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const PID_RE = /^[0-9]{1,10}$/
+const VM_HOST_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+const TMUX_SESSION_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const STATUS_RANK = { waiting: 0, idle: 1, busy: 2 }
 const UNKNOWN_STATUS_RANK = 3
 
@@ -206,27 +206,55 @@ function readFixture(fixturePath) {
 // name, cwd, and status are attacker-influenced (a cloned repo names the cwd),
 // so control characters are stripped here rather than at render time: every
 // path to the screen goes through a validated row.
+//
+// Network rows take the same door: `{ remote: true }` adds the host, tmux
+// session, and id namespacing, and everything else runs the same code. The
+// flag comes from the call site and never from the payload, so a local row can
+// never claim to be remote.
 
-function validateRows(rawRows) {
+function validateRows(rawRows, { remote = false } = {}) {
   const rows = []
   for (const raw of rawRows) {
     if (!raw || typeof raw !== 'object') continue
-    const id = typeof raw.sessionId === 'string' ? raw.sessionId : ''
-    if (!UUID_RE.test(id)) continue
+    const rawId = typeof raw.sessionId === 'string' ? raw.sessionId : ''
+    if (!UUID_RE.test(rawId)) continue
+    const host = remote ? stripControls(typeof raw.host === 'string' ? raw.host : '') : ''
+    // The host is half the row id, so an unusable one leaves nothing to key
+    // state on — the same reason a bad sessionId drops the row.
+    if (remote && !VM_HOST_RE.test(host)) continue
     const status = typeof raw.status === 'string' ? stripControls(raw.status) : ''
     rows.push({
-      id,
-      pid: Number.isInteger(raw.pid) && raw.pid > 0 ? raw.pid : null,
+      id: remote ? `${host}:${rawId}` : rawId,
+      rawId,
+      pid: remote ? null : (Number.isInteger(raw.pid) && raw.pid > 0 ? raw.pid : null),
       name: typeof raw.name === 'string' ? stripControls(raw.name) : '',
       cwd: typeof raw.cwd === 'string' ? stripControls(raw.cwd) : '',
-      kind: typeof raw.kind === 'string' ? raw.kind : '',
+      // A payload that omits kind is an interactive session; '' would mark it (vm bg).
+      kind: typeof raw.kind === 'string' ? raw.kind : (remote ? 'interactive' : ''),
       status: status || 'unknown',
       startedAt: isEpochMs(raw.startedAt) ? raw.startedAt : null,
       statusUpdatedAt: null,
       summary: '',
+      remote,
+      host: remote ? host : null,
+      tmuxSession: remote ? validTmuxSession(raw.tmuxSession) : null,
     })
   }
   return rows
+}
+
+// One VM payload in, one validated row or null out — the entry point the
+// listener and its tests call.
+function validateVmRow(payload) {
+  return validateRows([payload], { remote: true })[0] || null
+}
+
+// Reaches an ssh argv in the focus path, so it is allow-listed rather than
+// escaped. A name that fails is dropped to null; the row itself still shows.
+function validTmuxSession(raw) {
+  if (typeof raw !== 'string') return null
+  const name = stripControls(raw)
+  return TMUX_SESSION_RE.test(name) ? name : null
 }
 
 function isEpochMs(value) {
@@ -321,6 +349,9 @@ function transcriptPath(row) {
 }
 
 function summaryFor(row) {
+  // Before any path building: a VM cwd could otherwise mangle into a real
+  // local transcript path and show another session's text.
+  if (row.remote) return ''
   const file = transcriptPath(row)
   if (file === null) return ''
   try {
@@ -431,7 +462,7 @@ function resolveNames(rows) {
   }
   for (const row of rows) {
     row.label = !row.name || counts.get(row.name) > 1
-      ? `${path.basename(row.cwd) || '?'} ${row.id.slice(0, 8)}`
+      ? `${path.basename(row.cwd) || '?'} ${row.rawId.slice(0, 8)}`
       : row.name
   }
   return rows
@@ -545,8 +576,8 @@ function decorateRows(rows, observed, now) {
   for (const row of rows) {
     row.ageCell = formatAge(ageMsFor(row, observed, now))
     row.nameCell = row.label + nameMarker(row)
-    row.dirCell = shortenDir(row.cwd)
-    row.summary = summaryFor(row)
+    row.dirCell = row.remote ? row.cwd : shortenDir(row.cwd)
+    row.summary = row.remote ? '' : summaryFor(row)
   }
   return rows
 }
@@ -648,27 +679,6 @@ function tick(state, opts) {
   const transitions = observeRows(state.observed, rows, now)
   state.lastRows = sortRows(decorateRows(rows, state.observed, now))
   return transitions
-}
-
-// THROWAWAY (Unit 1b) — delete with DASH_FAKE_VM once Unit 2 lands real
-// validated ingest. It bypasses validateRows deliberately: the point is to see
-// the render path before the ingest path exists.
-function seedFakeVmRow(state) {
-  const id = 'ro-devbox:5f0a1c22-9d34-4b71-8e60-2a1f7c3d5e88'
-  state.vmRows.set(id, {
-    id,
-    pid: null,
-    name: 'w3-emitter',
-    cwd: '/home/hfritz/Misc/cc-forge',
-    kind: 'interactive',
-    status: 'waiting',
-    startedAt: null,
-    statusUpdatedAt: null,
-    summary: '',
-    remote: true,
-    host: 'ro-devbox',
-    tmuxSession: 'main',
-  })
 }
 
 function newState() {
@@ -861,6 +871,7 @@ function commitRename(state) {
   const row = state.lastRows.find((r) => r.id === state.renameTarget)
   exitRename(state)
   if (!name || !row) return
+  if (row.remote) return setTransient(state, 'rename is local-only — VM tab names come from the devbox session')
   withRowTty(state, row, (tty) => {
     runSessionScript(state, renameScript(tty, name), 'rename', tty, (actual) => {
       // A profile title format decorates the applied name, which otherwise
@@ -974,7 +985,6 @@ function registerRestore() {
 
 function runOnce(opts) {
   const state = newState()
-  if (FAKE_VM) seedFakeVmRow(state)
   tick(state, opts)
   const width = opts.width || process.stdout.columns || DEFAULT_WIDTH
   write(buildFrame(state, width, Date.now()).join('\n') + '\n')
@@ -983,7 +993,6 @@ function runOnce(opts) {
 
 function runLive(opts) {
   const state = newState()
-  if (FAKE_VM) seedFakeVmRow(state)
   state.interactive = true
   registerRestore()
   entered = true
@@ -1164,3 +1173,5 @@ function main() {
 }
 
 if (require.main === module) main()
+
+module.exports = { validateVmRow }

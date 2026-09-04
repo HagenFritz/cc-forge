@@ -57,7 +57,7 @@ The bell rings once per tick when a session newly enters `waiting`.
 - Wide characters (emoji, CJK) misalign columns — widths are code points, not display cells. Declared scope boundary.
 - A status string over 16 characters is truncated (`STATE_CAP`).
 - Fixture rows always show `0s` age (no `<pid>.json` exists for synthetic pids); by design for deterministic output.
-- The module exports nothing; in-process timing needs an instrumented copy. Exports are a one-line change if needed later.
+- The module exports only `validateVmRow`, the VM-payload ingest point; anything else, such as in-process timing, needs an instrumented copy.
 - Transcript reads have no wall-clock guard (measured at ~1 ms cold; not addressed).
 - `DASH_PROJECTS_DIR` env override exists for testing but is not a documented user-facing feature.
 - A tab renamed with `r` is overwritten by Claude Code's own OSC 0 title on that session's next turn — the rename is not sticky. Mitigation is the iTerm profile toggle "Terminal may set tab/window title"; there is no scriptable lock.
