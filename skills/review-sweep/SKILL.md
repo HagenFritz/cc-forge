@@ -105,7 +105,8 @@ a skill that edits code unattended has no safe way to proceed on a broken premis
 4. **Interrupted run.** Any finding at `Status: in-progress` is the residue of a killed run. Flip
    it to `open` and add `**Sweep:** interrupted`. Never auto-resume it and never auto-revert its
    edits — a half-applied fix in the working tree is indistinguishable from the user's own work.
-   Report these at the top of the run.
+   Report these at the top of the run, and count them as **surfaced this run** — the `Sweep:` line
+   is this run's, so loop condition 2 exempts them rather than counting them already swept.
 
    `/grind` also writes `in-progress` to mean "accepted, fix pending". The `target:` check in step
    2 is the guard: a grind doc targets a PR on its own branch, so a sweep run from elsewhere stops
@@ -118,8 +119,8 @@ a skill that edits code unattended has no safe way to proceed on a broken premis
    does not fix out of order.
 
 6. **Empty doc.** No `### P` issue headings at all → the run is a no-op. Report one line — "No
-   findings in `<absolute path>` — nothing to sweep." — and stop. This is a successful terminal
-   state, not an error.
+   findings in `<absolute path>` — nothing to sweep." — and stop. No stamp is posted: a stamp for a
+   doc with zero findings is noise. This is a successful terminal state, not an error.
 
 ## Step 3: The Triage Loop
 
@@ -133,7 +134,7 @@ cheapest-and-most-decisive first, so nothing reads code it did not have to.
 | # | Condition | Outcome |
 |---|-----------|---------|
 | 1 | `Status:` is `done`, `deferred`, or `wont-fix` | Skip. Count as a **prior decision**, not this run's. |
-| 2 | `Status:` is `open` and it already carries a `**Sweep:**` line | Skip as **already swept**. Counted separately; no second `Sweep:` line is ever written. |
+| 2 | `Status:` is `open` and it already carries a `**Sweep:**` line **that this run's preflight did not write** | Skip as **already swept**. Counted separately; no second `Sweep:` line is ever written. |
 | 3 | The fix would delete or gitignore a protected artifact | `wont-fix` + `**Skip reason:** protected artifact — <path>` (see step 4). |
 | 4 | `Confidence:` is `low` | Surface: `low confidence`. **Do not read the code.** |
 | 5 | Any cited path is in the dirty baseline | Surface: `dirty file: <path>`. Nothing is edited. |
@@ -247,8 +248,12 @@ In this order, no step skipped:
    fix reached past its citation and the finding was not the small, bounded thing it looked like.
 5. **On a tripwire: revert, then surface.** Restore the finding's cited paths
    (`git checkout -- <paths>`), re-apply the saved patch (`git apply <patch>`), and delete any
-   untracked file the edit created. Set the finding `open` + `**Sweep:** uncited file`. Because the
-   patch carried the earlier findings' fixes, they survive intact.
+   untracked file the edit created. Then restore the tracked paths the self-check flagged as
+   outside the union (`git checkout -- <those paths>`) — safe without a patch, since a path outside
+   the union is by definition not in the dirty baseline and so was clean before the run. Set the
+   finding `open` + `**Sweep:** uncited file`. Because the patch carried the earlier findings'
+   fixes, they survive intact. Leaving a stray tracked edit behind would false-trip every later
+   finding's scope self-check and would ride into step 5d's baseline as pre-sweep code.
 6. **Otherwise, set `Status: done`.**
 
 ## Step 4: Status Update Protocol
@@ -484,10 +489,10 @@ carries the run's value, and nothing about the wording treats it as a failure.
 
 ## Step 7: Stamp the Run
 
-Fires on **every** terminal outcome — including zero implemented, a no-op empty doc, a red suite, and
-a failed patch re-apply. A run that produced a report produced a stamp. Issue-number resolution
-(including the silent skip when none resolves), posting mechanics, marker encoding, and failure
-handling are defined in [the issue-log spec](../issue-log/SKILL.md).
+Fires on **every** terminal outcome — including zero implemented, a red suite, and a failed patch
+re-apply. A run that produced a report produced a stamp. Issue-number resolution (including the
+silent skip when none resolves), posting mechanics, marker encoding, and failure handling are
+defined in [the issue-log spec](../issue-log/SKILL.md).
 
 Compose the body below, write it to a temp file with the Write tool, and post:
 
