@@ -4,10 +4,11 @@
 // Polls the local session registry via `claude agents --json`, enriches each
 // row from ~/.claude/sessions/<pid>.json, and renders one table row per live
 // session sorted waiting / idle / busy. Enter focuses the highlighted row's
-// iTerm tab and a session turning `waiting` rings the bell (`--alert-idle`
-// extends that to idle). `--once` prints a single plain frame and exits, with
-// no keys and no bell; `--fixture <path>` feeds rows from a JSON file through
-// the same pipeline so the program can be checked without live sessions.
+// iTerm tab, `r` renames it inline, and a session turning `waiting` rings the
+// bell (`--alert-idle` extends that to idle). `--once` prints a single plain
+// frame and exits, with no keys, no bell, and no help line; `--fixture <path>`
+// feeds rows from a JSON file through the same pipeline so the program can be
+// checked without live sessions.
 //
 // Zero dependencies, Node >= 22, stdlib only. Run by hand:
 //   node dashboard/dash.js
@@ -44,7 +45,7 @@ const NAME_MIN = 8
 const DIR_CAP = 30
 const DIR_MIN = 8
 const SUMMARY_MIN = 10
-const COLUMN_GAP = 2
+const COLUMN_GAP = 4
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const PID_RE = /^[0-9]{1,10}$/
@@ -80,6 +81,13 @@ const KEY_ENTER_LF = 0x0a
 const KEY_J = 0x6a
 const KEY_K = 0x6b
 const KEY_Q = 0x71
+const KEY_R = 0x72
+const KEY_CTRL_U = 0x15
+const KEY_BACKSPACE = 0x7f
+const KEY_BACKSPACE_BS = 0x08
+const PRINTABLE_MIN = 0x20
+const PRINTABLE_MAX = 0x7e
+const RENAME_MAX_CHARS = 64
 const SEQ_UP = '\x1b[A'
 const SEQ_DOWN = '\x1b[B'
 const ESC_SEQ_TIMEOUT_MS = 50
@@ -88,6 +96,10 @@ const BELL = '\x07'
 const FOCUS_TIMEOUT_MS = 3000
 const ITERM_BUNDLE_ID = 'com.googlecode.iterm2'
 const TTY_PATH_RE = /^\/dev\/tty[a-z0-9]+$/
+
+const HELP_NORMAL = 'j/k: select  enter: focus  r: rename tab  q: quit'
+const HELP_RENAME = 'enter: confirm  esc: cancel  ^U: clear'
+const RENAME_PROMPT = 'Tab name: '
 
 const EXIT_SIGNAL_BASE = 128
 const SIGNAL_NUMBERS = { SIGINT: 2, SIGTERM: 15, SIGHUP: 1 }
@@ -485,7 +497,7 @@ function buildTable(rows, width) {
     headers.push('SUMMARY')
   }
 
-  const lines = [renderLine(headers, widths, width)]
+  const lines = [renderLine(headers, widths, width), '']
   for (const row of rows) {
     const cells = [row.status, row.ageCell, row.nameCell]
     if (cols.showDir) cells.push(row.dirCell)
@@ -526,12 +538,12 @@ function buildFrame(state, width, now) {
   return lines
 }
 
-// The table occupies the top of the frame with one header line, so a row's
-// frame line is its highlight index plus one.
+// The table occupies the top of the frame with a header line and a blank line
+// under it, so a row's frame line is its highlight index plus two.
 function highlightLineIndex(state) {
   if (state.poll === 'never-good' || state.lastRows.length === 0) return -1
   const index = state.highlight.index
-  return index >= 0 && index < state.lastRows.length ? index + 1 : -1
+  return index >= 0 && index < state.lastRows.length ? index + 2 : -1
 }
 
 function frameLines(state, width, now) {
@@ -550,6 +562,11 @@ function frameLines(state, width, now) {
   }
   lines.push('')
 
+  if (state.interactive) {
+    lines.push(state.mode === 'rename' ? HELP_RENAME : HELP_NORMAL)
+    lines.push('')
+  }
+
   if (state.poll === 'stale') {
     const age = formatAge(Math.max(0, now - state.lastGoodAt))
     lines.push(`polled ${stamp(now)}  ·  ${ERROR_BODIES[state.error] || state.error} (last good poll ${age} ago)`)
@@ -557,6 +574,7 @@ function frameLines(state, width, now) {
     lines.push(`polled ${stamp(now)}  ·  ${state.lastRows.length} session${state.lastRows.length === 1 ? '' : 's'}`)
   }
   if (state.transient) lines.push(state.transient)
+  if (state.mode === 'rename') lines.push(RENAME_PROMPT + state.renameBuffer)
   return lines
 }
 
@@ -593,7 +611,10 @@ function newState() {
     lastGoodAt: null,
     observed: new Map(),
     mode: 'normal',
+    interactive: false,
     highlight: { id: null, index: -1 },
+    renameBuffer: '',
+    renameTarget: null,
     transient: null,
   }
 }
@@ -654,17 +675,14 @@ function normalizeTty(raw) {
   return TTY_PATH_RE.test(full) ? full : null
 }
 
-function focusScript(tty) {
+function sessionScript(tty, body) {
   return [
     `tell application id "${ITERM_BUNDLE_ID}"`,
     'repeat with w in windows',
     'repeat with t in tabs of w',
     'repeat with s in sessions of t',
     `if tty of s is "${tty}" then`,
-    'select s',
-    'select t',
-    'select w',
-    'activate',
+    ...body,
     'return "ok"',
     'end if',
     'end repeat',
@@ -675,13 +693,29 @@ function focusScript(tty) {
   ].join('\n')
 }
 
+function focusScript(tty) {
+  return sessionScript(tty, ['select s', 'select t', 'select w', 'activate'])
+}
+
+// The tty reaches the script through a closed pattern, but a tab name is
+// arbitrary user text, so it is escaped instead: backslashes first, then
+// quotes, or the escapes added for the quotes would themselves be doubled.
+function escapeAppleScriptString(text) {
+  return String(text).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+function renameScript(tty, name) {
+  return sessionScript(tty, [`set name of s to "${escapeAppleScriptString(name)}"`])
+}
+
 function setTransient(state, message) {
   state.transient = message
   paint(state)
 }
 
-function focusHighlighted(state) {
-  const row = state.lastRows[state.highlight.index]
+// Both focus and rename start the same way: a row with a live pid whose
+// controlling terminal iTerm can be searched for.
+function withRowTty(state, row, next) {
   if (!row) return
   if (row.pid === null || !PID_RE.test(String(row.pid))) {
     setTransient(state, 'session exited — no pid to focus.')
@@ -693,6 +727,12 @@ function focusHighlighted(state) {
       setTransient(state, 'session exited — no terminal for that pid.')
       return
     }
+    next(tty)
+  })
+}
+
+function focusHighlighted(state) {
+  withRowTty(state, state.lastRows[state.highlight.index], (tty) => {
     execFile('osascript', ['-e', focusScript(tty)], { timeout: FOCUS_TIMEOUT_MS, encoding: 'utf8' }, (scriptErr, scriptOut) => {
       if (scriptErr) {
         setTransient(state, 'could not focus the tab — is iTerm running?')
@@ -701,6 +741,66 @@ function focusHighlighted(state) {
       setTransient(state, String(scriptOut).trim() === 'ok' ? null : `no iTerm tab is attached to ${tty}.`)
     })
   })
+}
+
+// --- Rename mode ---------------------------------------------------------
+//
+// An overlay, not a modal: the poll timer keeps running and repaints underneath,
+// so `state.renameBuffer` — not the screen — is what the typed name lives in and
+// a repaint mid-typing costs nothing. The cursor comes back for the duration so
+// the prompt has something to type against. The rename targets the row that was
+// highlighted when `r` was pressed, even if the sort has moved it since.
+
+function enterRename(state) {
+  const row = state.lastRows[state.highlight.index]
+  if (!row) return
+  state.mode = 'rename'
+  state.renameBuffer = ''
+  state.renameTarget = row.id
+  write(ESC_CURSOR_SHOW)
+  paint(state)
+}
+
+function exitRename(state) {
+  state.mode = 'normal'
+  state.renameBuffer = ''
+  state.renameTarget = null
+  write(ESC_CURSOR_HIDE)
+  paint(state)
+}
+
+function commitRename(state) {
+  const name = state.renameBuffer.trim()
+  const row = state.lastRows.find((r) => r.id === state.renameTarget)
+  exitRename(state)
+  if (!name || !row) return
+  withRowTty(state, row, (tty) => {
+    execFile('osascript', ['-e', renameScript(tty, name)], { timeout: FOCUS_TIMEOUT_MS, encoding: 'utf8' }, (scriptErr, scriptOut) => {
+      if (scriptErr) {
+        setTransient(state, 'could not rename the tab — is iTerm running?')
+        return
+      }
+      setTransient(state, String(scriptOut).trim() === 'ok' ? null : `no iTerm tab is attached to ${tty}.`)
+    })
+  })
+}
+
+function handleRenameKey(state, key) {
+  const code = key.length === 1 ? key.charCodeAt(0) : -1
+  if (code === KEY_ESC) return exitRename(state)
+  if (code === KEY_ENTER || code === KEY_ENTER_LF) return commitRename(state)
+  if (code === KEY_CTRL_U) {
+    state.renameBuffer = ''
+    return paint(state)
+  }
+  if (code === KEY_BACKSPACE || code === KEY_BACKSPACE_BS) {
+    state.renameBuffer = state.renameBuffer.slice(0, -1)
+    return paint(state)
+  }
+  if (code >= PRINTABLE_MIN && code <= PRINTABLE_MAX && state.renameBuffer.length < RENAME_MAX_CHARS) {
+    state.renameBuffer += key
+    paint(state)
+  }
 }
 
 // --- Terminal writes -----------------------------------------------------
@@ -797,6 +897,7 @@ function runOnce(opts) {
 
 function runLive(opts) {
   const state = newState()
+  state.interactive = true
   registerRestore()
   entered = true
   write(ESC_ALT_ENTER + ESC_CURSOR_HIDE + ESC_TITLE_SET)
@@ -902,13 +1003,17 @@ function handleKey(state, key) {
     restore()
     process.exit(0)
   }
-  if (state.mode !== 'normal') return
+  if (state.mode === 'rename') return handleRenameKey(state, key)
   if (code === KEY_Q) {
     restore()
     process.exit(0)
   }
   if (code === KEY_ENTER || code === KEY_ENTER_LF) {
     if (state.highlight.index >= 0) focusHighlighted(state)
+    return
+  }
+  if (code === KEY_R) {
+    if (state.highlight.index >= 0) enterRename(state)
     return
   }
   if (code === KEY_J || key === SEQ_DOWN) {
