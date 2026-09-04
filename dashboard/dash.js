@@ -557,14 +557,20 @@ function buildFrame(state, width, now) {
 // The table occupies the top of the frame with a header line and a blank line
 // under it, so a row's frame line is its highlight index plus two.
 function highlightLineIndex(state) {
-  if (state.poll === 'never-good' || state.lastRows.length === 0) return -1
+  if (noTableYet(state) || state.lastRows.length === 0) return -1
   const index = state.highlight.index
   return index >= 0 && index < state.lastRows.length ? index + 2 : -1
 }
 
+// A never-good local poll is only a bare error body while there is nothing
+// else to show; VM rows outrank it.
+function noTableYet(state) {
+  return state.poll === 'never-good' && state.vmRows.size === 0
+}
+
 function frameLines(state, width, now) {
   const lines = []
-  if (state.poll === 'never-good') {
+  if (noTableYet(state)) {
     lines.push(ERROR_BODIES[state.error] || `registry error: ${state.error}`)
     lines.push('')
     lines.push(`polled ${stamp(now)}  ·  no successful poll yet`)
@@ -583,7 +589,9 @@ function frameLines(state, width, now) {
     lines.push('')
   }
 
-  if (state.poll === 'stale') {
+  if (state.poll === 'never-good') {
+    lines.push(`polled ${stamp(now)}  ·  ${ERROR_BODIES[state.error] || state.error} (no successful poll yet)`)
+  } else if (state.poll === 'stale') {
     const age = formatAge(Math.max(0, now - state.lastGoodAt))
     lines.push(`polled ${stamp(now)}  ·  ${ERROR_BODIES[state.error] || state.error} (last good poll ${age} ago)`)
   } else {
@@ -599,23 +607,35 @@ function frameLines(state, width, now) {
 // One tick: read, validate, enrich, observe, decorate, fold into the poll
 // state. Unit 3 wraps this in a re-armed timer; it deliberately owns no timing
 // or rendering of its own.
+//
+// The poll state and the footer describe the *local* poll only. A failed local
+// poll reuses the last good local rows rather than returning early, so VM rows
+// still reach the table.
+
+function vmRowsAsRows(state) {
+  return Array.from(state.vmRows.values())
+}
 
 function tick(state, opts) {
   const now = Date.now()
   const result = opts.fixture ? readFixture(opts.fixture) : readRegistry()
 
-  if (!result.ok) {
+  let localRows
+  if (result.ok) {
+    localRows = enrichRows(validateRows(result.rows))
+    state.lastLocalRows = localRows
+    state.lastGoodAt = now
+    state.error = null
+    state.poll = 'good'
+  } else {
+    localRows = state.lastLocalRows
     state.error = result.error
     state.poll = state.poll === 'never-good' ? 'never-good' : 'stale'
-    return []
   }
 
-  const rows = enrichRows(validateRows(result.rows))
+  const rows = localRows.concat(vmRowsAsRows(state))
   const transitions = observeRows(state.observed, rows, now)
   state.lastRows = sortRows(decorateRows(rows, state.observed, now))
-  state.lastGoodAt = now
-  state.error = null
-  state.poll = 'good'
   return transitions
 }
 
@@ -624,8 +644,10 @@ function newState() {
     poll: 'never-good',
     error: null,
     lastRows: [],
+    lastLocalRows: [],
     lastGoodAt: null,
     observed: new Map(),
+    vmRows: new Map(),
     mode: 'normal',
     interactive: false,
     highlight: { id: null, index: -1 },
