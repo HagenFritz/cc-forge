@@ -8,7 +8,8 @@
 // bell (`--alert-idle` extends that to idle). `--once` prints a single plain
 // frame and exits, with no keys, no bell, and no help line; `--fixture <path>`
 // feeds rows from a JSON file through the same pipeline so the program can be
-// checked without live sessions.
+// checked without live sessions. `--listen <port>` adds an authenticated
+// loopback endpoint that turns devbox hook events into rows in the same table.
 //
 // Zero dependencies, Node >= 22, stdlib only. Run by hand:
 //   node dashboard/dash.js
@@ -21,7 +22,9 @@
 'use strict'
 
 const { execFile, execFileSync } = require('child_process')
+const crypto = require('crypto')
 const fs = require('fs')
+const http = require('http')
 const path = require('path')
 const os = require('os')
 
@@ -52,6 +55,28 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const PID_RE = /^[0-9]{1,10}$/
 const TMUX_SESSION_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const VM_HOST = 'ro-devbox'
+
+const LISTEN_HOST = '127.0.0.1'
+const LISTEN_PORT_MIN = 1024
+const LISTEN_PORT_MAX = 65535
+const TOKEN_PATH = path.join(os.homedir(), '.claude', '.dash-token')
+const TOKEN_BYTES = 32
+const TOKEN_RE = /^[0-9a-f]{64}$/
+const TOKEN_MAX_BYTES = 128
+const VM_TOKEN_HEADER = 'x-dash-token'
+const VM_BODY_MAX_BYTES = 4096
+const VM_EVENT_STATUS = {
+  SessionStart: 'busy',
+  UserPromptSubmit: 'busy',
+  Notification: 'waiting',
+  Stop: 'idle',
+}
+const VM_END_EVENT = 'SessionEnd'
+// Short on purpose: a longer window turns a forged SessionEnd into a lockout
+// of the real session's re-registration.
+const VM_END_STICKY_MS = 5000
+const VM_ROWS_MAX = 256
+
 const STATUS_RANK = { waiting: 0, idle: 1, busy: 2 }
 const UNKNOWN_STATUS_RANK = 3
 
@@ -130,7 +155,7 @@ const ERROR_BODIES = {
 // port) and they all extend here.
 
 function parseArgs(argv) {
-  const opts = { once: false, width: null, fixture: null, alertIdle: false }
+  const opts = { once: false, width: null, fixture: null, alertIdle: false, listen: null }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--once') {
@@ -142,6 +167,13 @@ function parseArgs(argv) {
       const n = Number.parseInt(raw, 10)
       if (!Number.isFinite(n) || n < 20) throw new Error(`--width needs an integer >= 20, got ${raw}`)
       opts.width = n
+    } else if (arg === '--listen') {
+      const raw = argv[++i]
+      const n = Number.parseInt(raw, 10)
+      if (!Number.isFinite(n) || n < LISTEN_PORT_MIN || n > LISTEN_PORT_MAX) {
+        throw new Error(`--listen needs a port between ${LISTEN_PORT_MIN} and ${LISTEN_PORT_MAX}, got ${raw}`)
+      }
+      opts.listen = n
     } else if (arg === '--fixture') {
       const raw = argv[++i]
       if (!raw) throw new Error('--fixture needs a path')
@@ -150,6 +182,7 @@ function parseArgs(argv) {
       throw new Error(`unknown argument: ${arg}`)
     }
   }
+  if (opts.listen !== null && opts.once) throw new Error('--listen cannot be combined with --once — a one-shot frame cannot receive events')
   return opts
 }
 
@@ -619,6 +652,9 @@ function frameLines(state, width, now) {
     lines.push(ERROR_BODIES[state.error] || `registry error: ${state.error}`)
     lines.push('')
     lines.push(`polled ${stamp(now)}  ·  no successful poll yet`)
+    // Also here: a listener that never bound is exactly the case where there
+    // are no VM rows to push the frame out of this branch.
+    lines.push(...vmFooterLines(state))
     return lines
   }
 
@@ -642,6 +678,7 @@ function frameLines(state, width, now) {
   } else {
     lines.push(`polled ${stamp(now)}  ·  ${state.lastRows.length} session${state.lastRows.length === 1 ? '' : 's'}`)
   }
+  lines.push(...vmFooterLines(state))
   if (state.transient) lines.push(state.transient)
   if (state.mode === 'rename') lines.push(RENAME_PROMPT + state.renameBuffer)
   return lines
@@ -693,6 +730,12 @@ function newState() {
     lastGoodAt: null,
     observed: new Map(),
     vmRows: new Map(),
+    vmEnded: new Map(),
+    vmToken: null,
+    vmAuthRejects: 0,
+    vmDropped: 0,
+    listenError: null,
+    listenNote: null,
     mode: 'normal',
     interactive: false,
     highlight: { id: null, index: -1 },
@@ -700,6 +743,235 @@ function newState() {
     renameTarget: null,
     transient: null,
   }
+}
+
+// --- VM listener ---------------------------------------------------------
+//
+// The first network input in this repo. Everything in this section is
+// transport: authenticate, bound the body, hand one parsed object to
+// applyVmEvent. Bound to 127.0.0.1, so the callers it can reach are local
+// processes and whatever the ssh reverse forward carries.
+//
+// The token defends exactly two boundaries: a remote-triggered local request
+// from a context that cannot read the filesystem (a browser tab, a postinstall
+// script that poked a localhost port), and a non-root process on the devbox
+// that reaches the forwarded port but cannot read the token there. A same-uid
+// process on this Mac reads the token file and is not defended against — it
+// could equally replace this script.
+//
+// The custom auth header is itself the CSRF defense: a browser cannot attach
+// one cross-origin without a successful preflight, and the non-POST rejection
+// kills the preflight. Requiring application/json forces a preflight for the
+// same reason. The Origin check is a belt, not the buckle — curl sends no
+// Origin at all — so it is never the thing to keep if the others are relaxed.
+
+let listenServer = null
+
+function readToken() {
+  try {
+    const st = fs.lstatSync(TOKEN_PATH)
+    if (st.isSymbolicLink() || !st.isFile() || st.size > TOKEN_MAX_BYTES) return null
+    const O_NOFOLLOW = typeof fs.constants.O_NOFOLLOW === 'number' ? fs.constants.O_NOFOLLOW : 0
+    let fd
+    let raw
+    try {
+      fd = fs.openSync(TOKEN_PATH, fs.constants.O_RDONLY | O_NOFOLLOW)
+      const buf = Buffer.alloc(TOKEN_MAX_BYTES)
+      const n = fs.readSync(fd, buf, 0, TOKEN_MAX_BYTES, 0)
+      raw = buf.slice(0, n).toString('utf8')
+    } finally {
+      if (fd !== undefined) fs.closeSync(fd)
+    }
+    const token = raw.trim()
+    return TOKEN_RE.test(token) ? token : null
+  } catch (e) {
+    return null
+  }
+}
+
+// 0600 at open time rather than a chmod afterwards: a secret that is briefly
+// world-readable has already leaked.
+function writeToken() {
+  const dir = path.dirname(TOKEN_PATH)
+  fs.mkdirSync(dir, { recursive: true })
+  try {
+    if (fs.lstatSync(TOKEN_PATH).isSymbolicLink()) return null
+  } catch (e) {
+    if (e.code !== 'ENOENT') return null
+  }
+  const token = crypto.randomBytes(TOKEN_BYTES).toString('hex')
+  const temp = path.join(dir, `.dash-token.${process.pid}.${Date.now()}`)
+  const O_NOFOLLOW = typeof fs.constants.O_NOFOLLOW === 'number' ? fs.constants.O_NOFOLLOW : 0
+  const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | O_NOFOLLOW
+  let fd
+  try {
+    fd = fs.openSync(temp, flags, 0o600)
+    fs.writeSync(fd, token + '\n')
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd)
+  }
+  fs.renameSync(temp, TOKEN_PATH)
+  return token
+}
+
+function resolveToken(state) {
+  const existing = readToken()
+  if (existing !== null) return existing
+  let token
+  try {
+    token = writeToken()
+  } catch (e) {
+    token = null
+  }
+  if (token !== null) state.listenNote = `new token at ${TOKEN_PATH} — copy it to the VM as 0600 for VM rows to appear`
+  return token
+}
+
+function startListener(state, port) {
+  state.vmToken = resolveToken(state)
+  if (state.vmToken === null) {
+    state.listenError = `could not read or create ${TOKEN_PATH} — VM rows are off for this run`
+    return null
+  }
+  const server = http.createServer((req, res) => handleVmRequest(state, req, res))
+  server.on('error', (e) => {
+    state.listenError = e.code === 'EADDRINUSE'
+      ? `port ${port} is already in use — VM rows are off for this run`
+      : `VM listener error: ${stripControls(String((e && (e.code || e.message)) || e))}`
+  })
+  server.listen(port, LISTEN_HOST)
+  listenServer = server
+  return server
+}
+
+function rejectVm(res, code) {
+  res.statusCode = code
+  res.end()
+}
+
+function handleVmRequest(state, req, res) {
+  if (req.method !== 'POST') return rejectVm(res, 405)
+  const token = req.headers[VM_TOKEN_HEADER]
+  if (typeof token !== 'string' || token !== state.vmToken) {
+    state.vmAuthRejects += 1
+    return rejectVm(res, 401)
+  }
+  const type = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase()
+  if (type !== 'application/json') return rejectVm(res, 415)
+  if (req.headers.origin !== undefined) return rejectVm(res, 403)
+
+  const chunks = []
+  let size = 0
+  req.on('data', (chunk) => {
+    if (req.destroyed) return
+    size += chunk.length
+    // Cut off while streaming: measuring after the fact means the hostile bytes
+    // are already in this process's heap.
+    if (size > VM_BODY_MAX_BYTES) {
+      rejectVm(res, 413)
+      req.destroy()
+      return
+    }
+    chunks.push(chunk)
+  })
+  req.on('error', () => { /* a client that vanished mid-body is not an event */ })
+  req.on('end', () => {
+    if (req.destroyed) return
+    let payload
+    try {
+      payload = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    } catch (e) {
+      return rejectVm(res, 400)
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return rejectVm(res, 400)
+    applyVmEvent(state, payload, Date.now())
+    res.statusCode = 204
+    res.end()
+  })
+}
+
+// --- VM event application ------------------------------------------------
+//
+// The other half of the listener, and the only writer of state outside tick.
+// It writes state.vmRows and never state.lastRows, which the next tick
+// overwrites. A handler landing just after a paint leaves the frame one event
+// behind until that tick — up to one poll interval of display lag, accepted.
+//
+// Everything a payload contributes goes through validateVmRow: no row is ever
+// built by hand here.
+
+function dropVmEvent(state) {
+  state.vmDropped += 1
+}
+
+function applyVmEvent(state, payload, now) {
+  const ending = payload.event === VM_END_EVENT
+  // Only the five events the emitter sends map to anything. SubagentStop is
+  // deliberately not among them: a subagent finishing does not change whether
+  // the human is needed, and mapping it to busy would clear a waiting row that
+  // is still waiting.
+  const status = ending ? 'idle' : VM_EVENT_STATUS[payload.event]
+  if (status === undefined) return dropVmEvent(state)
+  if (!Number.isInteger(payload.seq) || payload.seq < 0) return dropVmEvent(state)
+
+  // Built even for SessionEnd, which needs only the id: namespacing lives in
+  // one place, and it is the validator's.
+  const row = validateVmRow({
+    sessionId: payload.sessionId,
+    status,
+    name: payload.name,
+    cwd: payload.cwd,
+    kind: payload.kind,
+    tmuxSession: payload.tmuxSession,
+  })
+  if (row === null) return dropVmEvent(state)
+
+  const endedUntil = state.vmEnded.get(row.id)
+  if (endedUntil !== undefined) {
+    if (endedUntil > now) return dropVmEvent(state)
+    state.vmEnded.delete(row.id)
+  }
+
+  const prior = state.vmRows.get(row.id)
+  if (prior !== undefined && payload.seq <= prior.seq) return dropVmEvent(state)
+
+  if (ending) {
+    state.vmRows.delete(row.id)
+    noteVmEnd(state, row.id, now)
+    return
+  }
+  // A loop of POSTs with fresh uuids would otherwise grow the map until
+  // eviction; a known session still updates when the map is full.
+  if (prior === undefined && state.vmRows.size >= VM_ROWS_MAX) return dropVmEvent(state)
+
+  row.seq = payload.seq
+  // Mac-observed: a VM clock even slightly ahead would pin ages at 0s forever.
+  // emittedAt is kept for staleness comparison only, never for display.
+  row.receivedAt = now
+  row.emittedAt = isEpochMs(payload.emittedAt) ? payload.emittedAt : null
+  state.vmRows.set(row.id, row)
+}
+
+function noteVmEnd(state, id, now) {
+  for (const [key, until] of state.vmEnded) {
+    if (until <= now) state.vmEnded.delete(key)
+  }
+  if (state.vmEnded.size < VM_ROWS_MAX) state.vmEnded.set(id, now + VM_END_STICKY_MS)
+}
+
+// A rotated token is otherwise total, silent VM-row loss: the emitter exits 0
+// and says nothing, so the Mac would just show an empty table. One line each,
+// not one joined line — every frame line is truncated to the terminal width,
+// and the token path alone is long enough to eat the counters.
+function vmFooterLines(state) {
+  const lines = []
+  if (state.listenError) lines.push(state.listenError)
+  if (state.listenNote) lines.push(state.listenNote)
+  if (state.vmAuthRejects > 0) {
+    lines.push(`${state.vmAuthRejects} VM request${state.vmAuthRejects === 1 ? '' : 's'} rejected — the VM's token copy may be stale`)
+  }
+  if (state.vmDropped > 0) lines.push(`${state.vmDropped} VM event${state.vmDropped === 1 ? '' : 's'} dropped`)
+  return lines
 }
 
 // --- Highlight -----------------------------------------------------------
@@ -959,6 +1231,20 @@ function restore() {
   } catch (e) {
     // Nothing left to write to; the terminal is whatever the shell inherits.
   }
+  // close() only initiates teardown — an exit handler cannot run async code, so
+  // its callback never fires. unref() is the half that does the work: it stops
+  // an idle-but-listening socket from holding the process open past `q`. An
+  // in-flight POST is dropped rather than drained, which costs nothing because
+  // the emitter never waits for a response.
+  if (listenServer !== null) {
+    try {
+      listenServer.close()
+      listenServer.unref()
+    } catch (e) {
+      // A socket that is already gone needs no teardown.
+    }
+    listenServer = null
+  }
 }
 
 function registerRestore() {
@@ -998,6 +1284,7 @@ function runLive(opts) {
   const state = newState()
   state.interactive = true
   registerRestore()
+  if (opts.listen !== null) startListener(state, opts.listen)
   entered = true
   write(ESC_ALT_ENTER + ESC_CURSOR_HIDE + ESC_TITLE_SET)
   listenForKeys(state)
@@ -1165,7 +1452,7 @@ function main() {
   }
   guardStdout()
   if (!opts.once && !process.stdout.isTTY) {
-    process.stderr.write('dash: stdout is not a terminal; printing one frame as with --once.\n')
+    process.stderr.write(`dash: stdout is not a terminal; printing one frame as with --once${opts.listen === null ? '' : ' (--listen is inactive)'}.\n`)
     opts.once = true
   }
   if (opts.once) {
@@ -1177,4 +1464,7 @@ function main() {
 
 if (require.main === module) main()
 
-module.exports = { validateVmRow }
+// The only testing seam this file has: a VM payload in (validateVmRow), an
+// event applied to a state (applyVmEvent over newState), and the listener
+// itself, which cannot otherwise be reached without a pty.
+module.exports = { validateVmRow, applyVmEvent, newState, startListener }
