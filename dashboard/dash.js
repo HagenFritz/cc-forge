@@ -3,9 +3,12 @@
 //
 // Polls the local session registry via `claude agents --json`, enriches each
 // row from ~/.claude/sessions/<pid>.json, and renders one table row per live
-// session sorted waiting / idle / busy. `--once` prints a single plain frame
-// and exits; `--fixture <path>` feeds rows from a JSON file through the same
-// pipeline so the program can be checked without live sessions.
+// session sorted waiting / idle / busy. Enter focuses the highlighted row's
+// iTerm tab, `r` renames it inline, and a session turning `waiting` rings the
+// bell (`--alert-idle` extends that to idle). `--once` prints a single plain
+// frame and exits, with no keys, no bell, and no help line; `--fixture <path>`
+// feeds rows from a JSON file through the same pipeline so the program can be
+// checked without live sessions.
 //
 // Zero dependencies, Node >= 22, stdlib only. Run by hand:
 //   node dashboard/dash.js
@@ -17,7 +20,7 @@
 
 'use strict'
 
-const { execFileSync } = require('child_process')
+const { execFile, execFileSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 const os = require('os')
@@ -42,7 +45,7 @@ const NAME_MIN = 8
 const DIR_CAP = 30
 const DIR_MIN = 8
 const SUMMARY_MIN = 10
-const COLUMN_GAP = 2
+const COLUMN_GAP = 4
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const PID_RE = /^[0-9]{1,10}$/
@@ -68,8 +71,44 @@ const ESC_CLEAR_EOS = '\x1b[J'
 const ESC_TITLE_SET = `\x1b]0;${TAB_TITLE}\x07`
 const ESC_TITLE_RESET = '\x1b]0;\x07'
 
+const ESC_REVERSE_ON = '\x1b[7m'
+const ESC_REVERSE_OFF = '\x1b[27m'
+
 const KEY_CTRL_C = 0x03
+const KEY_ESC = 0x1b
+const KEY_ENTER = 0x0d
+const KEY_ENTER_LF = 0x0a
+const KEY_J = 0x6a
+const KEY_K = 0x6b
 const KEY_Q = 0x71
+const KEY_R = 0x72
+const KEY_CTRL_U = 0x15
+const KEY_BACKSPACE = 0x7f
+const KEY_BACKSPACE_BS = 0x08
+const PRINTABLE_MIN = 0x20
+const PRINTABLE_MAX = 0x7e
+const RENAME_MAX_CHARS = 64
+const SEQ_UP = '\x1b[A'
+const SEQ_DOWN = '\x1b[B'
+const ESC_CSI_PREFIX = '\x1b['
+const ESC_SS3_PREFIX = '\x1bO'
+const ESC_SEQ_TIMEOUT_MS = 50
+// Runaway guard only — a CSI ends at its final byte, an SS3 at its third.
+const ESC_SEQ_MAX_BYTES = 32
+const CSI_FINAL_MIN = 0x40
+const CSI_FINAL_MAX = 0x7e
+const SS3_SEQ_BYTES = 3
+const BELL = '\x07'
+const FOCUS_TIMEOUT_MS = 3000
+const ITERM_BUNDLE_ID = 'com.googlecode.iterm2'
+const SCRIPT_OK_PREFIX = 'ok:'
+const SCRIPT_NO_MATCH = 'no-match'
+const TTY_PATH_RE = /^\/dev\/tty[a-z0-9]+$/
+
+const HELP_NORMAL = 'j/k: select  enter: focus  r: rename tab  q: quit'
+const HELP_RENAME = 'enter: confirm  esc: cancel  ^U: clear'
+const RENAME_PROMPT = 'Tab name: '
+
 const EXIT_SIGNAL_BASE = 128
 const SIGNAL_NUMBERS = { SIGINT: 2, SIGTERM: 15, SIGHUP: 1 }
 
@@ -88,11 +127,13 @@ const ERROR_BODIES = {
 // port) and they all extend here.
 
 function parseArgs(argv) {
-  const opts = { once: false, width: null, fixture: null }
+  const opts = { once: false, width: null, fixture: null, alertIdle: false }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--once') {
       opts.once = true
+    } else if (arg === '--alert-idle') {
+      opts.alertIdle = true
     } else if (arg === '--width') {
       const raw = argv[++i]
       const n = Number.parseInt(raw, 10)
@@ -159,6 +200,10 @@ function readFixture(fixturePath) {
 // Lenient in one direction: a row without a UUID-shaped sessionId is dropped
 // because there is nothing to key state on, but an unrecognized status is
 // preserved verbatim — an unknown state is exactly what the user needs to see.
+//
+// name, cwd, and status are attacker-influenced (a cloned repo names the cwd),
+// so control characters are stripped here rather than at render time: every
+// path to the screen goes through a validated row.
 
 function validateRows(rawRows) {
   const rows = []
@@ -166,13 +211,14 @@ function validateRows(rawRows) {
     if (!raw || typeof raw !== 'object') continue
     const id = typeof raw.sessionId === 'string' ? raw.sessionId : ''
     if (!UUID_RE.test(id)) continue
+    const status = typeof raw.status === 'string' ? stripControls(raw.status) : ''
     rows.push({
       id,
       pid: Number.isInteger(raw.pid) && raw.pid > 0 ? raw.pid : null,
-      name: typeof raw.name === 'string' ? raw.name.trim() : '',
-      cwd: typeof raw.cwd === 'string' ? raw.cwd : '',
+      name: typeof raw.name === 'string' ? stripControls(raw.name) : '',
+      cwd: typeof raw.cwd === 'string' ? stripControls(raw.cwd) : '',
       kind: typeof raw.kind === 'string' ? raw.kind : '',
-      status: typeof raw.status === 'string' && raw.status.trim() ? raw.status.trim() : 'unknown',
+      status: status || 'unknown',
       startedAt: isEpochMs(raw.startedAt) ? raw.startedAt : null,
       statusUpdatedAt: null,
       summary: '',
@@ -229,20 +275,26 @@ function readStatusUpdatedAt(pid) {
 // stamped the first time a session is seen in a status and reset whenever the
 // status changes. Ids absent from a poll are dropped so a returning session
 // does not resume a stale age.
+//
+// Status changes are also collected as transitions before the prior entry is
+// overwritten, which is what makes the bell edge-triggered rather than a
+// re-alert on every poll. A first sighting counts as a transition from null.
 
 function observeRows(observed, rows, now) {
   const seen = new Set()
+  const transitions = []
   for (const row of rows) {
     seen.add(row.id)
     const prior = observed.get(row.id)
     if (!prior || prior.status !== row.status) {
+      transitions.push({ id: row.id, from: prior ? prior.status : null, to: row.status })
       observed.set(row.id, { status: row.status, since: now })
     }
   }
   for (const id of observed.keys()) {
     if (!seen.has(id)) observed.delete(id)
   }
-  return observed
+  return transitions
 }
 
 function ageMsFor(row, observed, now) {
@@ -334,15 +386,18 @@ function assistantTextOf(line) {
   return ''
 }
 
-function sanitize(text) {
+function stripControls(text) {
   if (!text) return ''
-  const flat = text
+  return text
     .replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, '')
     .replace(/\x1b[@-Z\\-_]/g, '')
     .replace(/[\x00-\x1f\x7f]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  return truncate(flat, SUMMARY_MAX_CHARS)
+}
+
+function sanitize(text) {
+  return truncate(stripControls(text), SUMMARY_MAX_CHARS)
 }
 
 // --- Sort and naming -----------------------------------------------------
@@ -458,7 +513,7 @@ function buildTable(rows, width) {
     headers.push('SUMMARY')
   }
 
-  const lines = [renderLine(headers, widths, width)]
+  const lines = [renderLine(headers, widths, width), '']
   for (const row of rows) {
     const cells = [row.status, row.ageCell, row.nameCell]
     if (cols.showDir) cells.push(row.dirCell)
@@ -492,7 +547,19 @@ function stamp(now) {
 }
 
 function buildFrame(state, width, now) {
-  return frameLines(state, width, now).map((line) => truncate(line, width))
+  const lines = frameLines(state, width, now).map((line) => truncate(line, width))
+  // Applied after truncation so the escape bytes are never counted as columns.
+  const row = highlightLineIndex(state)
+  if (row !== -1 && lines[row] !== undefined) lines[row] = ESC_REVERSE_ON + lines[row] + ESC_REVERSE_OFF
+  return lines
+}
+
+// The table occupies the top of the frame with a header line and a blank line
+// under it, so a row's frame line is its highlight index plus two.
+function highlightLineIndex(state) {
+  if (state.poll === 'never-good' || state.lastRows.length === 0) return -1
+  const index = state.highlight.index
+  return index >= 0 && index < state.lastRows.length ? index + 2 : -1
 }
 
 function frameLines(state, width, now) {
@@ -511,12 +578,19 @@ function frameLines(state, width, now) {
   }
   lines.push('')
 
+  if (state.interactive) {
+    lines.push(state.mode === 'rename' ? HELP_RENAME : HELP_NORMAL)
+    lines.push('')
+  }
+
   if (state.poll === 'stale') {
     const age = formatAge(Math.max(0, now - state.lastGoodAt))
     lines.push(`polled ${stamp(now)}  ·  ${ERROR_BODIES[state.error] || state.error} (last good poll ${age} ago)`)
   } else {
     lines.push(`polled ${stamp(now)}  ·  ${state.lastRows.length} session${state.lastRows.length === 1 ? '' : 's'}`)
   }
+  if (state.transient) lines.push(state.transient)
+  if (state.mode === 'rename') lines.push(RENAME_PROMPT + state.renameBuffer)
   return lines
 }
 
@@ -533,20 +607,231 @@ function tick(state, opts) {
   if (!result.ok) {
     state.error = result.error
     state.poll = state.poll === 'never-good' ? 'never-good' : 'stale'
-    return state
+    return []
   }
 
   const rows = enrichRows(validateRows(result.rows))
-  observeRows(state.observed, rows, now)
+  const transitions = observeRows(state.observed, rows, now)
   state.lastRows = sortRows(decorateRows(rows, state.observed, now))
   state.lastGoodAt = now
   state.error = null
   state.poll = 'good'
-  return state
+  return transitions
 }
 
 function newState() {
-  return { poll: 'never-good', error: null, lastRows: [], lastGoodAt: null, observed: new Map() }
+  return {
+    poll: 'never-good',
+    error: null,
+    lastRows: [],
+    lastGoodAt: null,
+    observed: new Map(),
+    mode: 'normal',
+    interactive: false,
+    highlight: { id: null, index: -1 },
+    renameBuffer: '',
+    renameTarget: null,
+    transient: null,
+  }
+}
+
+// --- Highlight -----------------------------------------------------------
+//
+// The selection is keyed on session id, not row position: rows re-sort as
+// statuses change, so the index is derived from the id after every tick. A
+// vanished session hands the selection to whatever row now sits nearest its
+// old position rather than dropping it.
+
+function reconcileHighlight(state) {
+  const rows = state.lastRows
+  if (rows.length === 0) {
+    state.highlight = { id: null, index: -1 }
+    return
+  }
+  const found = rows.findIndex((row) => row.id === state.highlight.id)
+  if (found !== -1) {
+    state.highlight.index = found
+    return
+  }
+  if (state.highlight.index < 0) return
+  const index = Math.min(state.highlight.index, rows.length - 1)
+  state.highlight = { id: rows[index].id, index }
+}
+
+function moveHighlight(state, delta) {
+  const rows = state.lastRows
+  if (rows.length === 0) {
+    state.highlight = { id: null, index: -1 }
+    return
+  }
+  const from = state.highlight.index < 0 ? (delta > 0 ? -1 : rows.length) : state.highlight.index
+  const index = Math.max(0, Math.min(rows.length - 1, from + delta))
+  state.highlight = { id: rows[index].id, index }
+}
+
+// --- Tab focus -----------------------------------------------------------
+//
+// Enter hands the highlighted row to iTerm: pid -> tty via `ps`, tty -> tab via
+// AppleScript. Both calls are async with a timeout because a hung iTerm or a
+// modal dialog would otherwise freeze the paint loop, the poll timer, and every
+// keystroke for as long as it takes. Nothing here can fail loudly: a dead pid,
+// a missing iTerm, or a script error becomes one transient footer line.
+//
+// `ps -o tty=` prints the bare device name (`ttys004 `, padded and newline
+// terminated) or `??` for a process with no controlling terminal, while
+// AppleScript's `tty of s` returns `/dev/ttys004`. The normalized form is
+// checked against a strict pattern before it reaches osascript, so no text
+// derived from process output is ever interpolated unvalidated.
+
+function normalizeTty(raw) {
+  const name = String(raw || '').trim()
+  if (!name || name === '??') return null
+  const full = name.startsWith('/dev/') ? name : `/dev/${name}`
+  return TTY_PATH_RE.test(full) ? full : null
+}
+
+// `result` is the AppleScript expression returned once a session matches. It is
+// prefixed with a marker so a read-back tab name can never be mistaken for the
+// no-match sentinel.
+function sessionScript(tty, body, result = '"ok"') {
+  return [
+    `tell application id "${ITERM_BUNDLE_ID}"`,
+    'repeat with w in windows',
+    'repeat with t in tabs of w',
+    'repeat with s in sessions of t',
+    `if tty of s is "${tty}" then`,
+    ...body,
+    `return "${SCRIPT_OK_PREFIX}" & (${result})`,
+    'end if',
+    'end repeat',
+    'end repeat',
+    'end repeat',
+    `return "${SCRIPT_NO_MATCH}"`,
+    'end tell',
+  ].join('\n')
+}
+
+function focusScript(tty) {
+  return sessionScript(tty, ['select s', 'select t', 'select w', 'activate'])
+}
+
+// The tty reaches the script through a closed pattern, but a tab name is
+// arbitrary user text, so it is escaped instead: backslashes first, then
+// quotes, or the escapes added for the quotes would themselves be doubled.
+function escapeAppleScriptString(text) {
+  return String(text).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+// The read-back is for reporting only. Never feed it into a later `set name`:
+// a profile's title format decorates the name it is given, so a round trip
+// compounds the decoration on every rename.
+function renameScript(tty, name) {
+  return sessionScript(tty, [`set name of s to "${escapeAppleScriptString(name)}"`], 'name of s')
+}
+
+function setTransient(state, message) {
+  state.transient = message
+  paint(state)
+}
+
+// Both focus and rename start the same way: a row with a live pid whose
+// controlling terminal iTerm can be searched for.
+function withRowTty(state, row, next) {
+  if (!row) return
+  if (row.pid === null || !PID_RE.test(String(row.pid))) {
+    setTransient(state, 'session exited — no pid to focus.')
+    return
+  }
+  execFile('ps', ['-o', 'tty=', '-p', String(row.pid)], { timeout: FOCUS_TIMEOUT_MS, encoding: 'utf8' }, (err, out) => {
+    const tty = err ? null : normalizeTty(out)
+    if (tty === null) {
+      setTransient(state, 'session exited — no terminal for that pid.')
+      return
+    }
+    next(tty)
+  })
+}
+
+// One osascript call path for focus and rename. `onOk` receives whatever the
+// script returned after the success marker — empty for focus, the tab's
+// read-back name for rename.
+function runSessionScript(state, script, verb, tty, onOk) {
+  execFile('osascript', ['-e', script], { timeout: FOCUS_TIMEOUT_MS, encoding: 'utf8' }, (scriptErr, scriptOut) => {
+    if (scriptErr) {
+      setTransient(state, `could not ${verb} the tab — is iTerm running?`)
+      return
+    }
+    const out = String(scriptOut).trim()
+    if (!out.startsWith(SCRIPT_OK_PREFIX)) {
+      setTransient(state, `no iTerm tab is attached to ${tty}.`)
+      return
+    }
+    onOk(out.slice(SCRIPT_OK_PREFIX.length))
+  })
+}
+
+function focusHighlighted(state) {
+  withRowTty(state, state.lastRows[state.highlight.index], (tty) => {
+    runSessionScript(state, focusScript(tty), 'focus', tty, () => setTransient(state, null))
+  })
+}
+
+// --- Rename mode ---------------------------------------------------------
+//
+// An overlay, not a modal: the poll timer keeps running and repaints underneath,
+// so `state.renameBuffer` — not the screen — is what the typed name lives in and
+// a repaint mid-typing costs nothing. The cursor comes back for the duration so
+// the prompt has something to type against. The rename targets the row that was
+// highlighted when `r` was pressed, even if the sort has moved it since.
+
+function enterRename(state) {
+  const row = state.lastRows[state.highlight.index]
+  if (!row) return
+  state.mode = 'rename'
+  state.renameBuffer = ''
+  state.renameTarget = row.id
+  write(ESC_CURSOR_SHOW)
+  paint(state)
+}
+
+function exitRename(state) {
+  state.mode = 'normal'
+  state.renameBuffer = ''
+  state.renameTarget = null
+  write(ESC_CURSOR_HIDE)
+  paint(state)
+}
+
+function commitRename(state) {
+  const name = state.renameBuffer.trim()
+  const row = state.lastRows.find((r) => r.id === state.renameTarget)
+  exitRename(state)
+  if (!name || !row) return
+  withRowTty(state, row, (tty) => {
+    runSessionScript(state, renameScript(tty, name), 'rename', tty, (actual) => {
+      // A profile title format decorates the applied name, which otherwise
+      // reads as the rename having done nothing at all.
+      setTransient(state, actual === name ? null : `renamed — this profile's title format shows it as "${stripControls(actual)}"`)
+    })
+  })
+}
+
+function handleRenameKey(state, key) {
+  const code = key.length === 1 ? key.charCodeAt(0) : -1
+  if (code === KEY_ESC) return exitRename(state)
+  if (code === KEY_ENTER || code === KEY_ENTER_LF) return commitRename(state)
+  if (code === KEY_CTRL_U) {
+    state.renameBuffer = ''
+    return paint(state)
+  }
+  if (code === KEY_BACKSPACE || code === KEY_BACKSPACE_BS) {
+    state.renameBuffer = state.renameBuffer.slice(0, -1)
+    return paint(state)
+  }
+  if (code >= PRINTABLE_MIN && code <= PRINTABLE_MAX && state.renameBuffer.length < RENAME_MAX_CHARS) {
+    state.renameBuffer += key
+    paint(state)
+  }
 }
 
 // --- Terminal writes -----------------------------------------------------
@@ -643,37 +928,67 @@ function runOnce(opts) {
 
 function runLive(opts) {
   const state = newState()
+  state.interactive = true
   registerRestore()
   entered = true
   write(ESC_ALT_ENTER + ESC_CURSOR_HIDE + ESC_TITLE_SET)
-  listenForQuit()
+  listenForKeys(state)
   process.on('SIGWINCH', () => paint(state))
 
   const loop = () => {
+    let transitions = []
     try {
-      tick(state, opts)
+      transitions = tick(state, opts)
     } catch (e) {
       // tick is defensive, so this is drift, not an expected path: surface it
       // in the footer like a failed poll rather than killing the dashboard.
       state.error = String((e && e.message) || e)
       state.poll = state.poll === 'never-good' ? 'never-good' : 'stale'
     }
+    reconcileHighlight(state)
+    // One bell per tick, not one per transition: three sessions all going
+    // waiting at once is one event to the person hearing it.
+    if (shouldBell(transitions, opts)) write(BELL)
+    state.transient = null
     paint(state)
     setTimeout(loop, POLL_INTERVAL_MS)
   }
   loop()
 }
 
+function shouldBell(transitions, opts) {
+  return transitions.some((t) => t.to === 'waiting' || (opts.alertIdle && t.to === 'idle'))
+}
+
+// A pending execFile callback can land after restore() has already left the
+// alt screen; its escapes would then paint over the user's shell.
 function paint(state) {
+  if (restored) return
   const width = process.stdout.columns || DEFAULT_WIDTH
   const lines = buildFrame(state, width, Date.now())
   write(ESC_CURSOR_HOME + lines.join(ESC_CLEAR_EOL + '\n') + ESC_CLEAR_EOL + ESC_CLEAR_EOS)
 }
 
-// A raw `data` listener rather than readline.emitKeypressEvents: two bytes are
-// the entire key vocabulary, and readline would also install its own SIGINT
-// and resize handling on top of the ones registered here.
-function listenForQuit() {
+// --- Input ---------------------------------------------------------------
+//
+// A raw `data` listener rather than readline.emitKeypressEvents, which would
+// install its own SIGINT and resize handling on top of the ones registered
+// here. Arrow keys arrive as three bytes that Node may split across events, so
+// an ESC starts a buffer armed with a short timer: a completed sequence
+// dispatches and disarms, a timer expiry dispatches the bare Escape that Unit 3
+// uses to cancel a rename, and a byte that cannot continue a sequence dispatches
+// the Escape immediately and is then handled as its own key. The timer is
+// unref'd so a pending Escape never holds the process open past `q`.
+//
+// Both CSI (`\x1b[`) and SS3 (`\x1bO`, which some iTerm keyboard modes use for
+// Home/End/F1-F4) are recognized, and a sequence ends at its terminator rather
+// than a byte count — a fixed cap left the tail of anything longer than three
+// bytes to dispatch as literal keystrokes.
+
+let escBuf = ''
+let escTimer = null
+
+function listenForKeys(state) {
   if (!process.stdin.isTTY) return
   try {
     process.stdin.setRawMode(true)
@@ -682,14 +997,92 @@ function listenForQuit() {
   }
   rawEnabled = true
   process.stdin.resume()
-  process.stdin.on('data', (buf) => {
-    for (const byte of buf) {
-      if (byte === KEY_CTRL_C || byte === KEY_Q) {
-        restore()
-        process.exit(0)
-      }
+  process.stdin.on('data', (buf) => handleInput(state, buf))
+}
+
+function handleInput(state, buf) {
+  for (const byte of buf) {
+    // A second byte that introduces neither CSI nor SS3 means the Escape already
+    // stood alone, so it dispatches now and the byte falls through to be read as
+    // its own key — including another Escape, which re-arms the buffer.
+    if (escBuf.length === 1 && !isEscPrefix(escBuf + String.fromCharCode(byte))) {
+      disarmEscTimer()
+      escBuf = ''
+      handleKey(state, String.fromCharCode(KEY_ESC))
     }
-  })
+    if (escBuf) {
+      escBuf += String.fromCharCode(byte)
+      if (isSeqComplete(escBuf, byte)) {
+        const key = escBuf
+        disarmEscTimer()
+        escBuf = ''
+        if (key === SEQ_UP || key === SEQ_DOWN) handleKey(state, key)
+      }
+      continue
+    }
+    if (byte === KEY_ESC) {
+      escBuf = String.fromCharCode(byte)
+      armEscTimer(state)
+      continue
+    }
+    handleKey(state, String.fromCharCode(byte))
+  }
+}
+
+function isEscPrefix(text) {
+  return ESC_CSI_PREFIX.startsWith(text) || ESC_SS3_PREFIX.startsWith(text)
+}
+
+// A CSI runs to its final byte (0x40-0x7e); SS3 is always exactly three bytes.
+// The byte cap only stops a malformed stream from buffering forever.
+function isSeqComplete(seq, byte) {
+  if (seq.length >= ESC_SEQ_MAX_BYTES) return true
+  if (seq.startsWith(ESC_SS3_PREFIX)) return seq.length >= SS3_SEQ_BYTES
+  return seq.length > ESC_CSI_PREFIX.length && byte >= CSI_FINAL_MIN && byte <= CSI_FINAL_MAX
+}
+
+function armEscTimer(state) {
+  disarmEscTimer()
+  escTimer = setTimeout(() => {
+    escTimer = null
+    escBuf = ''
+    handleKey(state, String.fromCharCode(KEY_ESC))
+  }, ESC_SEQ_TIMEOUT_MS)
+  escTimer.unref()
+}
+
+function disarmEscTimer() {
+  if (escTimer === null) return
+  clearTimeout(escTimer)
+  escTimer = null
+}
+
+function handleKey(state, key) {
+  const code = key.length === 1 ? key.charCodeAt(0) : -1
+  if (code === KEY_CTRL_C) {
+    restore()
+    process.exit(0)
+  }
+  if (state.mode === 'rename') return handleRenameKey(state, key)
+  if (code === KEY_Q) {
+    restore()
+    process.exit(0)
+  }
+  if (code === KEY_ENTER || code === KEY_ENTER_LF) {
+    if (state.highlight.index >= 0) focusHighlighted(state)
+    return
+  }
+  if (code === KEY_R) {
+    if (state.highlight.index >= 0) enterRename(state)
+    return
+  }
+  if (code === KEY_J || key === SEQ_DOWN) {
+    moveHighlight(state, 1)
+    paint(state)
+  } else if (code === KEY_K || key === SEQ_UP) {
+    moveHighlight(state, -1)
+    paint(state)
+  }
 }
 
 // --- Entry ---------------------------------------------------------------

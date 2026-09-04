@@ -1,6 +1,6 @@
 {
   "name": "forge",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Personal Claude Code skills, agents, and hooks for structured development workflows, code review, and research automation.",
   "author": {
     "name": "Hagen Fritz"
