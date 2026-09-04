@@ -34,7 +34,7 @@ The path is hardcoded, and the guard turns a moved checkout into a clear message
 ## Conventions
 
 - One file, sectioned by `// ── Section ──` comments.
-- No external dependencies; `child_process`, `fs`, `os`, `path` only.
+- No external dependencies; `child_process`, `crypto`, `fs`, `http`, `os`, `path` only.
 
 Flags:
 
@@ -42,6 +42,27 @@ Flags:
 - `--width <n>` fixes column width (used by `--once` for reproducible frames).
 - `--fixture <path>` feeds synthetic rows for deterministic output.
 - `--alert-idle` also bells on idle transitions; waiting-only by default.
+- `--listen <port>` accepts VM session events on `127.0.0.1:<port>` (1024–65535). Live mode only — it cannot be combined with `--once`.
+
+## VM listener (`--listen`)
+
+Bound to loopback only; the VM reaches it over an ssh reverse forward. Every request must be a `POST` carrying `x-dash-token` and `content-type: application/json`, with no `Origin` header and a body under 4 KB (cut off mid-stream, socket destroyed). Anything else is rejected with 405 / 401 / 415 / 403 / 413 and touches no state.
+
+The shared secret lives at `~/.claude/.dash-token`, 64 hex characters, created `0600` at open time and read symlink-refusingly. It is generated on the first `--listen` run and the footer says so once — copy it to the VM and `chmod 600` it there (`scp` preserves neither mode nor a safe umask). Rotation is delete, restart, re-copy.
+
+The token defends exactly two boundaries: a remote-triggered local request from a context that cannot read the filesystem (a browser tab, a postinstall script), and a non-root process on the devbox. A same-uid process on the Mac reads the token file and is not defended against.
+
+Payload contract — anything else is ignored, `host` included (the host is pinned to `ro-devbox`):
+
+| field | required | meaning |
+|---|---|---|
+| `sessionId` | yes | the VM session's UUID; namespaced to `ro-devbox:<id>` at ingest |
+| `event` | yes | `SessionStart` / `UserPromptSubmit` → busy, `Notification` → waiting, `Stop` → idle, `SessionEnd` → row removed for 5 s and then re-creatable. `SubagentStop` and anything else is ignored |
+| `seq` | yes | monotonic per session; an event at or below the stored value is dropped |
+| `emittedAt` | yes | VM epoch ms, used for staleness comparison only — never for display, which uses the Mac receipt time |
+| `name`, `cwd`, `kind`, `tmuxSession` | no | passed through the same `validateRows` boundary as local rows |
+
+At most 256 VM rows are held; new session ids are refused once full. Footer counters — rejected VM requests (a stale token copy on the VM) and dropped VM events (out of order, unknown event, malformed, or the row cap) — each get their own footer line once non-zero, as do a listener that could not bind and the one-time new-token note.
 
 Keys (live mode only):
 
@@ -57,7 +78,8 @@ The bell rings once per tick when a session newly enters `waiting`.
 - Wide characters (emoji, CJK) misalign columns — widths are code points, not display cells. Declared scope boundary.
 - A status string over 16 characters is truncated (`STATE_CAP`).
 - Fixture rows always show `0s` age (no `<pid>.json` exists for synthetic pids); by design for deterministic output.
-- The module exports only `validateVmRow`, the VM-payload ingest point; anything else, such as in-process timing, needs an instrumented copy.
+- The module exports only `validateVmRow`, `applyVmEvent`, `newState`, and `startListener` — the VM ingest seam; anything else, such as in-process timing or a rendered frame, needs an instrumented copy or a live run.
+- A VM session that starts while the dashboard is down is invisible until its next event; there is no heartbeat and the dashboard never polls the VM.
 - Transcript reads have no wall-clock guard (measured at ~1 ms cold; not addressed).
 - `DASH_PROJECTS_DIR` env override exists for testing but is not a documented user-facing feature.
 - A tab renamed with `r` is overwritten by Claude Code's own OSC 0 title on that session's next turn — the rename is not sticky. Mitigation is the iTerm profile toggle "Terminal may set tab/window title"; there is no scriptable lock.

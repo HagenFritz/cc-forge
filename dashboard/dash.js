@@ -8,7 +8,8 @@
 // bell (`--alert-idle` extends that to idle). `--once` prints a single plain
 // frame and exits, with no keys, no bell, and no help line; `--fixture <path>`
 // feeds rows from a JSON file through the same pipeline so the program can be
-// checked without live sessions.
+// checked without live sessions. `--listen <port>` adds an authenticated
+// loopback endpoint that turns devbox hook events into rows in the same table.
 //
 // Zero dependencies, Node >= 22, stdlib only. Run by hand:
 //   node dashboard/dash.js
@@ -64,6 +65,17 @@ const TOKEN_RE = /^[0-9a-f]{64}$/
 const TOKEN_MAX_BYTES = 128
 const VM_TOKEN_HEADER = 'x-dash-token'
 const VM_BODY_MAX_BYTES = 4096
+const VM_EVENT_STATUS = {
+  SessionStart: 'busy',
+  UserPromptSubmit: 'busy',
+  Notification: 'waiting',
+  Stop: 'idle',
+}
+const VM_END_EVENT = 'SessionEnd'
+// Short on purpose: a longer window turns a forged SessionEnd into a lockout
+// of the real session's re-registration.
+const VM_END_STICKY_MS = 5000
+const VM_ROWS_MAX = 256
 
 const STATUS_RANK = { waiting: 0, idle: 1, busy: 2 }
 const UNKNOWN_STATUS_RANK = 3
@@ -640,6 +652,9 @@ function frameLines(state, width, now) {
     lines.push(ERROR_BODIES[state.error] || `registry error: ${state.error}`)
     lines.push('')
     lines.push(`polled ${stamp(now)}  ·  no successful poll yet`)
+    // Also here: a listener that never bound is exactly the case where there
+    // are no VM rows to push the frame out of this branch.
+    lines.push(...vmFooterLines(state))
     return lines
   }
 
@@ -663,8 +678,7 @@ function frameLines(state, width, now) {
   } else {
     lines.push(`polled ${stamp(now)}  ·  ${state.lastRows.length} session${state.lastRows.length === 1 ? '' : 's'}`)
   }
-  const vmNote = vmFooterNote(state)
-  if (vmNote) lines.push(vmNote)
+  lines.push(...vmFooterLines(state))
   if (state.transient) lines.push(state.transient)
   if (state.mode === 'rename') lines.push(RENAME_PROMPT + state.renameBuffer)
   return lines
@@ -716,9 +730,10 @@ function newState() {
     lastGoodAt: null,
     observed: new Map(),
     vmRows: new Map(),
+    vmEnded: new Map(),
     vmToken: null,
-    vmAccepted: 0,
     vmAuthRejects: 0,
+    vmDropped: 0,
     listenError: null,
     listenNote: null,
     mode: 'normal',
@@ -875,17 +890,88 @@ function handleVmRequest(state, req, res) {
   })
 }
 
-// Unit 3b replaces this body with the state machine; for now an accepted
-// request only proves it reached here.
-function applyVmEvent(state, payload, now) {
-  state.vmAccepted += 1
+// --- VM event application ------------------------------------------------
+//
+// The other half of the listener, and the only writer of state outside tick.
+// It writes state.vmRows and never state.lastRows, which the next tick
+// overwrites. A handler landing just after a paint leaves the frame one event
+// behind until that tick — up to one poll interval of display lag, accepted.
+//
+// Everything a payload contributes goes through validateVmRow: no row is ever
+// built by hand here.
+
+function dropVmEvent(state) {
+  state.vmDropped += 1
 }
 
-function vmFooterNote(state) {
-  const parts = []
-  if (state.listenError) parts.push(state.listenError)
-  if (state.listenNote) parts.push(state.listenNote)
-  return parts.join('  ·  ')
+function applyVmEvent(state, payload, now) {
+  const ending = payload.event === VM_END_EVENT
+  // Only the five events the emitter sends map to anything. SubagentStop is
+  // deliberately not among them: a subagent finishing does not change whether
+  // the human is needed, and mapping it to busy would clear a waiting row that
+  // is still waiting.
+  const status = ending ? 'idle' : VM_EVENT_STATUS[payload.event]
+  if (status === undefined) return dropVmEvent(state)
+  if (!Number.isInteger(payload.seq) || payload.seq < 0) return dropVmEvent(state)
+
+  // Built even for SessionEnd, which needs only the id: namespacing lives in
+  // one place, and it is the validator's.
+  const row = validateVmRow({
+    sessionId: payload.sessionId,
+    status,
+    name: payload.name,
+    cwd: payload.cwd,
+    kind: payload.kind,
+    tmuxSession: payload.tmuxSession,
+  })
+  if (row === null) return dropVmEvent(state)
+
+  const endedUntil = state.vmEnded.get(row.id)
+  if (endedUntil !== undefined) {
+    if (endedUntil > now) return dropVmEvent(state)
+    state.vmEnded.delete(row.id)
+  }
+
+  const prior = state.vmRows.get(row.id)
+  if (prior !== undefined && payload.seq <= prior.seq) return dropVmEvent(state)
+
+  if (ending) {
+    state.vmRows.delete(row.id)
+    noteVmEnd(state, row.id, now)
+    return
+  }
+  // A loop of POSTs with fresh uuids would otherwise grow the map until
+  // eviction; a known session still updates when the map is full.
+  if (prior === undefined && state.vmRows.size >= VM_ROWS_MAX) return dropVmEvent(state)
+
+  row.seq = payload.seq
+  // Mac-observed: a VM clock even slightly ahead would pin ages at 0s forever.
+  // emittedAt is kept for staleness comparison only, never for display.
+  row.receivedAt = now
+  row.emittedAt = isEpochMs(payload.emittedAt) ? payload.emittedAt : null
+  state.vmRows.set(row.id, row)
+}
+
+function noteVmEnd(state, id, now) {
+  for (const [key, until] of state.vmEnded) {
+    if (until <= now) state.vmEnded.delete(key)
+  }
+  if (state.vmEnded.size < VM_ROWS_MAX) state.vmEnded.set(id, now + VM_END_STICKY_MS)
+}
+
+// A rotated token is otherwise total, silent VM-row loss: the emitter exits 0
+// and says nothing, so the Mac would just show an empty table. One line each,
+// not one joined line — every frame line is truncated to the terminal width,
+// and the token path alone is long enough to eat the counters.
+function vmFooterLines(state) {
+  const lines = []
+  if (state.listenError) lines.push(state.listenError)
+  if (state.listenNote) lines.push(state.listenNote)
+  if (state.vmAuthRejects > 0) {
+    lines.push(`${state.vmAuthRejects} VM request${state.vmAuthRejects === 1 ? '' : 's'} rejected — the VM's token copy may be stale`)
+  }
+  if (state.vmDropped > 0) lines.push(`${state.vmDropped} VM event${state.vmDropped === 1 ? '' : 's'} dropped`)
+  return lines
 }
 
 // --- Highlight -----------------------------------------------------------
@@ -1144,6 +1230,20 @@ function restore() {
     fs.writeSync(1, ESC_CURSOR_SHOW + (entered ? ESC_ALT_LEAVE : '') + ESC_TITLE_RESET)
   } catch (e) {
     // Nothing left to write to; the terminal is whatever the shell inherits.
+  }
+  // close() only initiates teardown — an exit handler cannot run async code, so
+  // its callback never fires. unref() is the half that does the work: it stops
+  // an idle-but-listening socket from holding the process open past `q`. An
+  // in-flight POST is dropped rather than drained, which costs nothing because
+  // the emitter never waits for a response.
+  if (listenServer !== null) {
+    try {
+      listenServer.close()
+      listenServer.unref()
+    } catch (e) {
+      // A socket that is already gone needs no teardown.
+    }
+    listenServer = null
   }
 }
 
