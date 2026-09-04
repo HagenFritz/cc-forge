@@ -91,11 +91,18 @@ const RENAME_MAX_CHARS = 64
 const SEQ_UP = '\x1b[A'
 const SEQ_DOWN = '\x1b[B'
 const ESC_CSI_PREFIX = '\x1b['
+const ESC_SS3_PREFIX = '\x1bO'
 const ESC_SEQ_TIMEOUT_MS = 50
-const ESC_SEQ_MAX_BYTES = 3
+// Runaway guard only — a CSI ends at its final byte, an SS3 at its third.
+const ESC_SEQ_MAX_BYTES = 32
+const CSI_FINAL_MIN = 0x40
+const CSI_FINAL_MAX = 0x7e
+const SS3_SEQ_BYTES = 3
 const BELL = '\x07'
 const FOCUS_TIMEOUT_MS = 3000
 const ITERM_BUNDLE_ID = 'com.googlecode.iterm2'
+const SCRIPT_OK_PREFIX = 'ok:'
+const SCRIPT_NO_MATCH = 'no-match'
 const TTY_PATH_RE = /^\/dev\/tty[a-z0-9]+$/
 
 const HELP_NORMAL = 'j/k: select  enter: focus  r: rename tab  q: quit'
@@ -193,6 +200,10 @@ function readFixture(fixturePath) {
 // Lenient in one direction: a row without a UUID-shaped sessionId is dropped
 // because there is nothing to key state on, but an unrecognized status is
 // preserved verbatim — an unknown state is exactly what the user needs to see.
+//
+// name, cwd, and status are attacker-influenced (a cloned repo names the cwd),
+// so control characters are stripped here rather than at render time: every
+// path to the screen goes through a validated row.
 
 function validateRows(rawRows) {
   const rows = []
@@ -200,13 +211,14 @@ function validateRows(rawRows) {
     if (!raw || typeof raw !== 'object') continue
     const id = typeof raw.sessionId === 'string' ? raw.sessionId : ''
     if (!UUID_RE.test(id)) continue
+    const status = typeof raw.status === 'string' ? stripControls(raw.status) : ''
     rows.push({
       id,
       pid: Number.isInteger(raw.pid) && raw.pid > 0 ? raw.pid : null,
-      name: typeof raw.name === 'string' ? raw.name.trim() : '',
-      cwd: typeof raw.cwd === 'string' ? raw.cwd : '',
+      name: typeof raw.name === 'string' ? stripControls(raw.name) : '',
+      cwd: typeof raw.cwd === 'string' ? stripControls(raw.cwd) : '',
       kind: typeof raw.kind === 'string' ? raw.kind : '',
-      status: typeof raw.status === 'string' && raw.status.trim() ? raw.status.trim() : 'unknown',
+      status: status || 'unknown',
       startedAt: isEpochMs(raw.startedAt) ? raw.startedAt : null,
       statusUpdatedAt: null,
       summary: '',
@@ -374,15 +386,18 @@ function assistantTextOf(line) {
   return ''
 }
 
-function sanitize(text) {
+function stripControls(text) {
   if (!text) return ''
-  const flat = text
+  return text
     .replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, '')
     .replace(/\x1b[@-Z\\-_]/g, '')
     .replace(/[\x00-\x1f\x7f]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  return truncate(flat, SUMMARY_MAX_CHARS)
+}
+
+function sanitize(text) {
+  return truncate(stripControls(text), SUMMARY_MAX_CHARS)
 }
 
 // --- Sort and naming -----------------------------------------------------
@@ -631,17 +646,16 @@ function reconcileHighlight(state) {
   const rows = state.lastRows
   if (rows.length === 0) {
     state.highlight = { id: null, index: -1 }
-    return state
+    return
   }
   const found = rows.findIndex((row) => row.id === state.highlight.id)
   if (found !== -1) {
     state.highlight.index = found
-    return state
+    return
   }
-  if (state.highlight.index < 0) return state
+  if (state.highlight.index < 0) return
   const index = Math.min(state.highlight.index, rows.length - 1)
   state.highlight = { id: rows[index].id, index }
-  return state
 }
 
 function moveHighlight(state, delta) {
@@ -676,7 +690,10 @@ function normalizeTty(raw) {
   return TTY_PATH_RE.test(full) ? full : null
 }
 
-function sessionScript(tty, body) {
+// `result` is the AppleScript expression returned once a session matches. It is
+// prefixed with a marker so a read-back tab name can never be mistaken for the
+// no-match sentinel.
+function sessionScript(tty, body, result = '"ok"') {
   return [
     `tell application id "${ITERM_BUNDLE_ID}"`,
     'repeat with w in windows',
@@ -684,12 +701,12 @@ function sessionScript(tty, body) {
     'repeat with s in sessions of t',
     `if tty of s is "${tty}" then`,
     ...body,
-    'return "ok"',
+    `return "${SCRIPT_OK_PREFIX}" & (${result})`,
     'end if',
     'end repeat',
     'end repeat',
     'end repeat',
-    'return "no-match"',
+    `return "${SCRIPT_NO_MATCH}"`,
     'end tell',
   ].join('\n')
 }
@@ -705,8 +722,11 @@ function escapeAppleScriptString(text) {
   return String(text).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
 }
 
+// The read-back is for reporting only. Never feed it into a later `set name`:
+// a profile's title format decorates the name it is given, so a round trip
+// compounds the decoration on every rename.
 function renameScript(tty, name) {
-  return sessionScript(tty, [`set name of s to "${escapeAppleScriptString(name)}"`])
+  return sessionScript(tty, [`set name of s to "${escapeAppleScriptString(name)}"`], 'name of s')
 }
 
 function setTransient(state, message) {
@@ -732,15 +752,27 @@ function withRowTty(state, row, next) {
   })
 }
 
+// One osascript call path for focus and rename. `onOk` receives whatever the
+// script returned after the success marker — empty for focus, the tab's
+// read-back name for rename.
+function runSessionScript(state, script, verb, tty, onOk) {
+  execFile('osascript', ['-e', script], { timeout: FOCUS_TIMEOUT_MS, encoding: 'utf8' }, (scriptErr, scriptOut) => {
+    if (scriptErr) {
+      setTransient(state, `could not ${verb} the tab — is iTerm running?`)
+      return
+    }
+    const out = String(scriptOut).trim()
+    if (!out.startsWith(SCRIPT_OK_PREFIX)) {
+      setTransient(state, `no iTerm tab is attached to ${tty}.`)
+      return
+    }
+    onOk(out.slice(SCRIPT_OK_PREFIX.length))
+  })
+}
+
 function focusHighlighted(state) {
   withRowTty(state, state.lastRows[state.highlight.index], (tty) => {
-    execFile('osascript', ['-e', focusScript(tty)], { timeout: FOCUS_TIMEOUT_MS, encoding: 'utf8' }, (scriptErr, scriptOut) => {
-      if (scriptErr) {
-        setTransient(state, 'could not focus the tab — is iTerm running?')
-        return
-      }
-      setTransient(state, String(scriptOut).trim() === 'ok' ? null : `no iTerm tab is attached to ${tty}.`)
-    })
+    runSessionScript(state, focusScript(tty), 'focus', tty, () => setTransient(state, null))
   })
 }
 
@@ -776,12 +808,10 @@ function commitRename(state) {
   exitRename(state)
   if (!name || !row) return
   withRowTty(state, row, (tty) => {
-    execFile('osascript', ['-e', renameScript(tty, name)], { timeout: FOCUS_TIMEOUT_MS, encoding: 'utf8' }, (scriptErr, scriptOut) => {
-      if (scriptErr) {
-        setTransient(state, 'could not rename the tab — is iTerm running?')
-        return
-      }
-      setTransient(state, String(scriptOut).trim() === 'ok' ? null : `no iTerm tab is attached to ${tty}.`)
+    runSessionScript(state, renameScript(tty, name), 'rename', tty, (actual) => {
+      // A profile title format decorates the applied name, which otherwise
+      // reads as the rename having done nothing at all.
+      setTransient(state, actual === name ? null : `renamed — this profile's title format shows it as "${stripControls(actual)}"`)
     })
   })
 }
@@ -930,7 +960,10 @@ function shouldBell(transitions, opts) {
   return transitions.some((t) => t.to === 'waiting' || (opts.alertIdle && t.to === 'idle'))
 }
 
+// A pending execFile callback can land after restore() has already left the
+// alt screen; its escapes would then paint over the user's shell.
 function paint(state) {
+  if (restored) return
   const width = process.stdout.columns || DEFAULT_WIDTH
   const lines = buildFrame(state, width, Date.now())
   write(ESC_CURSOR_HOME + lines.join(ESC_CLEAR_EOL + '\n') + ESC_CLEAR_EOL + ESC_CLEAR_EOS)
@@ -946,6 +979,11 @@ function paint(state) {
 // uses to cancel a rename, and a byte that cannot continue a sequence dispatches
 // the Escape immediately and is then handled as its own key. The timer is
 // unref'd so a pending Escape never holds the process open past `q`.
+//
+// Both CSI (`\x1b[`) and SS3 (`\x1bO`, which some iTerm keyboard modes use for
+// Home/End/F1-F4) are recognized, and a sequence ends at its terminator rather
+// than a byte count — a fixed cap left the tail of anything longer than three
+// bytes to dispatch as literal keystrokes.
 
 let escBuf = ''
 let escTimer = null
@@ -964,22 +1002,21 @@ function listenForKeys(state) {
 
 function handleInput(state, buf) {
   for (const byte of buf) {
-    // A second byte that is not CSI means the Escape already stood alone, so it
-    // dispatches now and the byte falls through to be read as its own key —
-    // including another Escape, which re-arms the buffer. Past CSI the sequence
-    // is absorbed to the cap either way, so an unrecognized one is dropped whole.
-    if (escBuf.length === 1 && !ESC_CSI_PREFIX.startsWith(escBuf + String.fromCharCode(byte))) {
+    // A second byte that introduces neither CSI nor SS3 means the Escape already
+    // stood alone, so it dispatches now and the byte falls through to be read as
+    // its own key — including another Escape, which re-arms the buffer.
+    if (escBuf.length === 1 && !isEscPrefix(escBuf + String.fromCharCode(byte))) {
       disarmEscTimer()
       escBuf = ''
       handleKey(state, String.fromCharCode(KEY_ESC))
     }
     if (escBuf) {
       escBuf += String.fromCharCode(byte)
-      const key = escBuf === SEQ_UP || escBuf === SEQ_DOWN ? escBuf : null
-      if (key || escBuf.length >= ESC_SEQ_MAX_BYTES) {
+      if (isSeqComplete(escBuf, byte)) {
+        const key = escBuf
         disarmEscTimer()
         escBuf = ''
-        if (key) handleKey(state, key)
+        if (key === SEQ_UP || key === SEQ_DOWN) handleKey(state, key)
       }
       continue
     }
@@ -990,6 +1027,18 @@ function handleInput(state, buf) {
     }
     handleKey(state, String.fromCharCode(byte))
   }
+}
+
+function isEscPrefix(text) {
+  return ESC_CSI_PREFIX.startsWith(text) || ESC_SS3_PREFIX.startsWith(text)
+}
+
+// A CSI runs to its final byte (0x40-0x7e); SS3 is always exactly three bytes.
+// The byte cap only stops a malformed stream from buffering forever.
+function isSeqComplete(seq, byte) {
+  if (seq.length >= ESC_SEQ_MAX_BYTES) return true
+  if (seq.startsWith(ESC_SS3_PREFIX)) return seq.length >= SS3_SEQ_BYTES
+  return seq.length > ESC_CSI_PREFIX.length && byte >= CSI_FINAL_MIN && byte <= CSI_FINAL_MAX
 }
 
 function armEscTimer(state) {
