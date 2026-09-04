@@ -468,10 +468,10 @@ members.
    they are always listed here). Every one with an **absolute path** and the command that recovers
    it.
 
-9. **Uncommitted-state reminder.** One line that the sweep committed nothing, plus the list of files
-   that now hold **both** user edits and sweep edits — the intersection of the dirty baseline and
-   the touched set. Those are the files where `git checkout` would cost the user work, and they are
-   worth naming before they read the diff.
+9. **Uncommitted-state reminder.** One line that the sweep committed nothing, plus the touched set
+   listed as the files the sweep edited. No file holds both user edits and sweep edits — a
+   baseline-dirty file is never touched (condition 5) — so this list is exactly what the user is
+   reviewing on top of their own in-flight work.
 
 10. **Next steps.**
     - `/review-walk <absolute doc path>` — with the count it will walk (the surfaced findings; the
@@ -528,8 +528,8 @@ gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
   Invoking the skill is the confirmation. A run that cannot proceed unattended stops with a stop
   message; it does not degrade into asking.
 - **Never re-review.** The sweep consumes findings and produces none. It does not add findings to
-  the doc, does not re-rank them, and does not second-guess a `Severity:` or `Effort:` value — it
-  only decides whether each one is cheap and certain enough to land.
+  the doc, does not re-rank them, and does not second-guess a finding's P1/P2/P3 tier or its
+  `Effort:` value — it only decides whether each one is cheap and certain enough to land.
 - **Git and file writes are bounded by step 4's Files rule** — no commits, no `git add`, no new
   files, no issues filed, the stamp the only GitHub write. In addition: no `git stash`, no
   `git checkout` of a path the sweep did not itself edit this run, and no branch or history
