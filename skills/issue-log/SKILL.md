@@ -63,6 +63,7 @@ Optional keys:
 | Skill | Event | Glyph | Payload fields (human section) |
 |---|---|---|---|
 | brainstorm | `requirements-written` | 🧠 | Doc path, full requirements list (direct port from the doc) |
+| brainstorm-walk | `brainstorm-walk-complete` | 🚶 | Summary line + counts of requirements accepted, modified, retired, skipped; terms added to the glossary |
 | blueprint | `plan-written` | 📋 | Plan path, unit count, every unit enumerated with a one-sentence summary |
 | blueprint-deepen | `plan-deepened` | 🔬 | Plan path, sections-deepened count, short summary, questions resolved, major restructures |
 | blueprint-walk | `blueprint-walk-complete` | 🚶 | Summary line + counts of units accepted, modified, retired, skipped; terms added to the glossary |
