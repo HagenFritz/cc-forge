@@ -12,8 +12,10 @@ The planning skill is `blueprint/` (with `blueprint-deepen/` as its second-pass 
 
 **Naming: producers versus consumers.** A skill's name is decided by whether it makes an artifact or acts on one that already exists.
 
-- **Producers are named for what they produce.** They create an artifact that did not exist before, so there is nothing for an `<artifact>-<action>` name to bind to. Current producers: `brainstorm/`, `blueprint/`, `deep-review/`, `quick-review/`.
+- **Producers are named for what they produce.** They create an artifact that did not exist before, so there is nothing for an `<artifact>-<action>` name to bind to. Current producers: `brainstorm/`, `blueprint/`, `deep-review/`, `quick-review/`, `compact-prep/`, `test-plan/`, `compound/`, `deprecate/`, `initiative/`.
 - **Consumers are named `<artifact>-<action>`.** They act on an artifact that is already on disk, so the artifact leads and the verb follows. Current consumers: `brainstorm-walk/`, `blueprint-walk/`, `blueprint-deepen/`, `review-walk/`, `review-sweep/`, `review-push/`.
+
+A skill that both authors an artifact and later resumes it — `initiative/` is the only current one — is named for the artifact it **authors**, since that is the mode that brings the doc into existence. The resume mode does not earn a second, consumer-shaped name.
 
 Two consequences worth stating, because both look like exceptions and neither is. `deep-review/` and `quick-review/` are *correct* under this rule rather than grandfathered — they are producers, so they are named for the review they write, and the adjective goes in front; `review-quick` would be wrong, because it reads as an action on an existing review doc, which is exactly what the six consumers do. And `review/` alone is unavailable regardless: it collides with a Claude Code built-in, the same collision that forced `/plan` → `/blueprint` (see `## Related`, PR #61).
 

@@ -25,7 +25,7 @@ Review skills embed only their own depth-specific prose — which agents run, ho
 selected and dispatched, how much thinking each phase gets, what happens after the
 report, and their own filled stamp template — and reference this spec for everything
 below. **Never restate a rule from this file inside a review skill**, not even
-paraphrased; a rule that drifts between two files is worse than a rule stated once.
+paraphrased.
 
 Throughout, **the invoking skill** means whichever review is running, and **review
 agent** means any agent that skill dispatched to produce findings.
@@ -33,7 +33,7 @@ agent** means any agent that skill dispatched to produce findings.
 ## Prerequisites
 
 - Git repository with GitHub CLI (`gh`) installed and authenticated
-- Clean main/master branch
+- The code on disk is the code being reviewed — however the invoking skill arranges that
 - For document reviews: path to a markdown file or document
 
 ## Review target resolution
@@ -57,8 +57,7 @@ path (`.md`), or empty (the current branch).
       working-tree policy; do not proceed until the target's code is the code on disk
 - [ ] Fetch PR metadata with `gh pr view --json` for title, body, files, and linked
       issues
-- [ ] Set up language-specific analysis tools
-- [ ] Prepare the security scanning environment
+- [ ] Set up whatever analysis tooling this review's roster needs
 
 **Ensure the code being reviewed is the code on disk before dispatching any review
 agent.** A review of the wrong tree is worse than no review — it reports confidently on
@@ -129,8 +128,9 @@ agent roster.
 After synthesis, check the returned counts: kept + discarded + merged-duplicates should
 roughly equal the raw findings dispatched. A large shortfall signals the payload
 overflowed the synthesizer's context and findings were silently dropped — on a very
-large review, dispatch findings in severity-ordered batches rather than one oversized
-call.
+large review, split the dispatch into severity-ordered batches rather than one oversized
+call — where the invoking skill has a mechanism for it; a review with a small fixed roster
+is unlikely to reach that size.
 
 ## Verifying the review document
 
@@ -265,3 +265,24 @@ the four items above.
 
 Any **🔴 P1 (CRITICAL)** findings must be addressed before merging the PR. Present these
 prominently and ensure they're resolved before accepting the PR.
+
+## Rules every review inherits
+
+- **Never review with stale code on disk.** The code being analyzed must be the code
+  the target names before any review agent is dispatched. How the working tree gets
+  that way belongs to the invoking skill.
+- **Always pass the protected-artifacts list** in the synthesizer's dispatch, and never
+  let a finding against those paths survive into the document.
+- **The synthesizer is always-run infrastructure.** Never list it in a review's agent
+  roster, and never count it as one of the agents whose findings it synthesizes.
+- **Persist raw findings to scratch before dispatching.** The fallback reads from disk,
+  not from context — a compaction between dispatch and synthesis must not lose them.
+- **Delete scratch only after the document verifies.** Never on the fallback path,
+  which reads from it, and never on a clean review, which writes no document.
+- **A clean review and a fallback-produced document post no stamp.** The stamp attests
+  to a verified document; neither case has one.
+- **Never claim a document was written until it verifies.** Confirm it exists, carries
+  the structural anchors the walk skills anchor on, and is this run's rather than an
+  earlier one's.
+- **P1 findings block the merge.** Present them prominently regardless of how the
+  review was run.

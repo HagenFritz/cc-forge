@@ -216,9 +216,7 @@ Run the Task forge:review:code-simplicity-reviewer() to see if we can simplify t
 
 #### Step 1: Dispatch the Review Synthesizer
 
-Follow [the review-protocol spec](../review-protocol/SKILL.md#the-raw-findings-scratch-contract) — it owns the deterministic scratch path each review agent's raw findings are persisted to before synthesis, and why that write is the fallback's source of truth.
-
-Follow [the review-protocol spec](../review-protocol/SKILL.md#dispatching-the-synthesizer) — it owns the dispatch shape and its input list, what the synthesizer owns and returns, the clean-review marker, and the rule that the synthesizer is always-run infrastructure. Then follow [its count sanity-check](../review-protocol/SKILL.md#sanity-checking-the-returned-counts) on what comes back.
+This is one linear sequence, and the spec owns every step of it: persist each agent's raw findings to [the scratch path](../review-protocol/SKILL.md#the-raw-findings-scratch-contract), [dispatch the synthesizer](../review-protocol/SKILL.md#dispatching-the-synthesizer) with the inputs it names, then run [its count sanity-check](../review-protocol/SKILL.md#sanity-checking-the-returned-counts) on what comes back.
 
 This review's inputs to that dispatch:
 

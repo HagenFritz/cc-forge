@@ -78,10 +78,9 @@ Lines changed is deliberately not the measure — a single large generated, vend
 Worked examples:
 
 - 7 `.ts` files, 1 `.md` file → `.ts` group is largest → dispatch `typescript-reviewer` (three agents total).
-- 2 `.py` files, 3 `.md` files → the `.md` group is largest and matches no reviewer → dispatch the two always-run agents only.
+- 2 `.py` files, 3 `.md` files → the `.md` group is largest and matches no reviewer → dispatch the two always-run agents only, and say so in `Review Agents Used`. (This repo's own diffs, dominated by `.md`, hit this case most often.)
 - 2 `.py` files, 2 `.yaml` files → a tie between a matching group and a non-matching one → break toward the language reviewer → dispatch `python-reviewer`.
 - 1 `.py` file changed by 4 lines, 1 `.ts` bundle changed by 9,000 lines → each group has one file, tie between two matching groups; lines are not the tiebreaker, so pick either matching reviewer and name the choice in the report.
-- 12 `.md` files (this repo's own common case) → no group matches → dispatch the two always-run agents, and say so in `Review Agents Used`.
 
 **Never substitute a mismatched reviewer to keep the count at three.** A missing language match means two agents ran, and the report says so.
 
@@ -91,9 +90,7 @@ Dispatch the selected agents in parallel. There is no serial mode.
 
 #### Step 1: Dispatch the Review Synthesizer
 
-Follow [the review-protocol spec](../review-protocol/SKILL.md#the-raw-findings-scratch-contract) — it owns the deterministic scratch path each review agent's raw findings are persisted to before synthesis, and why that write is the fallback's source of truth.
-
-Follow [the review-protocol spec](../review-protocol/SKILL.md#dispatching-the-synthesizer) — it owns the dispatch shape and its input list, what the synthesizer owns and returns, the clean-review marker, and the rule that the synthesizer is always-run infrastructure. Then follow [its count sanity-check](../review-protocol/SKILL.md#sanity-checking-the-returned-counts) on what comes back.
+This is one linear sequence, and the spec owns every step of it: persist each agent's raw findings to [the scratch path](../review-protocol/SKILL.md#the-raw-findings-scratch-contract), [dispatch the synthesizer](../review-protocol/SKILL.md#dispatching-the-synthesizer) with the inputs it names, then run [its count sanity-check](../review-protocol/SKILL.md#sanity-checking-the-returned-counts) on what comes back.
 
 This review's inputs to that dispatch:
 

@@ -58,7 +58,7 @@ Typical flow: `/deep-review` → `/review-sweep` → `/review-walk` over what th
   The filename convention is `YYYY-MM-DD-NNN-<slug>-review.md`, so a lexicographic sort picks
   the most recent doc deterministically.
 
-- No review docs exist → stop: "No review docs found in `docs/reviews/`. Run `/deep-review` first."
+- No review docs exist → stop: "No review docs found in `docs/reviews/`. Run `/deep-review` or `/quick-review` first."
 - The doc has no `**Confidence:**` fields → stop: "`<absolute path>` predates review enrichment
   and carries no `Confidence:` fields. The sweep needs them to decide what is safe to fix
   unattended. Walk it with `/review-walk` instead." Confidence is load-bearing for every branch

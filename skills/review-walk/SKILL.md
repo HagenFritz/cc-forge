@@ -36,7 +36,7 @@ or produce new findings.
   sort picks the most recent doc deterministically (no `mtime` ambiguity if the file
   was edited mid-walk).
 
-- If no review docs exist, STOP and tell the user to run `/deep-review` first.
+- If no review docs exist, STOP and tell the user to run `/deep-review` or `/quick-review` first.
 - Confirm the resolved path back to the user before continuing:
   > "Walking review: `docs/reviews/<file>.md`. Proceed?"
   Use `AskUserQuestion` with Yes / Cancel.

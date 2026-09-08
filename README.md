@@ -109,7 +109,7 @@ Subagents live in `agents/`, grouped by category. Skills reference them as `forg
 
 **Feature development** (bracketed steps optional):
 ```
-/brainstorm → [/brainstorm-walk] → /blueprint → [/blueprint-deepen] → [/blueprint-walk] → /work → /deep-review → [/review-sweep] → /review-walk → /ship → /land
+/brainstorm → [/brainstorm-walk] → /blueprint → [/blueprint-deepen] → [/blueprint-walk] → /work → [/deep-review | /quick-review] → [/review-sweep] → /review-walk → /ship → /land
 ```
 
 **Multi-feature initiative:**
@@ -119,7 +119,7 @@ Subagents live in `agents/`, grouped by category. Skills reference them as `forg
 
 **Worktree-isolated** (primary checkout stays on `main`):
 ```
-/brainstorm → /blueprint → /tree <issue> → new session in the worktree → /work → /deep-review → /ship → /land
+/brainstorm → /blueprint → /tree <issue> → new session in the worktree → /work → [/deep-review | /quick-review] → /ship → /land
 ```
 
 `/tree` replaces `/branch-from-issue` when you want the branch in its own directory; `/land` removes the worktree on merge.
