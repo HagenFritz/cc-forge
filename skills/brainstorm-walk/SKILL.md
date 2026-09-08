@@ -253,3 +253,390 @@ Ask via `AskUserQuestion`:
 then re-ask this same question on the same requirement. Both are repeatable any number
 of times on one requirement. That is the entire point of the side-buffer — learning
 must not cost the review thread.
+
+Then execute the chosen action using the Review-State Write Protocol (Step 6).
+
+## Step 6: Review-State Write Protocol
+
+The requirements doc is the durable progress store. Every advancing action writes a
+`**Reviewed:**` line into the requirement using `Edit`.
+
+The written block sits on a **two-space-indented continuation line after the
+requirement's last line — sub-bullets included** (Step 4a explains why the indent is
+load-bearing: an unindented line terminates the list and splits `## Requirements` in
+two). `**Review note:**` sits directly beneath `**Reviewed:**` with **no** blank line
+between them — they are one block, both at the same two-space indent:
+
+```
+- R4. **Related entry contents.** Each entry contains:
+  - PR number + link (required)
+  - No review links.
+  **Reviewed:** `modified`
+  **Review note:** dropped the third sub-bullet — it duplicated R2
+```
+
+Unlike `/blueprint-walk`, there are **no blank lines around the block**. A blank line
+before it would end the list item just as surely as an unindented line would. The state
+block is the last thing inside the bullet and touches the line above it.
+
+`**Reviewed:**` takes exactly one of: `pending`, `accepted`, `modified`, `retired`,
+`skipped`.
+
+### 6a. Anchoring rule (mandatory)
+
+Every `Edit` anchor **must contain the requirement's `R`-ID**. The ID is the only token
+`/brainstorm` guarantees unique within a doc. Two requirements can share wording, and
+once both carry `**Reviewed:** pending` the bullet-plus-state pair becomes *identical
+text in two places* — an anchor that would report success while silently mutating the
+wrong requirement. Uniqueness must hold by construction, not by luck.
+
+**Build the anchor from the doc's own prefix text, never from a hardcoded form.** Step 2
+established that two `R`-ID forms are live in the corpus — `- R7. ` and `- **R7.** ` —
+and that a doc's form is preserved, never normalized. So read the requirement's actual
+first line from the fresh read of 6b and copy its prefix **byte for byte** into the
+anchor: on a bare-form doc that is `- R7. `, on a bold-form doc it is `- **R7.** `. A
+hardcoded bare anchor silently matches zero times on a bold-form doc, and 0-match
+handling would then send you re-reading a file that was never wrong. The ID is what
+makes the anchor unique; the surrounding punctuation is whatever that doc happens to
+use.
+
+Before **every** `Edit`, count matches for the exact `old_string` you are about to use:
+
+```bash
+grep -c -F -- "<exact anchor text>" docs/brainstorms/<file>.md
+```
+
+The `--` is **required**, not stylistic: every requirement anchor starts with `- `, and
+without it `grep` reads the anchor as an option bundle and exits 2 with `invalid option`
+instead of printing a count. An error here reads as "no output", which is the one
+outcome this check must never produce silently.
+
+(For a multi-line anchor — a requirement with sub-bullets, where the state line goes
+after the last one — count on the ID-bearing first line and confirm the following lines
+from the fresh read.)
+
+Read the **printed count**, not the presence of output — and treat a non-zero exit
+alongside no count as a broken invocation, never as a result. `grep` exits 1 on a clean
+zero match (printing `0`) and 2 on a usage error (printing nothing); only the first is
+an answer.
+
+- **Exactly 1 match** → proceed with the `Edit`.
+- **0 matches** → the doc changed under you. Re-read and rebuild the anchor; if it still
+  does not match, STOP and show the user what you expected versus what is there.
+- **More than 1 match** → **STOP the walk.** Do not edit. Surface the ambiguity:
+  > "R5's anchor matches 2 places in the doc — refusing to write. Please disambiguate
+  > the requirements (the IDs appear duplicated) and re-run."
+  Never guess which match is the right one.
+
+### 6b. Re-read before every write
+
+Immediately before each `Edit`, `Read` the requirement's current on-disk text and build
+the anchor from *that*, not from the text captured when the requirement was rendered in
+Step 5a. A user may edit the doc in another editor mid-walk; rebuilding closes the
+window where a stale anchor either fails or matches something unintended. The re-read is
+also what tells you which `R`-ID prefix form to copy (6a) and where the requirement's
+last sub-bullet is.
+
+### 6c. Claim the requirement first
+
+The **first** write on any requirement sets `**Reviewed:** pending` — before any other
+mutation, and before the backup-dependent destructive actions do anything. A requirement
+left `pending` is unambiguously "a walk started here and did not finish", which is
+exactly what Step 4 resumes on.
+
+Append it as an indented continuation line after the requirement's **last** line:
+
+```
+- R7. **Status writes.** Use `/review-walk`'s vocabulary:
+  - `in-progress` before an edit, `done` after.
+```
+→
+```
+- R7. **Status writes.** Use `/review-walk`'s vocabulary:
+  - `in-progress` before an edit, `done` after.
+  **Reviewed:** `pending`
+```
+
+Anchor the `Edit` on the requirement's ID-bearing line *plus* every sub-bullet down to
+the last one. Anchoring on the `- Rn.` line alone leaves the insertion point ambiguous —
+the state line would land above the sub-bullets, and the next write would not find the
+shape it expects.
+
+If the requirement already carries a `**Reviewed:**` line (a re-walk), edit its value in
+place rather than inserting a second one.
+
+### 6d. Take the backup
+
+**Before the first mutating write of the walk** — that is, immediately before the very
+first 6c claim, not at walk start — copy the doc beside itself:
+
+```bash
+cp docs/brainstorms/<file>.md docs/brainstorms/<file>.md.bak
+```
+
+`docs/brainstorms/` is gitignored, so there is no `git checkout` to fall back on. This
+copy is the **only** recovery path for a botched `modify` or `remove`. Take it exactly
+once per walk; if a `.bak` from a previous walk already exists, overwrite it and mention
+that in one line. Tell the user where the backup is, once.
+
+A walk that only reads — or one that only captures terms — leaves nothing behind: no
+`.bak`, no edit, no trace.
+
+### 6e. Accept
+
+1. Set `**Reviewed:** accepted`.
+2. No note required. If the user volunteers one, add `**Review note:** <text>` on the
+   indented line below.
+3. Advance to the next requirement.
+
+### 6f. Modify
+
+Modify is **destructive** — it replaces requirement text that cannot be recovered from
+git.
+
+1. Ask the user what is wrong with the requirement, in their words.
+2. Take the backup (6d) if not yet taken, then claim the requirement `pending` (6c).
+3. **Draft** the replacement text. The skill drafts; the user approves. The user is
+   reviewing, not authoring.
+4. **Edit only the region that changes; never regenerate the whole requirement.** Scope
+   the `Edit` to the smallest span containing the change — one clause, one sub-bullet —
+   and leave the rest out of the `old_string` entirely. Text never passed to an `Edit`
+   cannot be corrupted by one.
+
+   **Carry every untouched span through byte-identical.** If the requested change is
+   about the requirement's second sub-bullet, then its `- Rn.` line, its bolded title,
+   and every other sub-bullet must come out exactly as they were. A regenerated bullet
+   that quietly reflows or rewords text the user never mentioned is silent data loss,
+   not an improvement. Rewriting the requirement wholesale is the single most likely way
+   to cause that, which is why the edit is scoped instead.
+
+   **The `R`-ID prefix is never part of the changed span.** Keep the number, keep its
+   form (`- R7.` or `- **R7.**`), keep its position in the list.
+5. Show a **before/after** of the changed region — the old text and the drafted
+   replacement, clearly labeled.
+6. Ask via `AskUserQuestion`: **Apply** / **Revise** (re-draft from further feedback,
+   then re-show) / **Cancel**.
+   - On **Cancel**, leave the requirement's text untouched and reset `**Reviewed:**` to
+     its prior value — removing the `pending` line entirely if there was none before.
+     Cancel must leave the doc as it was apart from that one line's removal.
+7. Only on **Apply**: run the 6a match-count check, re-read (6b), apply the `Edit`, then
+   set `**Reviewed:** modified` with a required `**Review note:** <one line on what
+   changed and why>`.
+
+Never renumber the requirement and never change its `R`-ID or its position in the list.
+
+### 6g. Remove
+
+Remove is **equally destructive** as modify and gets the same confirmation weight. Do
+not treat it as the lighter action.
+
+1. Ask the user why the requirement should not be built.
+2. Take the backup (6d) if not yet taken, then claim the requirement `pending` (6c).
+3. **Tombstone in place — never delete the bullet, never renumber.** Requirements
+   cross-reference each other by ID, plans cite them in `**Requirements:**` fields, and
+   issue stamps carry those citations. Deleting the bullet or shifting IDs invalidates
+   all three. The requirement keeps its position, its `R`-ID, and its full text.
+
+   The tombstone is a strikethrough of the requirement's **descriptive text only**, plus
+   the state block:
+
+   ```
+   - R7. ~~**Status writes.** Use `/review-walk`'s vocabulary so downstream skills work unchanged.~~
+     **Reviewed:** `retired`
+     **Review note:** retired — folded into R3; cited by R11 and by Success Criteria, neither updated
+   ```
+
+   **The `~~` markers open after the `R`-ID prefix and close at the end of the
+   requirement text — never around the whole line.** On a bare-form doc the prefix
+   `- R7. ` stays outside the strikethrough; on a bold-form doc `- **R7.** ` does. This
+   is not cosmetic: 6a anchors on that prefix, and wrapping the line as
+   `- ~~R7. …~~` would put a `~` between the `- ` and the `R`, so every later
+   match-count check for `- R7. ` returns 0 and the walk can no longer find its own
+   tombstone. `/blueprint-walk` solves the same problem by appending its `~~RETIRED~~`
+   marker *after* the heading text (6f there); the constraint is identical — the
+   ordinal-bearing anchor text must survive the tombstone byte-for-byte.
+
+   For a requirement with sub-bullets, strike each sub-bullet's own text the same way,
+   leaving the `  - ` list punctuation outside the markers, and put the state block after
+   the last one.
+
+   Do not comment out, blank, or delete the text. A retired requirement still has to be
+   readable to explain why it was retired, and `/blueprint` must still be able to see
+   that the ID exists.
+4. **Scan for citations.** Search the doc for other requirements or sections naming this
+   ID:
+
+   ```bash
+   grep -n -E 'R7\b' docs/brainstorms/<file>.md
+   ```
+
+   Read the hits. **Never auto-edit another requirement, and never edit a non-`R`
+   section** — a retired requirement can leave a Success Criterion or a Scope Boundary
+   dangling, and reconciling that is the human's call, not the walk's. Citation handling
+   is warn-only.
+5. Show a **before/after** of the tombstoned bullet and ask via `AskUserQuestion`:
+   **Retire** / **Cancel**. On Cancel, restore the prior `**Reviewed:**` state and change
+   nothing else.
+6. On **Retire**: run the 6a match-count check, re-read (6b), apply the `Edit`, set
+   `**Reviewed:** retired` and a required `**Review note:**` recording the reason — **and,
+   when anything else cites the ID, those citations, durably in that note**:
+
+   ```
+   **Reviewed:** `retired`
+   **Review note:** retired — folded into R3; cited by R11 and by Success Criteria, neither updated
+   ```
+
+   A terminal warning disappears at the end of the session; the note is what a later
+   reader of the doc — or `/blueprint` consuming it — actually sees.
+
+### 6h. Add term
+
+1. Capture the term to the glossary (Step 7).
+2. **Do not touch `**Reviewed:**`.** No state change of any kind, and no backup.
+3. Re-ask the Step 5c action question on the same requirement. Repeatable.
+
+### 6i. Skip
+
+1. Set `**Reviewed:** skipped`. No note required; record one if the user offers.
+2. Change nothing else in the requirement.
+3. Advance. Skipped requirements are reported at walk end as **unreviewed** — never
+   folded into accepted.
+
+## Step 7: Capture a Term to the Glossary
+
+This is where `Add term` (6h) routes. It is a **side buffer**: it writes to one file
+outside the repo and touches nothing else. Capturing a term does **not** take the doc
+backup (6d), does **not** write `**Reviewed:**`, and does **not** advance the requirement
+— the requirements doc is not opened at all. A walk that only captures terms leaves the
+doc byte-identical and produces no `.bak`.
+
+Speed is the requirement. This runs mid-review and its entire purpose is to not derail
+the walk, so it costs the user **one answer**:
+
+1. Ask for the term, and nothing else:
+   > "What term should I capture?"
+
+2. Follow [term-add](../term-add/SKILL.md) exactly, in
+   [quiet mode](../glossary/SKILL.md#quiet-mode), passing that answer as the term. It
+   drafts the definition and every other field, writes the entry, and emits its one
+   confirmation line — which is the only output the walk shows. This skill adds no
+   glossary behavior of its own and defines no part of the entry format.
+
+3. Immediately re-ask the Step 5c action question on the same requirement.
+
+Repeatable any number of times on one requirement (6h). Each capture is independent;
+nothing is batched until walk end.
+
+## Step 8: Finish the Walk
+
+Reached when every requirement is terminal — either walked through in this session or
+already terminal when Step 4 checked — or when the user ends the walk early. An early
+end still runs 8a: the counts are derived from the doc, so a partial walk reports
+truthfully rather than not at all, with the unwalked requirements falling into the
+never-reached and left-pending buckets.
+
+### 8a. Report the Summary
+
+**Re-read the doc from disk and derive every count from its `**Reviewed:**` lines.**
+Never count from session memory. A walk resumed across sessions has verdicts on
+requirements this session never rendered, and a user may have hand-edited a state value
+between turns; only the doc knows the whole doc's totals.
+
+Read the current text and bucket every requirement by its `**Reviewed:**` value:
+
+```bash
+grep -n -E '^\s+\*\*Reviewed:\*\*' docs/brainstorms/<file>.md
+```
+
+Report:
+
+- **Accepted / modified / retired** — the three reviewed verdicts, with counts.
+- **Skipped** — reported as **unreviewed**. Never folded into accepted; the user declined
+  to give a verdict, which is not the same as approving the requirement.
+- **Never reached** — requirements carrying **no `**Reviewed:**` line at all**. Distinct
+  from skipped: nobody looked at these. Keep the two buckets separate and name them
+  separately, so "12 requirements, 9 accepted" never hides three the walk never showed.
+- **Left pending** — requirements still reading `**Reviewed:** pending`. A normal walk
+  reaches 8a with none, but a hand-edit or an abandoned earlier walk can leave one, and
+  the grep will surface it. Report it in its own bucket; never fold it into any other and
+  never drop it. **The bucket counts must sum to the doc's total `R`-count** — the same
+  count Step 2 announced. If they do not, a value is unaccounted for and the summary is
+  wrong.
+- **Retired requirements still cited** — count the retired requirements whose
+  `**Review note:**` records citations from elsewhere in the doc (6g writes them there).
+  Read the notes; do not re-scan the doc. These are the dangling references tombstoning
+  leaves behind, and nothing has fixed them.
+- **Terms added** — how many terms this session captured to `~/.claude/glossary.md`. This
+  one count *is* session-scoped: the glossary is shared across every doc the user walks,
+  so a re-read cannot tell this walk's captures from an earlier walk's. Count Step 7's
+  confirmation lines, which name the term. A capture that reported the term was already
+  present counts too — the user looked it up, which is what the number is for — and the
+  term is named in the 8b list like any other.
+- **Backup** — if a `.bak` was taken (6d), name its path in one line so the user knows it
+  exists and can delete it once satisfied.
+
+Example shape:
+
+> "Walk complete — 12 requirements: 7 accepted, 2 modified, 1 retired, 1 skipped
+> (unreviewed), 1 never reached. 1 retired requirement is still cited elsewhere in the
+> doc — see its review note. 3 terms captured to `~/.claude/glossary.md`. Backup at
+> `docs/brainstorms/<file>.md.bak`."
+
+Omit a bucket that is zero rather than printing `0 pending`, but never omit a non-zero
+one to keep the sentence short.
+
+### 8b. Stamp the Walk Outcome
+
+The stamp fires only here, at final summary — a walk that dies without reaching Step 8
+(a crash, a closed session) posts nothing, and a resumed walk stamps only when it reaches
+this step. A walk the user deliberately ends early *does* reach Step 8, so it stamps,
+with the unwalked requirements counted in the unreviewed line. Counts come from 8a, so
+they describe the whole doc rather than this session's slice. Issue-number resolution
+(including the silent skip when none resolves), posting mechanics, marker encoding, and
+failure handling are defined in [the issue-log spec](../issue-log/SKILL.md).
+
+Compose the body below, write it to a temp file with the Write tool, and post:
+
+```markdown
+<!-- cc-forge-log v1: {"skill":"brainstorm-walk","event":"brainstorm-walk-complete","paths":["docs/brainstorms/<file>.md"]} -->
+
+### 🚶 /brainstorm-walk — walk complete
+
+**Summary:** <n> requirements walked — <n> accepted, <n> modified, <n> retired, <n> skipped
+**Unreviewed:** <n> skipped, <n> never reached, <n> left pending
+**Retired still cited:** <n> — <R4, R7> named elsewhere in the doc
+**Terms added:** <n> — <term, term, term>
+```
+
+```bash
+gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
+```
+
+Omit `**Retired still cited:**` when nothing was retired or nothing cites what was, and
+omit `**Terms added:**` when no term was captured. There is no `**Doc:**` field — the
+walk produces no document of its own, and the walked doc's path rides in `paths`.
+
+## Rules
+
+- **Never write code and never plan the requirements.** That is `/blueprint`. This skill
+  only reads requirements docs, edits their review state, and delegates term capture to
+  `/term-add`.
+- **Never renumber, reorder, or delete a requirement**, and never add one. `R`-IDs are
+  load-bearing: other requirements cite them, plans cite them in `**Requirements:**`
+  fields, and issue stamps carry those citations forward.
+- **Never normalize an `R`-ID prefix.** Both `- R7.` and `- **R7.**` are legal; a doc
+  keeps whichever it uses, and anchors are built from the doc's own text (6a).
+- **Never edit a non-`R` section**, even when a verdict makes one stale. Retiring a
+  requirement can leave a Success Criterion or a Scope Boundary dangling; that is the
+  human's to reconcile.
+- **Never fabricate a missing section.** An absent `## Dependencies / Assumptions` is
+  normal. Render what exists; never infer the rest.
+- **Never modify or retire without the before/after confirm.** Both actions destroy text
+  that is not in git. The user sees old and new, labeled, and says apply.
+- **Stop the walk on an ambiguous anchor.** More than one match for an `Edit` anchor
+  means refusing to write and surfacing it (6a). Never guess which match is right.
+- **The requirements doc is the source of truth.** If the user edits it between turns,
+  re-read before the next action so the change is picked up — and rebuild every anchor
+  from that read.
+- **Skipped is not accepted.** A skip records `skipped` and is reported as unreviewed at
+  walk end.
