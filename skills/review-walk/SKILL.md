@@ -4,9 +4,10 @@ description: >
   Walk through a code-review document interactively. Reads a review file produced by
   /deep-review, presents related issues group-by-group with a plain-English teach moment
   per group, then steps through each member issue offering implement / defer / skip /
-  explain more. Updates `Status:` inline in the doc so progress is durable and
-  resumable. Triggers on phrases like "walk the review", "step through the review",
-  "review-walk", or passing a path to a docs/reviews/*.md file.
+  add term / explain more. Unfamiliar concepts go to a personal glossary without
+  interrupting the walk, and `Status:` is updated inline in the doc so progress is
+  durable and resumable. Triggers on phrases like "walk the review", "step through the
+  review", "review-walk", or passing a path to a docs/reviews/*.md file.
 user-invocable: true
 argument-hint: "[path to docs/reviews/*.md]"
 allowed-tools: Bash, Read, Edit, Write, Agent
@@ -117,7 +118,7 @@ moment:
 
 Then ask:
 
-> "Ready to step through the issues in this group? (implement / defer / skip / explain more)"
+> "Ready to step through the issues in this group? (implement / defer / skip / add term / explain more)"
 
 Use `AskUserQuestion` to confirm the user wants to enter the issue loop.
 
@@ -139,11 +140,18 @@ For each member issue in `Suggested order:`, in order, skipping any already-term
    For `Confidence: medium`, show a softer note: "Reviewer confidence: medium —
    verify before implementing." For `high`, no marker.
 
-3. **Ask the four-action question** via `AskUserQuestion`:
+3. **Ask the action question** via `AskUserQuestion`:
    - **Implement** — apply the fix now.
    - **Defer** — out of scope for this pass; capture a one-line reason.
    - **Skip (won't fix)** — reviewer noise or disagree; close it out.
+   - **Add term** — capture an unfamiliar concept to the glossary. **Does not advance
+     the issue** — the menu is re-asked afterward, and `Status:` is untouched.
    - **Explain more** — deeper teaching, then re-ask.
+
+   `Add term` and `Explain more` are **self-loops**: handle it, then re-ask this same
+   question on the same issue. Both are repeatable any number of times on one issue.
+   That is the entire point of the side buffer — learning must not cost the review
+   thread.
 
 4. **Execute the chosen action** using the Status Update Protocol (Step 7).
 
@@ -153,8 +161,8 @@ When the group's issues are all terminal, proceed to the next group.
 
 After all groups are walked, sweep up any issues that were not members of any group.
 Walk these issue-by-issue in `P1-* → P2-* → P3-*` numeric order. No teach moment;
-present each issue, apply the noise marker rule, ask the four-action question, and
-update status.
+present each issue, apply the noise marker rule, ask the 5d action question — `Add term`
+included, behaving identically here — and update status.
 
 ## Step 7: Status Update Protocol
 
@@ -206,12 +214,42 @@ issue's heading + status line so the edit is unambiguous.
    one — if so, append `**Skip reason:** <text>` the same way as defer.
 2. Do not modify code.
 
+### Add term
+
+1. Capture the term to the glossary (**Capturing a term to the glossary**, below).
+2. **Do not touch `Status:`.** No status write of any kind, and no code edit.
+3. Re-ask the 5d action question on the same issue. Repeatable.
+
 ### Explain more
 
 1. Provide a deeper plain-English walkthrough of the concept. Aim for the level of
    detail that would let the user explain it to a colleague. Quote the actual code
    you re-read in Step 5b.
-2. Re-ask the four-action question. Do not change `Status:`.
+2. Re-ask the 5d action question. Do not change `Status:`.
+
+### Capturing a term to the glossary
+
+This is where `Add term` routes. It is a **side buffer**: it writes to one file outside
+the repo and touches nothing else. Capturing a term does **not** write `Status:`, does
+**not** edit code, and does **not** advance the issue — the review doc is not opened at
+all.
+
+Speed is the requirement. This runs mid-review and its entire purpose is to not derail
+the walk, so it costs the user **one answer**:
+
+1. Ask for the term, and nothing else:
+   > "What term should I capture?"
+
+2. Follow [term-add](../term-add/SKILL.md) exactly, in
+   [quiet mode](../glossary/SKILL.md#quiet-mode), passing that answer as the term. It
+   drafts the definition and every other field, writes the entry, and emits its one
+   confirmation line — which is the only output the walk shows. This skill adds no
+   glossary behavior of its own and defines no part of the entry format.
+
+3. Immediately re-ask the 5d action question on the same issue.
+
+Repeatable any number of times on one issue. Each capture is independent; nothing is
+batched until walk end.
 
 ### Edit anchoring rule
 
@@ -243,6 +281,13 @@ After all issues are terminal:
 - Show counts by terminal status: `done`, `deferred`, `wont-fix`.
 - List deferred items with their reasons (the user may want these as follow-up
   tickets).
+- Report **terms added** — how many terms this session captured to
+  `~/.claude/glossary.md`. Unlike the status counts, this one *is* session-scoped: the
+  glossary is shared across every doc the user walks, so re-reading the review doc
+  cannot tell this walk's captures from an earlier walk's. Count Step 7's confirmation
+  lines, which name the term. A capture that reported the term was already present
+  counts too — the user looked it up, which is what the number is for. Omit the line
+  entirely when no term was captured.
 - Offer tracking issues for the deferred items (Step 8a), then stamp the walk
   outcome (Step 8b).
 - Suggest next steps:
@@ -375,6 +420,7 @@ Compose the body below, write it to a temp file with the Write tool, and post:
   - <one line on what the issue is>
   - <status>: <why>
 **Tracking:** <owner>/<repo>#<n>, one ref per `Tracking:` line in the doc — note any shortfall from 8a
+**Terms added:** <n> — <term, term, term>
 ```
 ```bash
 gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
@@ -382,7 +428,8 @@ gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
 
 Enumerate every walked issue, in doc order. Include `"followup":true` and the
 `**Tracking:**` line only when 8a created at least one tracking issue; omit
-both otherwise.
+both otherwise. Omit `**Terms added:**` when no term was captured — its count and
+term list come from Step 8's session-scoped tally, not from the doc.
 
 ## Fallback Mode Details
 
@@ -391,7 +438,9 @@ When running in fallback mode (no `## Groups` section or no enriched fields):
 - Skip Step 4 entirely.
 - Skip Step 5a/5b/5c (no teach moment, no group block, no re-read for grounding).
 - Walk issues in strict `P1-* → P2-* → P3-*` numeric order.
-- Apply the four-action question as in enriched mode, showing `Sweep:` when present.
+- Apply the 5d action question as in enriched mode, showing `Sweep:` when present.
+  `Add term` is offered here too — it reads no enriched field and touches no `Status:`,
+  so nothing about fallback mode restricts it.
 - For the noise marker: if the issue has no `Confidence:` field, skip the marker
   entirely (don't fabricate confidence).
 - Status updates work the same way.
@@ -403,6 +452,9 @@ When running in fallback mode (no `## Groups` section or no enriched fields):
   missing from the doc. Fallback mode handles their absence gracefully.
 - Never skip the user's chosen action (e.g., don't "implement" when they said
   "defer").
+- **`Add term` never advances the walk.** It writes only to the glossary, leaves
+  `Status:` and the code untouched, and the same action question is re-asked on the
+  same issue afterward.
 - **Never create a GitHub issue without an explicit, informed yes.** Two confirms
   gate it (§8a): one for the batch, one listing the drafted title of every issue.
   Deferring a finding is not consent to file anything; filing nothing is
