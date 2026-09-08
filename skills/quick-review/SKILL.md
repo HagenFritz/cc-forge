@@ -130,7 +130,7 @@ This review supplies its own `### Review Agents Used` section, between the Findi
 - review-synthesizer (synthesis + document)
 ```
 
-That line is the only place the narrow coverage is stated. It belongs in the terminal report, never inside the review document — the document's format is shared with `/deep-review`, and a reader judges depth from its `reviewers:` frontmatter.
+That line states the narrow coverage in the terminal report. The review document's format is shared with `/deep-review` so the consumers branch on nothing.
 
 ### Important: P1 Findings Block Merge
 

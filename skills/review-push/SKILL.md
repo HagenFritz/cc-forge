@@ -42,24 +42,23 @@ This skill **reads** the review doc — it never edits it. `/review-walk` owns t
    - Else auto-discover the newest: `ls docs/reviews/*.md 2>/dev/null | sort | tail -1` (lexicographic sort on the `YYYY-MM-DD-NNN-` prefix is deterministic).
    - If none exists, stop: "No review doc found. /review-push summarizes a review doc — run a review first, or pass the path."
 6. **Verify it's the right doc for this PR:** read the frontmatter `target:`. If it names a PR number or branch that doesn't match the resolved PR / current branch, warn and ask via `AskUserQuestion`: **Use it anyway** / **Cancel** — a mismatched doc would post a misleading comment.
-7. **Read the producing review by key:** the frontmatter `produced-by:` field holds the review skill's name without a leading slash (`deep-review`, `quick-review`). Look it up by key, never by position — docs written before the field existed lack it entirely, and a positional read would pick up whatever sits fourth. Carry the value into Phase 5's comment. **When the key is absent, the producer is unrecorded** — say so; never infer it from the doc's shape, its slug, or which review skill you'd expect on this branch.
 
 ### Phase 3: Parse outcomes
 
-8. Read the full doc. For every issue heading (`### P<X>-<N>: <title>`), capture its `Status:` and, when present, `Category:`, `File(s):`, `Defer reason:` / `Skip reason:`.
-9. Bucket by terminal status:
+7. Read the full doc. For every issue heading (`### P<X>-<N>: <title>`), capture its `Status:` and, when present, `Category:`, `File(s):`, `Defer reason:` / `Skip reason:`.
+8. Bucket by terminal status:
    - `done` — a fix was applied.
    - `deferred` — carried with a reason.
    - `wont-fix` — skipped with an optional reason.
    - `open` / `in-progress` — **not terminal.** If any remain, the walk isn't finished. Warn: "N issues are still open/in-progress — the walk isn't complete. Push the fixes done so far anyway?" via `AskUserQuestion`: **Push what's done** / **Cancel** (go finish `/review-walk` first).
-10. **If zero `done` issues:** there are no fixes to commit. Skip Phase 4 (no commit/push); still offer to post a comment recording what was deferred/skipped so the PR reflects the review outcome. If there's also nothing deferred/skipped, stop: "The review produced no changes — nothing to push or report."
+9. **If zero `done` issues:** there are no fixes to commit. Skip Phase 4 (no commit/push); still offer to post a comment recording what was deferred/skipped so the PR reflects the review outcome. If there's also nothing deferred/skipped, stop: "The review produced no changes — nothing to push or report."
 
 ### Phase 4: Commit and push the fixes
 
-11. `git status --porcelain`. Reconcile against the `done` issues' `File(s):`:
+10. `git status --porcelain`. Reconcile against the `done` issues' `File(s):`:
     - **Uncommitted changes present** (the walk applied fixes but didn't commit them): stage only the files the `done` issues touched — never `git add -A` blindly. If changed files fall outside every `done` issue's `File(s):`, list them and ask via `AskUserQuestion`: **Include them** (they're part of the fix) / **Stage only cited files** / **Cancel** (let me look first). Never silently commit unrelated working-tree changes.
     - **Clean tree** (the walk already committed each fix — review-walk's implement path may have): skip staging/commit, go to the push step. Confirm there are local commits ahead of the PR's remote tip before pushing (`git fetch origin <headRefName>` then `git log origin/<headRefName>..HEAD --oneline`); if none, there's nothing to push — go to Phase 5 to post the comment only.
-12. **Commit** (only when staging happened). Message body lists the fixed findings so the commit log carries the same context as the comment:
+11. **Commit** (only when staging happened). Message body lists the fixed findings so the commit log carries the same context as the comment:
     ```
     git commit -m "$(cat <<'EOF'
     fix: address review findings (P<X>-<N>, P<Y>-<M>)
@@ -71,15 +70,15 @@ This skill **reads** the review doc — it never edits it. `/review-walk` owns t
     )"
     ```
     Keep the subject's ID list short; if more than ~4 findings, use `fix: address N review findings` and let the body carry the list.
-13. **Pre-flight and push:** `git fetch origin <headRefName>`. If the local branch is behind the remote (someone else pushed), stop **before pushing** — do not force: "The PR branch advanced on the remote. `git pull --rebase origin <headRefName>`, re-check, then re-run /review-push." Otherwise `git push origin HEAD`. Only on success proceed; on failure report that the fixes are committed locally but NOT on the PR, with the recovery command.
+12. **Pre-flight and push:** `git fetch origin <headRefName>`. If the local branch is behind the remote (someone else pushed), stop **before pushing** — do not force: "The PR branch advanced on the remote. `git pull --rebase origin <headRefName>`, re-check, then re-run /review-push." Otherwise `git push origin HEAD`. Only on success proceed; on failure report that the fixes are committed locally but NOT on the PR, with the recovery command.
 
 ### Phase 5: Post the PR comment
 
-14. Compose the comment from the parsed outcomes — this is the deliverable, so make it scannable:
+13. Compose the comment from the parsed outcomes — this is the deliverable, so make it scannable:
     ```markdown
     ## Review pass — <N> fixed, <M> deferred, <K> skipped
 
-    Applied from `<review-doc-basename>` (produced by /<produced-by>, walked with /review-walk).
+    Applied from `<review-doc-basename>` (walked with /review-walk).
 
     ### Fixed
     - **P1-2 <title>** — <one-line what-changed, drawn from the issue's Fix: intent> (`<file>`)
@@ -94,9 +93,7 @@ This skill **reads** the review doc — it never edits it. `/review-walk` owns t
     - ...
     ```
     Omit any section with no members. For "Fixed", describe what changed in plain terms — derive it from the issue's `Fix:` field and the actual diff hunk for that file, not a verbatim paste of the reviewer's problem statement.
-
-    The attribution line names the review that produced the doc, from step 7's `produced-by:`. When that key was absent, write it as `Applied from \`<review-doc-basename>\` (producing review unrecorded, walked with /review-walk).` — the reader learns the producer is unknown rather than being told a guess.
-15. **Confirm before posting** via `AskUserQuestion`. Set the `preview` field on the **Post comment** option to a metadata stub only — never the comment. The comment is far larger than the preview panel and will fail to render:
+14. **Confirm before posting** via `AskUserQuestion`. Set the `preview` field on the **Post comment** option to a metadata stub only — never the comment. The comment is far larger than the preview panel and will fail to render:
     ```
     PR: #<N> <pr-title>
     Fixed: <N>
@@ -110,14 +107,13 @@ This skill **reads** the review doc — it never edits it. `/review-walk` owns t
       - **Skip comment** (description: "Fixes are already pushed; just don't comment")
     - On **Post comment**: `gh pr comment <N> --body "<comment>"`.
     - On **Edit**: first print the full composed comment as ordinary message text (not in a `preview` field) so the user can read what they are revising — print it at most once per revision round, and skip the print if this round's body has already been printed. Then treat the input as revision notes, regenerate the comment accordingly, and re-ask with the updated stub.
-16. **Report the final state:** the PR URL from step 4 (so it's one click away), commits pushed (or "already pushed"), comment posted (or skipped), and the reminder: "The worktree that shipped this PR is now behind — run `/catch-up` there before `/land`."
+15. **Report the final state:** the PR URL from step 4 (so it's one click away), commits pushed (or "already pushed"), comment posted (or skipped), and the reminder: "The worktree that shipped this PR is now behind — run `/catch-up` there before `/land`."
 
 ## Rules
 
 - Read-only on the review doc — never edit `Status:` or any field. That's `/review-walk`'s job.
 - Push onto the PR feature branch only — never `main`, never force-push, never `--no-verify`.
 - Stage only files the `done` issues touched (plus explicitly-confirmed extras); never `git add -A`.
-- The producing review comes from the doc's `produced-by:` key or is reported as unrecorded — never assumed to be any particular review skill.
 - Outcomes come from the doc's `Status:` lines — do not reclassify a finding or infer a status the doc doesn't state.
 - Only claim "pushed" / "commented" after the operation actually succeeds; on failure, report the true state and the recovery command.
 - Depends on `gh`; if unavailable, stop and say so.
