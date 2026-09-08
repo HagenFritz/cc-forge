@@ -6,7 +6,7 @@ This is a **personal showcase**, not a package. Browse, copy the folders or idea
 
 ## How it's wired
 
-The clone is symlinked into Claude Code's skills directory and loads in place as the `forge@skills-dir` plugin — every skill (namespaced `/forge:<name>`), every agent, and the caveman hook:
+The clone is symlinked into Claude Code's skills directory and loads in place as the `forge@skills-dir` plugin — every skill (namespaced `/forge:<name>`) and every agent:
 
 ```bash
 ln -s /path/to/your/clone/cc-forge ~/.claude/skills/cc-forge
@@ -36,7 +36,6 @@ Skills are named by what they do to an artifact: producers take the name of what
 | `/review-walk` | Walks a review doc group by group with implement / defer / won't fix / add term / explain more per issue; updates `Status:` inline; offers tracking issues for deferrals | You have a `docs/reviews/*.md` and want to act on it |
 | `/review-sweep` | **Optional.** Takes the quick wins from a review doc unattended: reads the cited code, implements only Small+high/medium (and P1 Medium+high) findings, marks reviewer misreads `wont-fix`, and leaves the rest `open` with a `**Sweep:**` reason. Zero prompts; edits inline and uncommitted | You want the cheap-and-certain fixes applied before walking the rest by hand |
 | `/review-push` | Commits and pushes the review fixes and posts a PR comment of what was fixed, deferred, and skipped | After `/review-walk`, before landing from another machine |
-| `/catch-up` | Fast-forwards a worktree branch and reports incoming commits and review-status changes | Picking up commits pushed from another machine |
 | `/compound` | Documents a recently solved problem so the knowledge compounds | Right after solving something non-obvious |
 | `/compact-prep` | Writes a fresh-agent handoff doc to `docs/handoff/` and prints the `@`-reference to paste after `/compact` | Context is getting full and you want the next session to resume cleanly |
 | `/ideate` | Generates and critically evaluates improvement ideas for the project | "What should I improve?" |
@@ -62,12 +61,10 @@ Skills are named by what they do to an artifact: producers take the name of what
 
 GitHub skills shell out to `gh`; have it installed and authenticated.
 
-### Local testing & git utilities
+### Git utilities
 
 | Skill | What it does | When to use |
 |---|---|---|
-| `/preview` | Merges a worktree branch into a disposable `preview/*` branch in the primary checkout, so running dev servers pick it up | Live-testing a worktree branch without restarting anything |
-| `/unpreview` | Returns the primary checkout to `main` and deletes the `preview/*` branch | Done previewing |
 | `/commit-all` | Commits all changes, one commit per file | Granular commits without hand-staging |
 
 ### Project tracking
@@ -82,7 +79,6 @@ GitHub skills shell out to `gh`; have it installed and authenticated.
 
 | Skill | What it does | When to use |
 |---|---|---|
-| `/caveman` | Ultra-terse mode (`lite` / `full` / `ultra`), persisted across turns by a hook | `/caveman <level>` for terse output; `/caveman off` to stop |
 | `/tldr` | Caps **one** response at N sentences in plain language; identifiers and paths never paraphrased | `/tldr <n> [question]` for a straight short answer |
 
 ### Learning
@@ -129,7 +125,7 @@ Subagents live in `agents/`, grouped by category. Skills reference them as `forg
 ```
 skills/          Slash commands (one SKILL.md per skill)
 agents/          Subagents grouped by category (research/review/workflow/test)
-hooks/           Hook scripts (the caveman mode tracker)
+hooks/           Hook scripts + hooks.json (auto-wired when the plugin loads; currently empty)
 dashboard/       Live terminal dashboard for monitoring sessions (run as `ccdash`, not plugin-loaded)
 .claude-plugin/  Plugin manifest (makes the symlinked clone load as forge@skills-dir)
 docs/            Plans, brainstorms, reviews, initiatives generated at runtime
@@ -138,5 +134,3 @@ docs/            Plans, brainstorms, reviews, initiatives generated at runtime
 ## Credits
 
 Scaffolded from [EveryInc/compound-engineering-plugin](https://github.com/EveryInc/compound-engineering-plugin) by [Every Inc](https://every.to) (Kieran Klaassen, T.M. Chow), MIT-licensed — the core workflow, the agent categories, and several skills derive from it.
-
-The `/caveman` prompt is adapted from [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) (MIT). The persistence hook is original to cc-forge and shares the `~/.claude/.caveman-active` flag file with upstream, so both can coexist.

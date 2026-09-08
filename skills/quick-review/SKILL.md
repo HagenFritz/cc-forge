@@ -10,7 +10,6 @@ description: >
   Triggers on phrases like "quick review", "review this quickly", "light review",
   or /quick-review.
 user-invocable: true
-disable-model-invocation: true
 argument-hint: "[PR number, GitHub URL, branch name, or latest]"
 allowed-tools: Bash, Read, Write, Grep, Glob, Task
 ---

@@ -8,7 +8,6 @@ description: >
   can see exactly what each finding turned into. Triggers on "push the review fixes",
   "review-push", or being run right after /review-walk on a PR branch.
 user-invocable: true
-disable-model-invocation: true
 argument-hint: "[path to docs/reviews/*.md]"
 allowed-tools: Bash, AskUserQuestion, Read, Grep, Glob
 ---
@@ -22,7 +21,7 @@ This skill **reads** the review doc — it never edits it. `/review-walk` owns t
 ## Core Principles
 
 1. **The review doc is the source of truth for outcomes.** What was fixed / deferred / skipped comes from the doc's `Status:` lines, not from guessing at the diff.
-2. **One writer per phase.** This runs on the review machine and pushes to the PR branch. The worktree that shipped the PR is untouched; it fast-forwards later via `/catch-up` (`/land` no longer syncs branches).
+2. **One writer per phase.** This runs on the review machine and pushes to the PR branch. The worktree that shipped the PR is untouched and will be behind afterward — `/land` no longer syncs branches, so bring it level (`git pull --ff-only`) before landing from there.
 3. **Report the real outcome.** Only claim "pushed" after the push succeeds. If nothing was fixed, say so and don't invent a commit.
 4. **The PR comment is the carried context.** It's what a human reviewer and the landing machine read to understand what the review produced — write it for them, not as a log dump.
 
@@ -107,7 +106,7 @@ This skill **reads** the review doc — it never edits it. `/review-walk` owns t
       - **Skip comment** (description: "Fixes are already pushed; just don't comment")
     - On **Post comment**: `gh pr comment <N> --body "<comment>"`.
     - On **Edit**: first print the full composed comment as ordinary message text (not in a `preview` field) so the user can read what they are revising — print it at most once per revision round, and skip the print if this round's body has already been printed. Then treat the input as revision notes, regenerate the comment accordingly, and re-ask with the updated stub.
-15. **Report the final state:** the PR URL from step 4 (so it's one click away), commits pushed (or "already pushed"), comment posted (or skipped), and the reminder: "The worktree that shipped this PR is now behind — run `/catch-up` there before `/land`."
+15. **Report the final state:** the PR URL from step 4 (so it's one click away), commits pushed (or "already pushed"), comment posted (or skipped), and the reminder: "The worktree that shipped this PR is now behind — `git pull --ff-only` there before `/land`."
 
 ## Rules
 

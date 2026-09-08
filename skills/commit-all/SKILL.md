@@ -1,7 +1,6 @@
 ---
 name: commit-all
 description: Stage and commit all unstaged changes with per-file commit messages
-disable-model-invocation: true
 user-invocable: true
 allowed-tools: Bash, Read, Grep, Glob
 ---

@@ -10,7 +10,6 @@ description: >
   Triggers on phrases like "sweep the review", "review-sweep", "quick wins from the
   review", or passing a path to a docs/reviews/*.md file.
 user-invocable: true
-disable-model-invocation: true
 argument-hint: "[path to docs/reviews/*.md]"
 allowed-tools: Bash, Read, Edit, Write, Grep, Glob
 ---
