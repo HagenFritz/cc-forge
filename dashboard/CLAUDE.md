@@ -62,6 +62,8 @@ Payload contract — anything else is ignored, `host` included (the host is pinn
 | `emittedAt` | yes | VM epoch ms, used for staleness comparison only — never for display, which uses the Mac receipt time |
 | `name`, `cwd`, `kind`, `tmuxSession` | no | passed through the same `validateRows` boundary as local rows |
 
+A VM row that has been quiet for 10 minutes shows `stale` in the STATE cell rather than its last known status, and one quiet for 12 hours is dropped. Both are tick-driven off the Mac receipt time — there is no heartbeat, so silence cannot be told apart from an idle session or a dead forward, and marking it is the honest answer. A stale row keeps its position, and the next real event replaces the row outright, so it returns to its real status for free. Local rows are never aged out.
+
 At most 256 VM rows are held; at the cap the least recently heard-from row is evicted for the new session, so a flood of fresh uuids cannot lock a real session out of the table. The sticky-end map is capped the same way, evicting the soonest-expiring record. Footer counters — rejected VM requests (a stale token copy on the VM) and dropped VM events (out of order, unknown event, or malformed) — each get their own footer line once non-zero, as do a listener that could not bind and the one-time new-token note.
 
 ## Session emitter (VM side)
@@ -93,8 +95,8 @@ The bell rings once per tick when a session newly enters `waiting`.
 - Wide characters (emoji, CJK) misalign columns — widths are code points, not display cells. Declared scope boundary.
 - A status string over 16 characters is truncated (`STATE_CAP`).
 - Fixture rows always show `0s` age (no `<pid>.json` exists for synthetic pids); by design for deterministic output.
-- The module exports only `validateVmRow`, `applyVmEvent`, `newState`, `startListener`, `vmFocusScript`, `tmuxSwitchArgs`, and `focusVmRow` — the VM ingest seam plus the VM focus path, which needs iTerm and a live devbox to run for real; anything else, such as in-process timing or a rendered frame, needs an instrumented copy or a live run.
-- A VM session that starts while the dashboard is down is invisible until its next event; there is no heartbeat and the dashboard never polls the VM.
+- The module exports only `validateVmRow`, `applyVmEvent`, `newState`, `startListener`, `vmFocusScript`, `tmuxSwitchArgs`, `focusVmRow`, and `ageOutVmRows` — the VM ingest seam, the VM focus path (which needs iTerm and a live devbox to run for real), and staleness, which is only reachable by handing it a clock; anything else, such as in-process timing or a rendered frame, needs an instrumented copy or a live run.
+- A VM session that starts while the dashboard is down is invisible until its next event; there is no heartbeat and the dashboard never polls the VM. An idle VM session goes `stale` after 10 minutes for the same reason, which says only that nothing has been heard — not that the session is gone.
 - Transcript reads have no wall-clock guard (measured at ~1 ms cold; not addressed).
 - `DASH_PROJECTS_DIR` env override exists for testing but is not a documented user-facing feature.
 - A tab renamed with `r` is overwritten by Claude Code's own OSC 0 title on that session's next turn — the rename is not sticky. Mitigation is the iTerm profile toggle "Terminal may set tab/window title"; there is no scriptable lock.

@@ -78,6 +78,12 @@ const VM_END_EVENT = 'SessionEnd'
 // of the real session's re-registration.
 const VM_END_STICKY_MS = 5000
 const VM_ROWS_MAX = 256
+// There is no heartbeat, so an idle session and a dead forward look identical:
+// silence is labeled rather than trusted. Ten minutes of it marks the row,
+// twelve hours evicts it so ghosts do not accumulate across days.
+const VM_STALE_MS = 10 * 60 * 1000
+const VM_EVICT_MS = 12 * 60 * 60 * 1000
+const VM_STALE_STATUS = 'stale'
 // Number.isInteger(1e308) is true, so without a ceiling one forged event pins
 // the stored seq beyond every real one.
 const VM_SEQ_MAX = 2 ** 32
@@ -702,6 +708,22 @@ function vmRowsAsRows(state) {
   return Array.from(state.vmRows.values())
 }
 
+// Tick-driven, because silence is not an event and nothing else will wake for
+// it. Compared against the Mac receipt time, so a VM clock running ahead cannot
+// make a row look fresh. A stale row keeps its position; the next real event
+// replaces the whole row object in applyVmEvent, which is what returns it to
+// normal. Local rows are never touched — this reads state.vmRows only.
+function ageOutVmRows(state, now) {
+  for (const [id, row] of state.vmRows) {
+    const quiet = now - row.receivedAt
+    if (quiet >= VM_EVICT_MS) {
+      state.vmRows.delete(id)
+    } else if (quiet >= VM_STALE_MS) {
+      row.status = VM_STALE_STATUS
+    }
+  }
+}
+
 function tick(state, opts) {
   const now = Date.now()
   const result = opts.fixture ? readFixture(opts.fixture) : readRegistry()
@@ -719,6 +741,7 @@ function tick(state, opts) {
     state.poll = state.poll === 'never-good' ? 'never-good' : 'stale'
   }
 
+  ageOutVmRows(state, now)
   const rows = localRows.concat(vmRowsAsRows(state))
   const transitions = observeRows(state.observed, rows, now)
   state.lastRows = sortRows(decorateRows(rows, state.observed, now))
@@ -1558,7 +1581,7 @@ if (require.main === module) main()
 
 // The only testing seam this file has: a VM payload in (validateVmRow), an
 // event applied to a state (applyVmEvent over newState), the listener itself,
-// which cannot otherwise be reached without a pty, and the VM focus path, whose
-// two builders and entry point cannot be exercised at all without iTerm and a
-// live devbox.
-module.exports = { validateVmRow, applyVmEvent, newState, startListener, vmFocusScript, tmuxSwitchArgs, focusVmRow }
+// which cannot otherwise be reached without a pty, the VM focus path, whose two
+// builders and entry point cannot be exercised at all without iTerm and a live
+// devbox, and staleness, which is only reachable by handing it a clock.
+module.exports = { validateVmRow, applyVmEvent, newState, startListener, vmFocusScript, tmuxSwitchArgs, focusVmRow, ageOutVmRows }
