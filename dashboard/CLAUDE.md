@@ -59,8 +59,10 @@ Payload contract — anything else is ignored, `host` included (the host is pinn
 | `sessionId` | yes | the VM session's UUID; namespaced to `ro-devbox:<id>` at ingest |
 | `event` | yes | `SessionStart` / `UserPromptSubmit` → busy, `Notification` / `PermissionRequest` → waiting, `Stop` → idle, `SessionEnd` → row removed for 5 s and then re-creatable. `SubagentStop` and anything else is ignored |
 | `seq` | yes | monotonic per session; an event at or below the stored value is dropped unless the row has been quiet for the sticky window, which lets an emitter whose counter reset re-register. Above 2^32 is dropped — `Number.isInteger` alone would let one forged event pin the stored value past every real one |
-| `emittedAt` | yes | VM epoch ms, used for staleness comparison only — never for display, which uses the Mac receipt time |
+| `emittedAt` | no | accepted in the payload and ignored — staleness, eviction, and the displayed age all derive from the Mac-observed receipt time |
 | `name`, `cwd`, `kind`, `tmuxSession` | no | passed through the same `validateRows` boundary as local rows |
+
+A VM row that has been quiet for 10 minutes shows `stale` in the STATE cell, and one quiet for 12 hours is dropped. Both are tick-driven off the Mac receipt time — there is no heartbeat, so silence cannot be told apart from an idle session or a dead forward, and labeling it is the honest answer. Staleness is a flag on the row, not a status: the STATE cell reads `stale`, the AGE keeps counting from the last received event rather than restarting, the row holds its sort position, and a stale row that reports again does not re-ring the bell — it never left the status the bell is edge-triggered on. The next real event replaces the row outright, which clears the flag. Local rows are never aged out.
 
 At most 256 VM rows are held; at the cap the least recently heard-from row is evicted for the new session, so a flood of fresh uuids cannot lock a real session out of the table. The sticky-end map is capped the same way, evicting the soonest-expiring record. Footer counters — rejected VM requests (a stale token copy on the VM) and dropped VM events (out of order, unknown event, or malformed) — each get their own footer line once non-zero, as do a listener that could not bind and the one-time new-token note.
 
@@ -75,7 +77,20 @@ Per-session `seq` counters live at `~/.claude/dash-seq/<session-id>` (one small 
 Keys (live mode only):
 
 - `j` / Down, `k` / Up — move the highlight.
-- Enter — focus the highlighted session's iTerm tab.
+- Enter — focus the highlighted session's iTerm tab. On a VM row there is no pid
+  to resolve, so focus instead selects the iTerm tab whose session name contains
+  `ro-devbox`, then asks `tmux list-clients -F '#{client_tty}'` over ssh for the
+  attached client and runs `tmux switch-client -c <tty> -t <session>` against it,
+  both as argv arrays with `-o BatchMode=yes -o ConnectTimeout=2` so an unknown
+  host key can never prompt on `/dev/tty`. The client is named explicitly because
+  `switch-client` alone moves whichever client tmux saw last, which an iTerm
+  select does not change. The AppleScript is built from the host alias alone — no
+  byte of a VM row reaches it — and the tmux name reaches only the argv, never an
+  interpreter. A row whose `tmuxSession` is `null` focuses the tab and says tmux
+  was not detected, and no attached client says so too; an unreachable devbox is
+  one transient footer line, bounded by the same 3 s timeout as each other call.
+  Only the newest Enter writes the footer, so two overlapping focus attempts
+  cannot report out of order, and a quit mid-flight kills the child.
 - `r` — rename that session's iTerm tab (inline prompt; Enter confirms, Esc cancels, `^U` clears).
 - `q` / `^C` — quit.
 
@@ -86,13 +101,15 @@ The bell rings once per tick when a session newly enters `waiting`.
 - Wide characters (emoji, CJK) misalign columns — widths are code points, not display cells. Declared scope boundary.
 - A status string over 16 characters is truncated (`STATE_CAP`).
 - Fixture rows always show `0s` age (no `<pid>.json` exists for synthetic pids); by design for deterministic output.
-- The module exports only `validateVmRow`, `applyVmEvent`, `newState`, and `startListener` — the VM ingest seam; anything else, such as in-process timing or a rendered frame, needs an instrumented copy or a live run.
-- A VM session that starts while the dashboard is down is invisible until its next event; there is no heartbeat and the dashboard never polls the VM.
+- The module exports only `validateVmRow`, `applyVmEvent`, `newState`, `startListener`, `focusScript`, `renameScript`, `vmFocusScript`, `tmuxListClientsArgs`, `tmuxSwitchArgs`, `focusHighlighted`, `focusVmRow`, `ageOutVmRows`, and `renderRows` — the VM ingest seam, the focus path (which needs iTerm and a live devbox to run for real), and staleness, reachable by handing `ageOutVmRows` a clock and `renderRows` the same one to get the decorated, sorted rows back; anything else, such as in-process timing or a whole rendered frame, needs an instrumented copy or a live run.
+- A VM session that starts while the dashboard is down is invisible until its next event; there is no heartbeat and the dashboard never polls the VM. An idle VM session goes `stale` after 10 minutes for the same reason, which says only that nothing has been heard — not that the session is gone.
 - Transcript reads have no wall-clock guard (measured at ~1 ms cold; not addressed).
 - `DASH_PROJECTS_DIR` env override exists for testing but is not a documented user-facing feature.
 - A tab renamed with `r` is overwritten by Claude Code's own OSC 0 title on that session's next turn — the rename is not sticky. Mitigation is the iTerm profile toggle "Terminal may set tab/window title"; there is no scriptable lock.
 - A session whose iTerm profile defines a custom title format shows the new name wrapped in that format — renaming to `foo` can render as `foo (cloud-sql-proxy)`. The rename did apply; the profile decorates it. The dashboard reads the name back after setting it and reports the rendered form when it differs from what was typed, so this no longer looks like a rename that did nothing. A separate mechanism from the OSC 0 revert above, and it fires on the first rename rather than on the next turn. Changing it means editing the profile's title format in iTerm.
 - Rename input is ASCII printable only (`0x20`–`0x7e`), capped at 64 characters; other keystrokes are ignored.
 - Focus and rename are iTerm-only; elsewhere a transient footer message appears and the rest of the dashboard keeps working.
+- VM focus snapshots the row when Enter is pressed, so a session that ends while iTerm is being driven leaves the tmux switch pointing at a session that just went away. Accepted, for the same reason the pid-reuse window is.
+- One devbox tab is assumed: focus takes the first iTerm session whose name contains the host alias, so with two `ssh ro-devbox` tabs open it may pick either. The tmux switch targets the attached client explicitly (`-c <client_tty>`, the first one `list-clients` reports), so it is not iTerm's pick that decides which session moves — but with two attached clients the tab iTerm selects and the client tmux moves can still be different ones.
 - A bare Escape is delivered after a ~50 ms debounce, inherent to telling it apart from arrow keys.
 - Unrecognized escape sequences (Left/Right, Home, End, function keys) are silently dropped. Both CSI (`\x1b[`) and SS3 (`\x1bO`) forms are consumed to their terminator, so no tail leaks through as literal keystrokes.
