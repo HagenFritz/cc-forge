@@ -18,7 +18,14 @@ const os = require('os')
 const http = require('http')
 const { execFileSync } = require('child_process')
 
-const EMIT_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'Notification', 'Stop', 'SessionEnd'])
+const EMIT_EVENTS = new Set([
+  'SessionStart',
+  'UserPromptSubmit',
+  'Notification',
+  'PermissionRequest',
+  'Stop',
+  'SessionEnd',
+])
 const END_EVENT = 'SessionEnd'
 
 const EMIT_HOST = '127.0.0.1'
@@ -67,6 +74,7 @@ function writeSmallFile(file, content) {
   const temp = `${file}.${process.pid}.${Date.now()}`
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
+    fs.chmodSync(path.dirname(file), 0o700)
     try {
       if (fs.lstatSync(file).isSymbolicLink()) return
     } catch (e) {
@@ -87,6 +95,13 @@ function writeSmallFile(file, content) {
 }
 
 function readToken() {
+  // The VM-side 0600 is load-bearing: a token any other local process can
+  // read defends nothing, so an over-permissive file is treated as absent.
+  try {
+    if (fs.lstatSync(TOKEN_PATH).mode & 0o077) return null
+  } catch (e) {
+    return null
+  }
   const raw = readSmallFile(TOKEN_PATH, TOKEN_MAX_BYTES)
   if (raw === null) return null
   const token = raw.trim()
@@ -99,13 +114,17 @@ function readToken() {
 // accepts a lower seq again once the row has been quiet for its sticky
 // window, so a counter that resets costs one dropped event at worst.
 
+// The successor has to stay under the listener's ceiling, which drops only
+// what is strictly above it: a prior of SEQ_MAX - 1 emits SEQ_MAX, accepted
+// once and then pinning the row forever.
 function nextSeq(sessionId) {
-  const file = path.join(SEQ_DIR, sessionId)
-  const raw = readSmallFile(file, SEQ_MAX_BYTES)
+  const raw = readSmallFile(path.join(SEQ_DIR, sessionId), SEQ_MAX_BYTES)
   const prior = raw !== null && SEQ_RE.test(raw.trim()) ? Number(raw.trim()) : -1
-  const seq = prior >= 0 && prior < SEQ_MAX ? prior + 1 : 0
-  writeSmallFile(file, String(seq))
-  return seq
+  return prior >= 0 && prior + 1 < SEQ_MAX ? prior + 1 : 0
+}
+
+function saveSeq(sessionId, seq) {
+  writeSmallFile(path.join(SEQ_DIR, sessionId), String(seq))
 }
 
 function dropSeq(sessionId) {
@@ -145,7 +164,7 @@ function emitPort() {
 // hooks.json already narrows this — the payload check is the guard for a
 // matcher that stops narrowing.
 function needsPermission(data) {
-  const kind = data.notification_type || data.notificationType
+  const kind = data.notification_type
   if (typeof kind === 'string' && kind) return kind === 'permission_prompt'
   return /permission/i.test(String(data.message || ''))
 }
@@ -159,11 +178,16 @@ function emit(data) {
   const sessionId = data.session_id
   if (typeof sessionId !== 'string' || !UUID_RE.test(sessionId)) return null
 
+  // Written only after the token check, so no counter is created for an event
+  // that is not going out; dropped before it, so a SessionEnd arriving without
+  // a token still takes the counter with it.
+  const ending = event === END_EVENT
+  const seq = nextSeq(sessionId)
+  if (ending) dropSeq(sessionId)
+
   const token = readToken()
   if (token === null) return null
-
-  const seq = nextSeq(sessionId)
-  if (event === END_EVENT) dropSeq(sessionId)
+  if (!ending) saveSeq(sessionId, seq)
 
   const body = JSON.stringify({
     sessionId,
@@ -193,6 +217,7 @@ function emit(data) {
 // --- Main ----------------------------------------------------------------
 
 let input = ''
+process.stdin.setEncoding('utf8')
 process.stdin.on('data', (chunk) => { input += chunk })
 process.stdin.on('end', () => {
   let req = null
@@ -203,11 +228,14 @@ process.stdin.on('end', () => {
   }
   if (req === null) process.exit(0)
 
-  // Three exits, none of them a wait: the listener answered (headers are
+  // Four exits, none of them a wait: the listener answered (headers are
   // enough — the event is applied before it replies), nothing was listening,
-  // or the forward is half-open and the socket went quiet.
+  // or the forward is half-open and the socket went quiet. The wall-clock
+  // timer is the only one that covers a stalled connect, where the inactivity
+  // timeout above never starts.
   const finish = () => process.exit(0)
   req.on('response', finish)
   req.on('error', finish)
   req.setTimeout(SOCKET_TIMEOUT_MS, finish)
+  setTimeout(finish, SOCKET_TIMEOUT_MS)
 })
