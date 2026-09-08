@@ -2,7 +2,7 @@
 name: catch-up
 description: >
   Fast-forward a /tree worktree branch to pick up commits pushed from another machine
-  (the remote-review flow — review fixes pushed by /push-review from a devbox VM), then
+  (the remote-review flow — review fixes pushed by /review-push from a devbox VM), then
   report what arrived: incoming commits, files changed, and review-doc Status deltas.
   Read-only context rebuild — it pulls and summarizes, it does not commit, edit, or land.
   Run it in the worktree session before /land so the session knows what the VM did.
@@ -15,7 +15,7 @@ allowed-tools: Bash, AskUserQuestion, Read, Grep, Glob
 
 # Catch Up
 
-Bring a `/tree` worktree's local branch level with the PR branch on origin — picking up review fixes pushed from the review machine (`/push-review` on a devbox VM) — and rebuild this session's mental model of what changed while it was idle. This is the pre-land step in the remote-review flow (Model B): after the VM pushes fixes, run `/catch-up` in the worktree so `/land` operates on the real, current branch and you know what you're about to merge.
+Bring a `/tree` worktree's local branch level with the PR branch on origin — picking up review fixes pushed from the review machine (`/review-push` on a devbox VM) — and rebuild this session's mental model of what changed while it was idle. This is the pre-land step in the remote-review flow (Model B): after the VM pushes fixes, run `/catch-up` in the worktree so `/land` operates on the real, current branch and you know what you're about to merge.
 
 Read-only beyond the fast-forward itself: it fetches, fast-forwards, and reports. It never commits, edits the review doc, resolves conflicts, or invokes `/land`.
 
@@ -49,7 +49,7 @@ Read-only beyond the fast-forward itself: it fetches, fast-forwards, and reports
 
 ### Phase 4: Report the context
 
-8. Read the newest review doc for this branch if present (`ls docs/reviews/*.md | sort | tail -1`, or a doc whose `target:` matches the branch/PR). Parse `Status:` lines and count `done` / `deferred` / `wont-fix` / still-`open`. The doc is gitignored and local to whichever machine ran the walk — in the remote-review flow it lives on the **VM**, so it's usually **absent** in the worktree. Absence is expected; note it plainly ("review doc not present in this checkout — it's on the review machine; the PR comment from /push-review has the outcomes") rather than treating it as an error.
+8. Read the newest review doc for this branch if present (`ls docs/reviews/*.md | sort | tail -1`, or a doc whose `target:` matches the branch/PR). Parse `Status:` lines and count `done` / `deferred` / `wont-fix` / still-`open`. The doc is gitignored and local to whichever machine ran the walk — in the remote-review flow it lives on the **VM**, so it's usually **absent** in the worktree. Absence is expected; note it plainly ("review doc not present in this checkout — it's on the review machine; the PR comment from /review-push has the outcomes") rather than treating it as an error.
 9. **Present the catch-up summary:**
    ```markdown
    Caught up `<branch>` → origin (fast-forwarded N commits).
@@ -63,7 +63,7 @@ Read-only beyond the fast-forward itself: it fetches, fast-forwards, and reports
 
    ### Review outcomes
    - From the review doc (if present): X fixed, Y deferred, Z skipped.
-   - Or: "Review doc not in this checkout — see the PR comment posted by /push-review for the fix summary."
+   - Or: "Review doc not in this checkout — see the PR comment posted by /review-push for the fix summary."
    ```
 10. **End with the handoff, not an action:** "Worktree is now current. Next: `/land` to verify CI and merge." Do not invoke `/land` — leave it to the user. (`/land` no longer syncs the branch itself, so this catch-up is the sync in the remote-review flow.)
 

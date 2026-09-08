@@ -285,7 +285,7 @@ After all issues are terminal:
   - If any `done` issues produced code changes, check whether the current branch has
     an open PR (`gh pr view --json state,number`):
     - **Open PR exists** (the remote-review flow — this walk ran against a shipped PR):
-      suggest **`/push-review`**, which commits the fixes, pushes them onto the PR
+      suggest **`/review-push`**, which commits the fixes, pushes them onto the PR
       branch, and posts a PR comment mapping each finding to its outcome (fixed /
       deferred / skipped). That skill owns the commit+push+comment; don't do it here.
     - **No PR**: suggest `/ship`.

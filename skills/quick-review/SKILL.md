@@ -5,7 +5,7 @@ description: >
   correctness-auditor, code-simplicity-reviewer, and at most one language reviewer
   chosen by the diff's dominant file extension — and produces a review document in
   the same docs/reviews/*.md format /deep-review produces, so /review-walk,
-  /review-sweep, and /push-review consume it unchanged. Reviews the current branch
+  /review-sweep, and /review-push consume it unchanged. Reviews the current branch
   in the current directory; never creates a worktree and never checks out a branch.
   Triggers on phrases like "quick review", "review this quickly", "light review",
   or /quick-review.
@@ -21,7 +21,7 @@ allowed-tools: Bash, Read, Write, Grep, Glob, Task
 
 `/quick-review` is the lite sibling of `/deep-review`. It obeys the same shared spec, dispatches the same synthesizer, and writes the same document — the only thing it trades away is depth: a fixed roster of two-or-three agents, no ultra-thinking, no conditional agents, no testing offer. Reach for it when the diff is small enough that the full fleet is overkill.
 
-The review **document** format is non-negotiable and identical to `/deep-review`'s, because `/review-walk`, `/review-sweep`, and `/push-review` anchor on its structure.
+The review **document** format is non-negotiable and identical to `/deep-review`'s, because `/review-walk`, `/review-sweep`, and `/review-push` anchor on its structure.
 
 ## Prerequisites
 
