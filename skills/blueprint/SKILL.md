@@ -88,6 +88,8 @@ If a relevant requirements document exists:
 5. Reference important carried-forward decisions in the plan with `(see origin: <source-path>)`
 6. Do not silently omit source content — if the origin document discussed it, the plan must address it even if briefly. Before finalizing, scan each section of the origin document to verify nothing was dropped.
 
+**Walked requirements docs.** A doc that has been through `/brainstorm-walk` carries `**Reviewed:**` and `**Review note:**` lines indented inside its `R`-bullets. These are walk metadata, not requirement text — never carry them into the plan. A requirement marked `**Reviewed:** retired` (its text struck through, its `R`-ID kept) has been **deliberately withdrawn**: exclude it from the Requirements Trace and plan nothing for it. This is the one exception to rule 6 above — a retired requirement is not "silently omitted", it was explicitly removed by a human, and re-planning it would undo their decision. Note the exclusion in one line so the omission is visible. Every other `**Reviewed:**` value (`accepted`, `modified`, `skipped`, `pending`, or no line at all) means the requirement is live and planned as normal.
+
 If no relevant requirements document exists, planning may proceed from the user's request directly.
 
 #### 0.4 No-Requirements-Doc Fallback
@@ -386,7 +388,7 @@ type: [feat|fix|refactor]
 status: active
 date: YYYY-MM-DD
 origin: docs/brainstorms/YYYY-MM-DD-<topic>-requirements.md  # include when planning from a requirements doc
-deepened: YYYY-MM-DD  # optional, set later by deepen-blueprint when the plan is substantively strengthened
+deepened: YYYY-MM-DD  # optional, set later by blueprint-deepen when the plan is substantively strengthened
 ---
 
 # [Plan Title]
@@ -616,7 +618,7 @@ After writing the plan file, present the options using the platform's blocking q
 
 **Options:**
 1. **Open plan in editor** - Open the plan file for review
-2. **Run `/deepen-blueprint`** - Stress-test weak sections with targeted research when the plan needs more confidence
+2. **Run `/blueprint-deepen`** - Stress-test weak sections with targeted research when the plan needs more confidence
 3. **Share to Proof** - Upload the plan for collaborative review and sharing
 4. **Start `/work`** - Begin implementing this plan in the current environment
 5. **Start `/work` in another session** - Begin implementing in a separate agent session when the current platform supports it
@@ -624,7 +626,7 @@ After writing the plan file, present the options using the platform's blocking q
 
 Based on selection:
 - **Open plan in editor** → Open `docs/plans/<plan_filename>.md` using the current platform's file-open or editor mechanism (e.g., `open` on macOS, `xdg-open` on Linux, or the IDE's file-open API)
-- **`/deepen-blueprint`** → Call `/deepen-blueprint` with the plan path
+- **`/blueprint-deepen`** → Call `/blueprint-deepen` with the plan path
 - **Share to Proof** → Upload the plan:
   ```bash
   CONTENT=$(cat docs/plans/<plan_filename>.md)
@@ -640,7 +642,7 @@ Based on selection:
 - **Create Issue** → Follow the Issue Creation section below
 - **Other** → Accept free text for revisions and loop back to options
 
-If running with ultrathink enabled, or the platform's reasoning/effort level is set to max or extra-high, automatically run `/deepen-blueprint` only when the plan is `Standard` or `Deep`, high-risk, or still shows meaningful confidence gaps in decisions, sequencing, system-wide impact, risks, or verification.
+If running with ultrathink enabled, or the platform's reasoning/effort level is set to max or extra-high, automatically run `/blueprint-deepen` only when the plan is `Standard` or `Deep`, high-risk, or still shows meaningful confidence gaps in decisions, sequencing, system-wide impact, risks, or verification.
 
 ## Issue Creation
 

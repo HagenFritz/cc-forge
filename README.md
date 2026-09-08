@@ -23,13 +23,14 @@ Two reference docs sit alongside the commands and are not invocable: [`skills/is
 | Skill | What it does | When to use |
 |---|---|---|
 | `/brainstorm` | Explores requirements through dialogue, writes a right-sized requirements doc | A vague or ambitious idea; you want to think before committing to scope |
+| `/brainstorm-walk` | **Optional.** Walks a requirements doc one `R`-bullet at a time with a plain-English teach moment, then accept / modify / remove / add term / skip. Non-`R` sections render once as read-only context; `remove` tombstones without renumbering; `add term` captures to the glossary without losing your place. Writes `**Reviewed:**` inline so it's resumable. Hard-stops on a doc whose requirements aren't `R`-numbered | You want to understand or correct requirements before they're planned |
 | `/blueprint` | Turns a description or requirements doc into an implementation plan grounded in repo patterns | Requirements are roughly defined and you need a technical approach in units |
-| `/deepen-blueprint` | Stress-tests a plan and strengthens weak sections with targeted research | A high-risk or deep plan needs more confidence |
-| `/walk-blueprint` | **Optional.** Walks a plan one unit at a time with a plain-English teach moment, then accept / modify / remove / add term / skip. `remove` tombstones without renumbering; `add term` captures to the glossary without losing your place. Writes `**Reviewed:**` inline so it's resumable | You want to understand or correct a plan before any code is written |
+| `/blueprint-deepen` | Stress-tests a plan and strengthens weak sections with targeted research | A high-risk or deep plan needs more confidence |
+| `/blueprint-walk` | **Optional.** Walks a plan one unit at a time with a plain-English teach moment, then accept / modify / remove / add term / skip. `remove` tombstones without renumbering; `add term` captures to the glossary without losing your place. Writes `**Reviewed:**` inline so it's resumable | You want to understand or correct a plan before any code is written |
 | `/work` | Executes a plan unit by unit: one Opus subagent per unit, strictly serial, with the orchestrator reviewing each diff, committing, and stamping the issue | You have a plan and want it implemented |
 | `/grind` | Executes a whole plan **autonomously as a sequence of PRs**: per slice, worktree → Opus builds and opens the PR → review fleet → `/grind` triages → Opus fixes → squash-merge on green CI. Halts on red; resumable via a `## PR Breakdown` table | A plan you trust, ground to merged `main` without babysitting. Needs no required-reviews protection |
 | `/deep-review` | Exhaustive multi-agent code review; writes a review doc | Complex, risky, or large changes |
-| `/review-walk` | Walks a review doc group by group with implement / defer / skip per issue; updates `Status:` inline; offers tracking issues for deferrals | You have a `docs/reviews/*.md` and want to act on it |
+| `/review-walk` | Walks a review doc group by group with implement / defer / won't fix / add term / explain more per issue; updates `Status:` inline; offers tracking issues for deferrals | You have a `docs/reviews/*.md` and want to act on it |
 | `/review-sweep` | **Optional.** Takes the quick wins from a review doc unattended: reads the cited code, implements only Small+high/medium (and P1 Medium+high) findings, marks reviewer misreads `wont-fix`, and leaves the rest `open` with a `**Sweep:**` reason. Zero prompts; edits inline and uncommitted | You want the cheap-and-certain fixes applied before walking the rest by hand |
 | `/push-review` | Commits and pushes the review fixes and posts a PR comment of what was fixed, deferred, and skipped | After `/review-walk`, before landing from another machine |
 | `/catch-up` | Fast-forwards a worktree branch and reports incoming commits and review-status changes | Picking up commits pushed from another machine |
@@ -88,7 +89,7 @@ GitHub skills shell out to `gh`; have it installed and authenticated.
 | `/term-add` | Captures a term into `~/.claude/glossary.md`: normalizes it (typos fixed, glossary casing), drafts a two-sentence plain-English definition, an example, a near-miss, and a related term, and prints the entry back. Never asks you to define it | You hit a word you don't know |
 | `/term-quiz` | Quizzes you with Leitner spaced repetition (boxes at 1/3/7/14/30/90 days): overdue terms first, question type escalating with the box, Claude grades on meaning, state written back per item. Misses get a multiple-choice scaffold after grading and a re-ask at the close | `/term-quiz [n]` (default 8). Intervals are minimum waits, so sporadic use is fine |
 
-The glossary is one unversioned file outside every repo, yours to hand-edit. `/walk-blueprint`'s `add term` writes to it through `/term-add`.
+The glossary is one unversioned file outside every repo, yours to hand-edit. The `add term` action in `/brainstorm-walk`, `/blueprint-walk`, and `/review-walk` writes to it through `/term-add`.
 
 ## Agents
 
@@ -105,7 +106,7 @@ Subagents live in `agents/`, grouped by category. Skills reference them as `forg
 
 **Feature development** (bracketed steps optional):
 ```
-/brainstorm → /blueprint → [/walk-blueprint] → /work → /deep-review → [/review-sweep] → /review-walk → /ship → /land
+/brainstorm → [/brainstorm-walk] → /blueprint → [/blueprint-deepen] → [/blueprint-walk] → /work → /deep-review → [/review-sweep] → /review-walk → /ship → /land
 ```
 
 **Multi-feature initiative:**

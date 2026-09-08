@@ -8,9 +8,9 @@ disable-model-invocation: true
 # Personal Glossary Specification (v1)
 
 The glossary is one file of terms the user is learning, at `~/.claude/glossary.md`.
-Three skills write it: `/term-add` (standalone capture), `/term-quiz` (spaced-repetition
-state), and `/walk-blueprint` (which routes its `add term` action through `/term-add` in
-quiet mode).
+Five skills write it: `/term-add` (standalone capture), `/term-quiz` (spaced-repetition
+state), and the three walks — `/brainstorm-walk`, `/blueprint-walk`, and `/review-walk` —
+each of which routes its `add term` action through `/term-add` in quiet mode.
 
 This file is the single source of truth for every rule that applies to more than one
 skill. Writer skills embed only their own interaction prose inline and reference this

@@ -63,15 +63,16 @@ Optional keys:
 | Skill | Event | Glyph | Payload fields (human section) |
 |---|---|---|---|
 | brainstorm | `requirements-written` | 🧠 | Doc path, full requirements list (direct port from the doc) |
+| brainstorm-walk | `brainstorm-walk-complete` | 🚶 | Summary line + counts of requirements accepted, modified, retired, skipped; terms added to the glossary |
 | blueprint | `plan-written` | 📋 | Plan path, unit count, every unit enumerated with a one-sentence summary |
-| deepen-blueprint | `plan-deepened` | 🔬 | Plan path, sections-deepened count, short summary, questions resolved, major restructures |
-| walk-blueprint | `blueprint-walk-complete` | 🚶 | Summary line + counts of units accepted, modified, retired, skipped; terms added to the glossary |
+| blueprint-deepen | `plan-deepened` | 🔬 | Plan path, sections-deepened count, short summary, questions resolved, major restructures |
+| blueprint-walk | `blueprint-walk-complete` | 🚶 | Summary line + counts of units accepted, modified, retired, skipped; terms added to the glossary |
 | tree | `worktree-created` | 🌳 | Branch, worktree path (also in `paths`) |
 | branch-from-issue | `branch-created` | 🌱 | Branch |
 | work | `unit-complete` | 🔨 | **Did** (always), **Solved** (only when a problem was solved) |
 | work | `unit-blocked` | ⚠️ | **Blocked:** reason; optional `blocked_by` |
 | deep-review | `review-written` | 🔍 | Severity counts + the findings table from the terminal summary (per-P1/P2 rows, P3 roll-up) |
-| review-walk | `walk-complete` | 🚶 | Summary line + every walked issue as "what — status: why"; tracking refs for deferred items filed as issues |
+| review-walk | `review-walk-complete` | 🚶 | Summary line + every walked issue as "what — status: why"; tracking refs for deferred items filed as issues; terms added to the glossary |
 | review-sweep | `sweep-complete` | 🧹 | Counts implemented / skipped / surfaced (marker keys); doc path; surfaced findings listed as "id: title — reason" in the body |
 | side-quest | `side-quest-filed` | 🧭 | What was found, tracking-issue link (`tracking`, `followup:true`) |
 | ship | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
@@ -86,9 +87,16 @@ Optional keys:
 | grind | `grind-blocked` | 🛑 | What halted the run, open PR url, worktree path, remaining slice count |
 | grind | `grind-complete` | 🏁 | Merged PR count (`merged`) + links, follow-up tracking issues |
 
+**Renamed events.** `review-walk`'s event was `walk-complete` before it was renamed to
+`review-walk-complete` for consistency with its two sibling walks. Stamps already posted
+to GitHub carry the old name and are not rewritten — a reader encountering
+`"event":"walk-complete"` on a `review-walk` marker should treat it as the same event.
+No other event has been renamed; `plan-deepened` and `blueprint-walk-complete` kept their
+names through the skill renames precisely so history stays readable.
+
 Event names are these exact strings. New events join this table before any skill emits them.
 
-Document-producing skills (brainstorm, blueprint, deepen-blueprint, deep-review, side-quest, review-sweep) start the human body with a `**Doc:**` field holding the repo-relative doc path, and carry the same path in the marker's `paths`.
+Document-producing skills (brainstorm, blueprint, blueprint-deepen, deep-review, side-quest, review-sweep) start the human body with a `**Doc:**` field holding the repo-relative doc path, and carry the same path in the marker's `paths`.
 
 Grind's `unit-complete`/`unit-blocked` stamps are posted by its build subagent mid-build (grind blocks on that agent, so only the agent can stamp in real time). The subagent authenticates as the same `gh` login, so the reader contract's author check is unaffected; grind embeds the filled templates and encoding rules in the agent's brief rather than assuming it reads this spec.
 

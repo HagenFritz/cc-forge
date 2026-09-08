@@ -1,22 +1,22 @@
 ---
-name: deepen-blueprint
+name: blueprint-deepen
 description: "Stress-test an existing implementation plan and selectively strengthen weak sections with targeted research. Use when a plan needs more confidence around decisions, sequencing, system-wide impact, risks, or verification. Best for Standard or Deep plans, or high-risk topics such as auth, payments, migrations, external APIs, and security."
 argument-hint: "[path to plan file]"
 ---
 
-# Deepen Blueprint
+# Blueprint Deepen
 
 ## Introduction
 
 **Note: The current year is 2026.** Use this when searching for recent documentation and best practices.
 
-`blueprint` does the first planning pass. `deepen-blueprint` is a second-pass confidence check.
+`blueprint` does the first planning pass. `blueprint-deepen` is a second-pass confidence check.
 
 Use this skill when the plan already exists and the question is not "Is this document clear?" but rather "Is this plan grounded enough for the complexity and risk involved?"
 
 This skill does **not** turn plans into implementation scripts. It identifies weak sections, runs targeted research only for those sections, and strengthens the plan in place.
 
-Use `deepen-blueprint` when the plan is structurally sound but still needs stronger rationale, sequencing, risk treatment, or system-wide thinking.
+Use `blueprint-deepen` when the plan is structurally sound but still needs stronger rationale, sequencing, risk treatment, or system-wide thinking.
 
 ## Interaction Method
 
@@ -294,7 +294,7 @@ If a direct-mode agent starts producing bulky or repetitive output, stop and swi
 
 #### 4.2 Artifact-Backed Mode
 
-Use a per-run scratch directory under `.context/cc-forge/deepen-blueprint/`, for example `.context/cc-forge/deepen-blueprint/<run-id>/` or `.context/cc-forge/deepen-blueprint/<plan-filename-stem>/`.
+Use a per-run scratch directory under `.context/cc-forge/blueprint-deepen/`, for example `.context/cc-forge/blueprint-deepen/<run-id>/` or `.context/cc-forge/blueprint-deepen/<plan-filename-stem>/`.
 
 Use the scratch directory only for the current deepening pass.
 
@@ -385,9 +385,9 @@ If artifact-backed mode was used and the user did not ask to inspect the scratch
 Substantive changes only — a pass that changed nothing stamps nothing. Post the plan-deepened stamp per [the issue-log spec](../issue-log/SKILL.md): resolve the issue number per the spec (skip silently when nothing resolves). GitHub tracker only — when the tracker is Linear, skip with a one-line note. Compose the body below, write it to a temp file with the Write tool, and post:
 
 ```markdown
-<!-- cc-forge-log v1: {"skill":"deepen-blueprint","event":"plan-deepened","paths":["docs/plans/<plan-filename>"]} -->
+<!-- cc-forge-log v1: {"skill":"blueprint-deepen","event":"plan-deepened","paths":["docs/plans/<plan-filename>"]} -->
 
-### 🔬 /deepen-blueprint — <plan title>
+### 🔬 /blueprint-deepen — <plan title>
 
 **Doc:** `docs/plans/<plan-filename>` — <N> sections deepened
 **Summary:** <2-3 sentences: what got stronger and why>
