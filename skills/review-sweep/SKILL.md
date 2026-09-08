@@ -10,7 +10,6 @@ description: >
   Triggers on phrases like "sweep the review", "review-sweep", "quick wins from the
   review", or passing a path to a docs/reviews/*.md file.
 user-invocable: true
-disable-model-invocation: true
 argument-hint: "[path to docs/reviews/*.md]"
 allowed-tools: Bash, Read, Edit, Write, Grep, Glob
 ---
@@ -529,6 +528,8 @@ gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
 
 ## Rules
 
+- **User-invoked only** — by slash command or plain-English ask, either one. Never start it on your
+  own initiative, and never from inside another skill.
 - **Zero prompts.** Never ask a question, never offer a choice, never preview an edit for approval.
   Invoking the skill is the confirmation. A run that cannot proceed unattended stops with a stop
   message; it does not degrade into asking.

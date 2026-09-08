@@ -1,7 +1,6 @@
 ---
 name: stand-up
 description: Summarize the past 28h of work (commits, PRs, linked issues) for hagenfritz
-disable-model-invocation: false
 user-invocable: true
 argument-hint: "[optional: since_hours default=28]"
 allowed-tools: Bash
