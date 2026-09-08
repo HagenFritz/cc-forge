@@ -72,6 +72,7 @@ Optional keys:
 | work | `unit-complete` | 🔨 | **Did** (always), **Solved** (only when a problem was solved) |
 | work | `unit-blocked` | ⚠️ | **Blocked:** reason; optional `blocked_by` |
 | deep-review | `review-written` | 🔍 | Severity counts + the findings table from the terminal summary (per-P1/P2 rows, P3 roll-up) |
+| quick-review | `review-written` | ⚡ | Same shape as deep-review's row: severity counts + the findings table from the terminal summary |
 | review-walk | `review-walk-complete` | 🚶 | Summary line + every walked issue as "what — status: why"; tracking refs for deferred items filed as issues; terms added to the glossary |
 | review-sweep | `sweep-complete` | 🧹 | Counts implemented / skipped / surfaced (marker keys); doc path; surfaced findings listed as "id: title — reason" in the body |
 | side-quest | `side-quest-filed` | 🧭 | What was found, tracking-issue link (`tracking`, `followup:true`) |

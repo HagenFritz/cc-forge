@@ -16,7 +16,9 @@ Editing a file or pulling a commit is the deploy. `SKILL.md` edits are live imme
 
 ## Skills
 
-Two reference docs sit alongside the commands and are not invocable: [`skills/issue-log/SKILL.md`](skills/issue-log/SKILL.md), the spec for the "stamp" comments workflow skills post to the linked GitHub issue so its thread becomes a work log, and [`skills/glossary/SKILL.md`](skills/glossary/SKILL.md), the format of the personal glossary the learning skills write.
+Four reference docs sit alongside the commands and are not invocable: [`skills/issue-log/SKILL.md`](skills/issue-log/SKILL.md), the spec for the "stamp" comments workflow skills post to the linked GitHub issue so its thread becomes a work log; [`skills/glossary/SKILL.md`](skills/glossary/SKILL.md), the format of the personal glossary the learning skills write; [`skills/walk-protocol/SKILL.md`](skills/walk-protocol/SKILL.md), the rules the three walks share; and [`skills/review-protocol/SKILL.md`](skills/review-protocol/SKILL.md), the rules `/deep-review` and `/quick-review` share.
+
+Skills are named by what they do to an artifact: producers take the name of what they write (`/brainstorm`, `/blueprint`, `/deep-review`, `/quick-review`), and skills that act on an artifact already on disk are `<artifact>-<action>` (`/review-walk`, `/review-sweep`, `/review-push`, and the two other walks).
 
 ### Core workflow
 
@@ -30,6 +32,7 @@ Two reference docs sit alongside the commands and are not invocable: [`skills/is
 | `/work` | Executes a plan unit by unit: one Opus subagent per unit, strictly serial, with the orchestrator reviewing each diff, committing, and stamping the issue | You have a plan and want it implemented |
 | `/grind` | Executes a whole plan **autonomously as a sequence of PRs**: per slice, worktree → Opus builds and opens the PR → review fleet → `/grind` triages → Opus fixes → squash-merge on green CI. Halts on red; resumable via a `## PR Breakdown` table | A plan you trust, ground to merged `main` without babysitting. Needs no required-reviews protection |
 | `/deep-review` | Exhaustive multi-agent code review; writes a review doc | Complex, risky, or large changes |
+| `/quick-review` | The lite sibling of `/deep-review`: a fixed roster of correctness + simplicity, plus at most one language reviewer picked by the diff's dominant extension (files changed, not lines). Same review doc, so the downstream skills consume it unchanged. Reviews what's checked out here — never creates a worktree or switches branches | A small diff where the full fleet is overkill |
 | `/review-walk` | Walks a review doc group by group with implement / defer / won't fix / add term / explain more per issue; updates `Status:` inline; offers tracking issues for deferrals | You have a `docs/reviews/*.md` and want to act on it |
 | `/review-sweep` | **Optional.** Takes the quick wins from a review doc unattended: reads the cited code, implements only Small+high/medium (and P1 Medium+high) findings, marks reviewer misreads `wont-fix`, and leaves the rest `open` with a `**Sweep:**` reason. Zero prompts; edits inline and uncommitted | You want the cheap-and-certain fixes applied before walking the rest by hand |
 | `/review-push` | Commits and pushes the review fixes and posts a PR comment of what was fixed, deferred, and skipped | After `/review-walk`, before landing from another machine |
