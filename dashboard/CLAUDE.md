@@ -44,6 +44,16 @@ Flags:
 - `--alert-idle` also bells on idle transitions; waiting-only by default.
 - `--listen <port>` accepts VM session events on `127.0.0.1:<port>` (1024–65535). Live mode only — it cannot be combined with `--once`.
 
+## Sort order
+
+Rows follow iTerm tab order, left to right, so row N is tab N and Cmd+number lands where the table says. Ordering is (window index, tab index): "row N is tab N" holds inside the frontmost window, and further windows stack after it in iTerm's own order — Cmd+number only ever addresses the current window's tabs. Two sessions split across one tab take consecutive positions.
+
+Stability is the point. The shipped order was `waiting` / `idle` / `busy`, which moved a row every time its status changed and broke the row-to-tab mapping the keys depend on. `waiting` still has to stand out, so it does it without moving: the STATE cell reads `waiting!`. The marker is one trailing ASCII byte — no colour, so it reads the same in a light and a dark theme, and at eight characters it fits `STATE_WIDTH` without widening the column.
+
+Two spawns per poll feed the order — one `ps -o pid=,tty=` for every local row's pid, one `osascript` walking `windows → tabs → sessions` for each tty's position — and both run **after** the paint with the result cached in `state.tabByTty` / `state.ttyByPid`. Nothing waits on iTerm: a new tab reaches its sort position one poll late, which is invisible at a two-second interval. One query is in flight at a time, so a slow osascript cannot stack spawns. The script is guarded by `is running` (`tell application` would otherwise launch iTerm) and never activates it, and it is built from `ITERM_BUNDLE_ID` alone — no byte of a row reaches it.
+
+Rows iTerm knows nothing about — VM rows, background sessions, a pid whose tty is gone — sort after the tabbed ones, on `startedAt` then id so they hold their relative order across ticks regardless of status. With no tab order at all (no iTerm, Linux, `--once`) the whole table falls back to the urgency sort, unannounced, the same way focus already degrades off a Mac; `ps -p` exiting non-zero because one pid is gone is the normal case, so its output is the signal there and its exit status is not. A failed or timed-out osascript keeps the previous map rather than clearing it — one hung iTerm would otherwise reshuffle every row for a tick — but only for five consecutive failures, after which both maps are cleared and the urgency fallback takes over; a `ps` failure with nothing on stdout keeps both cached maps for the same reason. The query is skipped outright off darwin, and a watchdog slightly longer than the 3 s timeout kills a wedged child, so the one-in-flight flag cannot strand.
+
 ## VM listener (`--listen`)
 
 Bound to loopback only; the VM reaches it over an ssh reverse forward. Every request must be a `POST` carrying `x-dash-token` and `content-type: application/json`, with no `Origin` header; a body over 4 KB is rejected (4096 bytes is the largest accepted), cut off mid-stream with the socket destroyed. Anything else is rejected with 405 / 401 / 415 / 403 / 413 and touches no state.
@@ -76,7 +86,7 @@ Per-session `seq` counters live at `~/.claude/dash-seq/<session-id>` (one small 
 
 Keys (live mode only):
 
-- `j` / Down, `k` / Up — move the highlight.
+- `j` / Up, `k` / Down — move the highlight. `j` up and `k` down is the reverse of vi, `less`, `git`, and `tmux`, deliberately: this is a single-user tool and the binding that matches the owner's hands wins. Arrow keys are unchanged.
 - Enter — focus the highlighted session's iTerm tab. On a VM row there is no pid
   to resolve, so focus instead selects the iTerm tab whose session name contains
   `ro-devbox`, then asks `tmux list-clients -F '#{client_tty}'` over ssh for the
@@ -101,7 +111,10 @@ The bell rings once per tick when a session newly enters `waiting`.
 - Wide characters (emoji, CJK) misalign columns — widths are code points, not display cells. Declared scope boundary.
 - A status string over 16 characters is truncated (`STATE_CAP`).
 - Fixture rows always show `0s` age (no `<pid>.json` exists for synthetic pids); by design for deterministic output.
-- The module exports only `validateVmRow`, `applyVmEvent`, `newState`, `startListener`, `focusScript`, `renameScript`, `vmFocusScript`, `tmuxListClientsArgs`, `tmuxSwitchArgs`, `focusHighlighted`, `focusVmRow`, `ageOutVmRows`, and `renderRows` — the VM ingest seam, the focus path (which needs iTerm and a live devbox to run for real), and staleness, reachable by handing `ageOutVmRows` a clock and `renderRows` the same one to get the decorated, sorted rows back; anything else, such as in-process timing or a whole rendered frame, needs an instrumented copy or a live run.
+- The module exports only `validateVmRow`, `applyVmEvent`, `newState`, `startListener`, `focusScript`, `renameScript`, `vmFocusScript`, `tmuxListClientsArgs`, `tmuxSwitchArgs`, `focusHighlighted`, `focusVmRow`, `ageOutVmRows`, `renderRows`, `sortRows`, `parseTabOrder`, `parseTtyByPid`, `tabIndexOf`, `handleKey`, and `moveHighlight` — the VM ingest seam, the focus path (which needs iTerm and a live devbox to run for real), staleness, reachable by handing `ageOutVmRows` a clock and `renderRows` the same one to get the decorated, sorted rows back, and tab-order sorting, whose two query outputs cannot be produced off a Mac: the parsers take that output as text, `sortRows` takes the resulting map, and `handleKey` covers the key bindings without a pty. Anything else, such as `refreshTabOrder`, in-process timing, or a whole rendered frame, needs an instrumented copy or a live run.
+- `refreshTabOrder` and `tabOrderScript` are inspection-only seams: neither runs at all without a live macOS with iTerm, so they are deliberately not exported and are covered by the post-merge checklist rather than by a probe.
+- A tab opened, closed, or dragged is reflected one poll (two seconds) later, since the tab query runs off the tick.
+- Tab order is iTerm-only. In any other terminal the query returns nothing and the table sorts by urgency, silently — the same degradation focus and rename already have.
 - A VM session that starts while the dashboard is down is invisible until its next event; there is no heartbeat and the dashboard never polls the VM. An idle VM session goes `stale` after 10 minutes for the same reason, which says only that nothing has been heard — not that the session is gone.
 - Transcript reads have no wall-clock guard (measured at ~1 ms cold; not addressed).
 - `DASH_PROJECTS_DIR` env override exists for testing but is not a documented user-facing feature.
