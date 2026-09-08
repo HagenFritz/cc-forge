@@ -64,6 +64,14 @@ Payload contract — anything else is ignored, `host` included (the host is pinn
 
 At most 256 VM rows are held; at the cap the least recently heard-from row is evicted for the new session, so a flood of fresh uuids cannot lock a real session out of the table. The sticky-end map is capped the same way, evicting the soonest-expiring record. Footer counters — rejected VM requests (a stale token copy on the VM) and dropped VM events (out of order, unknown event, or malformed) — each get their own footer line once non-zero, as do a listener that could not bind and the one-time new-token note.
 
+## Session emitter (VM side)
+
+`hooks/cc-forge-session-emitter.cjs` is the other end of the wire, wired by `hooks/hooks.json` on `SessionStart`, `UserPromptSubmit`, `Notification` (matcher `permission_prompt`), `Stop`, and `SessionEnd`. It POSTs one event to `127.0.0.1:45800` — `DASH_EMIT_PORT` overrides it — which the ssh reverse forward carries to `dash.js --listen 45801` on the Mac. Those are the documented default pair; the emitter's port is the only one a VM-side change can settle.
+
+It runs inside the user's session on every prompt, so it never waits: a 300 ms socket timeout, no response body read, silent on every failure, exit 0 on every path — a missing or malformed `~/.claude/.dash-token` just means no VM rows. Only `permission_prompt` reaches the Mac as `waiting`; the matcher narrows it and the payload is checked again in code so an `idle_prompt` never shows a session as blocked.
+
+Per-session `seq` counters live at `~/.claude/dash-seq/<session-id>` (one small `0600` file, written temp+rename, removed on `SessionEnd`), since the hook is a fresh process per event. A counter that goes missing restarts at 0, which the listener's sticky window absorbs. `tmuxSession` comes from `tmux display-message -p '#S'` when `$TMUX` is set and is `null` otherwise, so a plain `devbox ssh` session still reports.
+
 Keys (live mode only):
 
 - `j` / Down, `k` / Up — move the highlight.
