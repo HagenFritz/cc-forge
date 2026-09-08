@@ -3,9 +3,10 @@
 //
 // Polls the local session registry via `claude agents --json`, enriches each
 // row from ~/.claude/sessions/<pid>.json, and renders one table row per live
-// session sorted waiting / idle / busy. Enter focuses the highlighted row's
-// iTerm tab, `r` renames it inline, and a session turning `waiting` rings the
-// bell (`--alert-idle` extends that to idle). `--once` prints a single plain
+// session in iTerm tab order, falling back to waiting / idle / busy when iTerm
+// cannot be asked. Enter focuses the highlighted row's iTerm tab, `r` renames
+// it inline, and a session turning `waiting` rings the bell (`--alert-idle`
+// extends that to idle). `--once` prints a single plain
 // frame and exits, with no keys, no bell, and no help line; `--fixture <path>`
 // feeds rows from a JSON file through the same pipeline so the program can be
 // checked without live sessions. `--listen <port>` adds an authenticated
@@ -91,6 +92,11 @@ const VM_MAX_CONNECTIONS = 32
 
 const STATUS_RANK = { waiting: 0, idle: 1, busy: 2 }
 const UNKNOWN_STATUS_RANK = 3
+// Rows follow tab order now, so `waiting` no longer floats to the top and the
+// marker is the whole signal. One trailing ASCII byte: it needs no colour, so
+// it reads the same in a light and a dark theme, and at eight characters it
+// fits STATE_WIDTH without widening the column.
+const WAITING_LABEL = 'waiting!'
 
 // Epoch ms plausible enough to be a real timestamp rather than a seconds value
 // or a sentinel: 2020-01-01 through fifty years out.
@@ -140,6 +146,7 @@ const CSI_FINAL_MAX = 0x7e
 const SS3_SEQ_BYTES = 3
 const BELL = '\x07'
 const FOCUS_TIMEOUT_MS = 3000
+const TAB_QUERY_TIMEOUT_MS = 3000
 const ITERM_BUNDLE_ID = 'com.googlecode.iterm2'
 const SCRIPT_OK_PREFIX = 'ok:'
 const SCRIPT_NO_MATCH = 'no-match'
@@ -148,7 +155,7 @@ const TTY_PATH_RE = /^\/dev\/tty[a-z0-9]+$/
 // TTY_PATH_RE does not admit.
 const TMUX_CLIENT_TTY_RE = /^\/dev\/(pts\/\d{1,5}|tty[A-Za-z0-9]{1,16})$/
 
-const HELP_NORMAL = 'j/k: select  enter: focus  r: rename tab  q: quit'
+const HELP_NORMAL = 'j: up  k: down  enter: focus  r: rename tab  q: quit'
 const HELP_RENAME = 'enter: confirm  esc: cancel  ^U: clear'
 const RENAME_PROMPT = 'Tab name: '
 
@@ -481,23 +488,43 @@ function sanitize(text) {
 
 // --- Sort and naming -----------------------------------------------------
 //
-// Unknown statuses sort last so they surface at the bottom rather than mixing
-// into the known ranks. Names are per-poll: a name shared with another row in
-// the same frame is as useless as an empty one, so both fall back to the cwd
-// basename plus a short id.
+// Tab order is the primary key: a row that moves when its status changes breaks
+// the mapping between the row a person reads and the Cmd+number they press, and
+// stability is worth more here than putting the urgent row first — the bell and
+// the WAITING_LABEL marker carry that. Rows iTerm knows nothing about — VM rows,
+// background sessions, a pid whose tty is gone — sort after the tabbed ones on a
+// key that ignores status, so they hold their relative order across ticks.
+//
+// With no tab order at all (no iTerm, Linux, --once) the urgency sort is the
+// fallback, unannounced: unknown statuses sort last there so they surface at the
+// bottom rather than mixing into the known ranks.
+//
+// Names are per-poll: a name shared with another row in the same frame is as
+// useless as an empty one, so both fall back to the cwd basename plus a short id.
 
 function rankOf(status) {
   return Object.prototype.hasOwnProperty.call(STATUS_RANK, status) ? STATUS_RANK[status] : UNKNOWN_STATUS_RANK
 }
 
-function sortRows(rows) {
+function byStartThenId(a, b) {
+  const aStart = a.startedAt === null ? Number.MAX_SAFE_INTEGER : a.startedAt
+  const bStart = b.startedAt === null ? Number.MAX_SAFE_INTEGER : b.startedAt
+  if (aStart !== bStart) return aStart - bStart
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+}
+
+function sortRows(rows, tabIndex) {
+  const tabbed = Boolean(tabIndex) && tabIndex.size > 0
   return rows.slice().sort((a, b) => {
-    const byRank = rankOf(a.status) - rankOf(b.status)
-    if (byRank !== 0) return byRank
-    const aStart = a.startedAt === null ? Number.MAX_SAFE_INTEGER : a.startedAt
-    const bStart = b.startedAt === null ? Number.MAX_SAFE_INTEGER : b.startedAt
-    if (aStart !== bStart) return aStart - bStart
-    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+    if (tabbed) {
+      const at = tabIndex.has(a.id) ? tabIndex.get(a.id) : Number.MAX_SAFE_INTEGER
+      const bt = tabIndex.has(b.id) ? tabIndex.get(b.id) : Number.MAX_SAFE_INTEGER
+      if (at !== bt) return at - bt
+    } else {
+      const byRank = rankOf(a.status) - rankOf(b.status)
+      if (byRank !== 0) return byRank
+    }
+    return byStartThenId(a, b)
   })
 }
 
@@ -625,7 +652,7 @@ function decorateRows(rows, observed, now) {
   for (const row of rows) {
     // A flag, not a status: the real status still drives the age, the sort
     // rank, and the transitions the bell reads.
-    row.stateCell = row.stale ? VM_STALE_LABEL : row.status
+    row.stateCell = row.stale ? VM_STALE_LABEL : row.status === 'waiting' ? WAITING_LABEL : row.status
     row.ageCell = formatAge(ageMsFor(row, observed, now))
     row.nameCell = row.label + nameMarker(row)
     row.dirCell = row.remote ? row.cwd : shortenDir(row.cwd)
@@ -753,7 +780,7 @@ function tick(state, opts) {
 function renderRows(state, now) {
   const rows = state.lastLocalRows.concat(vmRowsAsRows(state))
   const transitions = observeRows(state.observed, rows, now)
-  state.lastRows = sortRows(decorateRows(rows, state.observed, now))
+  state.lastRows = sortRows(decorateRows(rows, state.observed, now), tabIndexOf(state, rows))
   return transitions
 }
 
@@ -765,6 +792,8 @@ function newState() {
     lastLocalRows: [],
     lastGoodAt: null,
     observed: new Map(),
+    tabByTty: new Map(),
+    ttyByPid: new Map(),
     vmRows: new Map(),
     vmEnded: new Map(),
     vmToken: null,
@@ -1085,6 +1114,124 @@ function moveHighlight(state, delta) {
   const from = state.highlight.index < 0 ? (delta > 0 ? -1 : rows.length) : state.highlight.index
   const index = Math.max(0, Math.min(rows.length - 1, from + delta))
   state.highlight = { id: rows[index].id, index }
+}
+
+// --- Tab order -----------------------------------------------------------
+//
+// Row N is tab N. Two spawns feed it — one `ps` resolving every local row's pid
+// to a tty, one osascript walking windows -> tabs -> sessions for each tty's
+// position — and both run off the tick with the result cached in state, so the
+// poll, the paint, and the key loop never wait on iTerm. The cost is that a new
+// tab reaches its sort position one poll late, which is invisible at a two
+// second interval.
+//
+// Ordering is (window index, tab index), so "row N is tab N" holds inside the
+// frontmost window and further windows stack after it in iTerm's own order —
+// Cmd+number only ever addresses the current window's tabs.
+//
+// `is running` guards the tell block because `tell application` would otherwise
+// launch iTerm, and nothing here activates it: this is a read twice a second and
+// it must not steal focus. The integers are coerced with `as text` so `&`
+// concatenates rather than building a list.
+
+function tabOrderScript() {
+  return [
+    `if application id "${ITERM_BUNDLE_ID}" is not running then return ""`,
+    `tell application id "${ITERM_BUNDLE_ID}"`,
+    'set out to ""',
+    'repeat with wi from 1 to count of windows',
+    'repeat with ti from 1 to count of tabs of window wi',
+    'repeat with s in sessions of tab ti of window wi',
+    'set out to out & (wi as text) & " " & (ti as text) & " " & (tty of s) & linefeed',
+    'end repeat',
+    'end repeat',
+    'end repeat',
+    'return out',
+    'end tell',
+  ].join('\n')
+}
+
+// `<window> <tab> <tty>` per line. Sorted rather than trusted in emitted order,
+// so an ordinal means (window, tab) and not "whatever the script printed first";
+// two sessions split across one tab take consecutive ordinals.
+function parseTabOrder(out) {
+  const entries = []
+  for (const line of String(out).split('\n')) {
+    const parts = line.trim().split(/\s+/)
+    if (parts.length !== 3) continue
+    const win = Number.parseInt(parts[0], 10)
+    const tab = Number.parseInt(parts[1], 10)
+    const tty = normalizeTty(parts[2])
+    if (!Number.isInteger(win) || !Number.isInteger(tab) || tty === null) continue
+    entries.push({ win, tab, tty })
+  }
+  entries.sort((a, b) => (a.win - b.win) || (a.tab - b.tab))
+  const order = new Map()
+  for (const entry of entries) {
+    if (!order.has(entry.tty)) order.set(entry.tty, order.size)
+  }
+  return order
+}
+
+// `<pid> <tty>` per line, `??` for a process with no controlling terminal.
+function parseTtyByPid(out) {
+  const map = new Map()
+  for (const line of String(out).split('\n')) {
+    const parts = line.trim().split(/\s+/)
+    if (parts.length !== 2) continue
+    const pid = Number.parseInt(parts[0], 10)
+    const tty = normalizeTty(parts[1])
+    if (!Number.isInteger(pid) || pid <= 0 || tty === null) continue
+    map.set(pid, tty)
+  }
+  return map
+}
+
+function tabIndexOf(state, rows) {
+  const index = new Map()
+  for (const row of rows) {
+    if (row.pid === null) continue
+    const tty = state.ttyByPid.get(row.pid)
+    const at = tty === undefined ? undefined : state.tabByTty.get(tty)
+    if (at !== undefined) index.set(row.id, at)
+  }
+  return index
+}
+
+// One query in flight at a time: a slow osascript would otherwise stack two
+// spawns per poll on top of the ~165 ms the poll already costs.
+let tabQueryPending = false
+
+function refreshTabOrder(state) {
+  if (tabQueryPending) return
+  tabQueryPending = true
+  const pids = state.lastRows.filter((row) => row.pid !== null).map((row) => String(row.pid))
+  execFile('osascript', ['-e', tabOrderScript()], { timeout: TAB_QUERY_TIMEOUT_MS, encoding: 'utf8' }, (scriptErr, scriptOut) => {
+    // A failed or timed-out query keeps the previous map rather than clearing
+    // it: one hung iTerm would otherwise reshuffle every row for a tick, which
+    // is the instability tab-order sorting exists to remove. An empty result
+    // (iTerm not running, or Linux) is a successful answer and does clear it,
+    // dropping the sort to its urgency fallback with nothing said.
+    if (scriptErr) {
+      tabQueryPending = false
+      return
+    }
+    const tabByTty = parseTabOrder(scriptOut)
+    if (tabByTty.size === 0 || pids.length === 0) {
+      state.tabByTty = tabByTty
+      state.ttyByPid = new Map()
+      tabQueryPending = false
+      return
+    }
+    // `ps -p` exits non-zero as soon as one listed pid is gone, which is the
+    // normal case for a row that just exited, so the output is the signal here
+    // and the exit status is not.
+    execFile('ps', ['-o', 'pid=,tty=', '-p', pids.join(',')], { timeout: TAB_QUERY_TIMEOUT_MS, encoding: 'utf8' }, (psErr, psOut) => {
+      state.tabByTty = tabByTty
+      state.ttyByPid = parseTtyByPid(psOut)
+      tabQueryPending = false
+    })
+  })
 }
 
 // --- Tab focus -----------------------------------------------------------
@@ -1480,6 +1627,8 @@ function runLive(opts) {
     if (shouldBell(transitions, opts)) write(BELL)
     state.transient = null
     paint(state)
+    // After the paint, never before it: the frame must not wait on iTerm.
+    refreshTabOrder(state)
     setTimeout(loop, POLL_INTERVAL_MS)
   }
   loop()
@@ -1605,11 +1754,13 @@ function handleKey(state, key) {
     if (state.highlight.index >= 0) enterRename(state)
     return
   }
-  if (code === KEY_J || key === SEQ_DOWN) {
-    moveHighlight(state, 1)
-    paint(state)
-  } else if (code === KEY_K || key === SEQ_UP) {
+  // j up, k down — the reverse of vi, less, git, and tmux, deliberately: this
+  // is a single-user tool and the binding that matches the owner's hands wins.
+  if (code === KEY_J || key === SEQ_UP) {
     moveHighlight(state, -1)
+    paint(state)
+  } else if (code === KEY_K || key === SEQ_DOWN) {
+    moveHighlight(state, 1)
     paint(state)
   }
 }
@@ -1642,8 +1793,11 @@ if (require.main === module) main()
 // event applied to a state (applyVmEvent over newState), the listener itself,
 // which cannot otherwise be reached without a pty, the focus path — its script
 // and argv builders plus both entry points, none of which can be exercised at
-// all without iTerm and a live devbox — and staleness, which needs a clock
-// handed to ageOutVmRows and renderRows to reach the rendered cells.
+// all without iTerm and a live devbox — staleness, which needs a clock handed to
+// ageOutVmRows and renderRows to reach the rendered cells, and tab-order
+// sorting, whose two query outputs cannot be produced off a Mac: the parsers
+// take that output as text, sortRows takes the resulting map, and handleKey with
+// moveHighlight covers the j/k swap without a pty.
 module.exports = {
   validateVmRow,
   applyVmEvent,
@@ -1658,4 +1812,10 @@ module.exports = {
   focusVmRow,
   ageOutVmRows,
   renderRows,
+  sortRows,
+  parseTabOrder,
+  parseTtyByPid,
+  tabIndexOf,
+  handleKey,
+  moveHighlight,
 }
