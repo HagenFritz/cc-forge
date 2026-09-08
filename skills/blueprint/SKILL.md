@@ -88,6 +88,8 @@ If a relevant requirements document exists:
 5. Reference important carried-forward decisions in the plan with `(see origin: <source-path>)`
 6. Do not silently omit source content — if the origin document discussed it, the plan must address it even if briefly. Before finalizing, scan each section of the origin document to verify nothing was dropped.
 
+**Walked requirements docs.** A doc that has been through `/brainstorm-walk` carries `**Reviewed:**` and `**Review note:**` lines indented inside its `R`-bullets. These are walk metadata, not requirement text — never carry them into the plan. A requirement marked `**Reviewed:** retired` (its text struck through, its `R`-ID kept) has been **deliberately withdrawn**: exclude it from the Requirements Trace and plan nothing for it. This is the one exception to rule 6 above — a retired requirement is not "silently omitted", it was explicitly removed by a human, and re-planning it would undo their decision. Note the exclusion in one line so the omission is visible. Every other `**Reviewed:**` value (`accepted`, `modified`, `skipped`, `pending`, or no line at all) means the requirement is live and planned as normal.
+
 If no relevant requirements document exists, planning may proceed from the user's request directly.
 
 #### 0.4 No-Requirements-Doc Fallback

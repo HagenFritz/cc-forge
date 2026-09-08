@@ -72,7 +72,7 @@ Optional keys:
 | work | `unit-complete` | 🔨 | **Did** (always), **Solved** (only when a problem was solved) |
 | work | `unit-blocked` | ⚠️ | **Blocked:** reason; optional `blocked_by` |
 | deep-review | `review-written` | 🔍 | Severity counts + the findings table from the terminal summary (per-P1/P2 rows, P3 roll-up) |
-| review-walk | `walk-complete` | 🚶 | Summary line + every walked issue as "what — status: why"; tracking refs for deferred items filed as issues |
+| review-walk | `review-walk-complete` | 🚶 | Summary line + every walked issue as "what — status: why"; tracking refs for deferred items filed as issues; terms added to the glossary |
 | review-sweep | `sweep-complete` | 🧹 | Counts implemented / skipped / surfaced (marker keys); doc path; surfaced findings listed as "id: title — reason" in the body |
 | side-quest | `side-quest-filed` | 🧭 | What was found, tracking-issue link (`tracking`, `followup:true`) |
 | ship | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
@@ -86,6 +86,13 @@ Optional keys:
 | grind | `grind-stopped` | ⏸️ | Phase the timer stopped at, remaining slice count, resume pointer |
 | grind | `grind-blocked` | 🛑 | What halted the run, open PR url, worktree path, remaining slice count |
 | grind | `grind-complete` | 🏁 | Merged PR count (`merged`) + links, follow-up tracking issues |
+
+**Renamed events.** `review-walk`'s event was `walk-complete` before it was renamed to
+`review-walk-complete` for consistency with its two sibling walks. Stamps already posted
+to GitHub carry the old name and are not rewritten — a reader encountering
+`"event":"walk-complete"` on a `review-walk` marker should treat it as the same event.
+No other event has been renamed; `plan-deepened` and `blueprint-walk-complete` kept their
+names through the skill renames precisely so history stays readable.
 
 Event names are these exact strings. New events join this table before any skill emits them.
 

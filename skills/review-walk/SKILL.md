@@ -3,7 +3,7 @@ name: review-walk
 description: >
   Walk through a code-review document interactively. Reads a review file produced by
   /deep-review, presents related issues group-by-group with a plain-English teach moment
-  per group, then steps through each member issue offering implement / defer / skip /
+  per group, then steps through each member issue offering implement / defer / won't fix /
   add term / explain more. Unfamiliar concepts go to a personal glossary without
   interrupting the walk, and `Status:` is updated inline in the doc so progress is
   durable and resumable. Triggers on phrases like "walk the review", "step through the
@@ -82,12 +82,14 @@ Before diving into issues, show the user the lay of the land:
 - Total issues, terminal counts so far, groups remaining.
 - A short list of group names with member IDs.
 
-Then ask:
+Then confirm the user is ready to begin:
 
-> "Start with G1, jump to a different group, or list orphan issues first?"
+> "Starting with <G1 name>. Ready?"
 
-Use `AskUserQuestion`. Default: start with the first group whose members are not
-all terminal.
+Use `AskUserQuestion` with Yes / Stop. **Groups are walked in doc order, always.** Do
+not offer to jump to a different group, reorder them, or take orphan issues first —
+the doc's order is the walk's order, and a group whose members are all terminal is
+passed over silently rather than offered as a choice.
 
 ## Step 5: Walk the Groups
 
@@ -118,7 +120,7 @@ moment:
 
 Then ask:
 
-> "Ready to step through the issues in this group? (implement / defer / skip / add term / explain more)"
+> "Ready to step through the issues in this group? (implement / defer / won't fix / add term / explain more)"
 
 Use `AskUserQuestion` to confirm the user wants to enter the issue loop.
 
@@ -143,10 +145,16 @@ For each member issue in `Suggested order:`, in order, skipping any already-term
 3. **Ask the action question** via `AskUserQuestion`:
    - **Implement** — apply the fix now.
    - **Defer** — out of scope for this pass; capture a one-line reason.
-   - **Skip (won't fix)** — reviewer noise or disagree; close it out.
+   - **Won't fix** — reviewer noise or disagree; close it out. Terminal: this is a
+     decision, not a deferral. The other two walks use *skip* for "no verdict yet";
+     this walk has no such action.
    - **Add term** — capture an unfamiliar concept to the glossary. **Does not advance
      the issue** — the menu is re-asked afterward, and `Status:` is untouched.
    - **Explain more** — deeper teaching, then re-ask.
+
+   Ask this question for **every** issue, one at a time. Never collapse several issues
+   into one question, and never offer a batch verdict — not even when the rest of the
+   group looks alike.
 
    `Add term` and `Explain more` are **self-loops**: handle it, then re-ask this same
    question on the same issue. Both are repeatable any number of times on one issue.
@@ -208,7 +216,7 @@ issue's heading + status line so the edit is unambiguous.
 
 3. Do not change any other fields. Do not modify code.
 
-### Skip (won't fix)
+### Won't fix
 
 1. Set `Status: wont-fix`. No reason field required, though the user may volunteer
    one — if so, append `**Skip reason:** <text>` the same way as defer.
@@ -229,27 +237,10 @@ issue's heading + status line so the edit is unambiguous.
 
 ### Capturing a term to the glossary
 
-This is where `Add term` routes. It is a **side buffer**: it writes to one file outside
-the repo and touches nothing else. Capturing a term does **not** write `Status:`, does
-**not** edit code, and does **not** advance the issue — the review doc is not opened at
-all.
-
-Speed is the requirement. This runs mid-review and its entire purpose is to not derail
-the walk, so it costs the user **one answer**:
-
-1. Ask for the term, and nothing else:
-   > "What term should I capture?"
-
-2. Follow [term-add](../term-add/SKILL.md) exactly, in
-   [quiet mode](../glossary/SKILL.md#quiet-mode), passing that answer as the term. It
-   drafts the definition and every other field, writes the entry, and emits its one
-   confirmation line — which is the only output the walk shows. This skill adds no
-   glossary behavior of its own and defines no part of the entry format.
-
-3. Immediately re-ask the 5d action question on the same issue.
-
-Repeatable any number of times on one issue. Each capture is independent; nothing is
-batched until walk end.
+Where `Add term` routes. Follow
+[the walk-protocol spec](../walk-protocol/SKILL.md#capturing-a-term) exactly — it owns
+the side-buffer contract, the one-answer flow, and the delegation to `/term-add` in
+quiet mode. Re-ask the 5d action question on the same issue afterward.
 
 ### Edit anchoring rule
 
@@ -407,11 +398,11 @@ in [the issue-log spec](../issue-log/SKILL.md).
 Compose the body below, write it to a temp file with the Write tool, and post:
 
 ```markdown
-<!-- cc-forge-log v1: {"skill":"review-walk","event":"walk-complete","followup":true} -->
+<!-- cc-forge-log v1: {"skill":"review-walk","event":"review-walk-complete","paths":["docs/reviews/<file>.md"],"followup":true} -->
 
 ### 🚶 /review-walk — walk complete
 
-**Summary:** <n> issues walked — <n> implemented, <n> deferred, <n> skipped
+**Summary:** <n> issues walked — <n> implemented, <n> deferred, <n> won't fix
 **Issues:**
 - <P<X>-<N>: short title>
   - <one line on what the issue is>
@@ -428,8 +419,11 @@ gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
 
 Enumerate every walked issue, in doc order. Include `"followup":true` and the
 `**Tracking:**` line only when 8a created at least one tracking issue; omit
-both otherwise. Omit `**Terms added:**` when no term was captured — its count and
-term list come from Step 8's session-scoped tally, not from the doc.
+both otherwise. Omit `**Terms added:**` when no term was captured — its count comes
+from Step 7's confirmation lines, tallied at Step 8, not from the doc.
+
+There is no `**Doc:**` field — the walk produces no document of its own, and the walked
+review doc's path rides in `paths`.
 
 ## Fallback Mode Details
 
@@ -452,6 +446,14 @@ When running in fallback mode (no `## Groups` section or no enriched fields):
   missing from the doc. Fallback mode handles their absence gracefully.
 - Never skip the user's chosen action (e.g., don't "implement" when they said
   "defer").
+- **Walk order is fixed and every issue is presented individually.** Groups run in doc
+  order, `G1` through `Gn`, then orphan issues in `P1-* → P2-* → P3-*` order. Within a
+  group, members run in `Suggested order:`. Never reorder, never let the user pick a
+  group to start from, and **never offer to batch** — no "implement all of these?", no
+  group-level verdict, no bundling several issues behind one question. Each issue gets
+  its own presentation and its own action question, even when every issue in a group
+  has the same obvious answer and the batch would be faster. The walk exists so each
+  finding is looked at; a shortcut that skips presentation defeats it.
 - **`Add term` never advances the walk.** It writes only to the glossary, leaves
   `Status:` and the code untouched, and the same action question is re-asked on the
   same issue afterward.
