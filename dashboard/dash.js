@@ -92,10 +92,7 @@ const VM_MAX_CONNECTIONS = 32
 
 const STATUS_RANK = { waiting: 0, idle: 1, busy: 2 }
 const UNKNOWN_STATUS_RANK = 3
-// Rows follow tab order now, so `waiting` no longer floats to the top and the
-// marker is the whole signal. One trailing ASCII byte: it needs no colour, so
-// it reads the same in a light and a dark theme, and at eight characters it
-// fits STATE_WIDTH without widening the column.
+// One ASCII byte, no colour needed — fits STATE_WIDTH (8 chars).
 const WAITING_LABEL = 'waiting!'
 
 // Epoch ms plausible enough to be a real timestamp rather than a seconds value
@@ -275,7 +272,10 @@ function validateRows(rawRows, { remote = false } = {}) {
     if (!raw || typeof raw !== 'object') continue
     const rawId = typeof raw.sessionId === 'string' ? raw.sessionId : ''
     if (!UUID_RE.test(rawId)) continue
-    const status = typeof raw.status === 'string' ? stripControls(raw.status.slice(0, PAYLOAD_STRING_MAX)) : ''
+    const rawStatus = typeof raw.status === 'string' ? stripControls(raw.status.slice(0, PAYLOAD_STRING_MAX)) : ''
+    // Only a real `waiting` may render the marker: a payload that names the
+    // rendered label itself would otherwise mint one.
+    const status = rawStatus === WAITING_LABEL ? 'unknown' : rawStatus
     rows.push({
       // UUID_RE is case-insensitive, so the namespaced id is lowercased to keep
       // one row per session; rawId stays as received for display.
@@ -1132,7 +1132,9 @@ function moveHighlight(state, delta) {
 // `is running` guards the tell block because `tell application` would otherwise
 // launch iTerm, and nothing here activates it: this is a read twice a second and
 // it must not steal focus. The integers are coerced with `as text` so `&`
-// concatenates rather than building a list.
+// concatenates rather than building a list, and each read is wrapped in `try`
+// so a session whose `tty` cannot be read is skipped rather than aborting the
+// traversal and costing the whole order.
 
 function tabOrderScript() {
   return [
@@ -1142,7 +1144,9 @@ function tabOrderScript() {
     'repeat with wi from 1 to count of windows',
     'repeat with ti from 1 to count of tabs of window wi',
     'repeat with s in sessions of tab ti of window wi',
+    'try',
     'set out to out & (wi as text) & " " & (ti as text) & " " & (tty of s) & linefeed',
+    'end try',
     'end repeat',
     'end repeat',
     'end repeat',
@@ -1199,39 +1203,100 @@ function tabIndexOf(state, rows) {
 }
 
 // One query in flight at a time: a slow osascript would otherwise stack two
-// spawns per poll on top of the ~165 ms the poll already costs.
+// spawns per poll on top of the ~165 ms the poll already costs. The child is
+// held so restore() and the watchdog can kill it, and the watchdog is there
+// because a callback that never fires would strand the flag and freeze the
+// order at whatever was last cached.
 let tabQueryPending = false
+let tabQueryChild = null
+let tabQueryWatchdog = null
+let tabQueryFailures = 0
+const TAB_QUERY_WATCHDOG_MS = TAB_QUERY_TIMEOUT_MS + 500
+const TAB_QUERY_FAILURES_MAX = 5
+
+function endTabQuery() {
+  if (tabQueryWatchdog !== null) {
+    clearTimeout(tabQueryWatchdog)
+    tabQueryWatchdog = null
+  }
+  tabQueryChild = null
+  tabQueryPending = false
+}
+
+function abortTabQuery() {
+  try {
+    if (tabQueryChild) tabQueryChild.kill()
+  } catch (e) {
+    // Already exited, or never a real child; clearing the flag matters more.
+  }
+  endTabQuery()
+}
 
 function refreshTabOrder(state) {
+  // osascript exists only on the Mac: elsewhere this would spawn a doomed
+  // process every two seconds to learn nothing.
+  if (process.platform !== 'darwin') return
   if (tabQueryPending) return
   tabQueryPending = true
-  const pids = state.lastRows.filter((row) => row.pid !== null).map((row) => String(row.pid))
-  execFile('osascript', ['-e', tabOrderScript()], { timeout: TAB_QUERY_TIMEOUT_MS, encoding: 'utf8' }, (scriptErr, scriptOut) => {
-    // A failed or timed-out query keeps the previous map rather than clearing
-    // it: one hung iTerm would otherwise reshuffle every row for a tick, which
-    // is the instability tab-order sorting exists to remove. An empty result
-    // (iTerm not running, or Linux) is a successful answer and does clear it,
-    // dropping the sort to its urgency fallback with nothing said.
-    if (scriptErr) {
-      tabQueryPending = false
-      return
-    }
-    const tabByTty = parseTabOrder(scriptOut)
-    if (tabByTty.size === 0 || pids.length === 0) {
-      state.tabByTty = tabByTty
-      state.ttyByPid = new Map()
-      tabQueryPending = false
-      return
-    }
-    // `ps -p` exits non-zero as soon as one listed pid is gone, which is the
-    // normal case for a row that just exited, so the output is the signal here
-    // and the exit status is not.
-    execFile('ps', ['-o', 'pid=,tty=', '-p', pids.join(',')], { timeout: TAB_QUERY_TIMEOUT_MS, encoding: 'utf8' }, (psErr, psOut) => {
-      state.tabByTty = tabByTty
-      state.ttyByPid = parseTtyByPid(psOut)
-      tabQueryPending = false
+  tabQueryWatchdog = setTimeout(() => {
+    tabQueryWatchdog = null
+    if (!tabQueryPending) return
+    abortTabQuery()
+  }, TAB_QUERY_WATCHDOG_MS)
+  // Same PID_RE guard the two pid -> argv sites in the focus path use: one
+  // out-of-range pid must not be able to blank the whole tab order.
+  const pids = state.lastRows
+    .filter((row) => row.pid !== null && PID_RE.test(String(row.pid)))
+    .map((row) => String(row.pid))
+  try {
+    tabQueryChild = execFile('osascript', ['-e', tabOrderScript()], { timeout: TAB_QUERY_TIMEOUT_MS, encoding: 'utf8' }, (scriptErr, scriptOut) => {
+      // A failed or timed-out query keeps the previous map rather than clearing
+      // it: one hung iTerm would otherwise reshuffle every row for a tick, which
+      // is the instability tab-order sorting exists to remove. Only for a
+      // handful of ticks, though — a permanently broken query would otherwise
+      // pin the table to a snapshot forever. An empty result (iTerm not running)
+      // is a successful answer and does clear it, dropping the sort to its
+      // urgency fallback with nothing said.
+      if (scriptErr) {
+        tabQueryFailures += 1
+        if (tabQueryFailures >= TAB_QUERY_FAILURES_MAX) {
+          state.tabByTty = new Map()
+          state.ttyByPid = new Map()
+        }
+        endTabQuery()
+        return
+      }
+      tabQueryFailures = 0
+      const tabByTty = parseTabOrder(scriptOut)
+      if (tabByTty.size === 0 || pids.length === 0) {
+        state.tabByTty = tabByTty
+        state.ttyByPid = new Map()
+        endTabQuery()
+        return
+      }
+      // `ps -p` exits non-zero as soon as one listed pid is gone, which is the
+      // normal case for a row that just exited, so the output is the signal here
+      // and the exit status is not. A failure with nothing on stdout is a failed
+      // query rather than an empty answer, and keeps both cached maps.
+      try {
+        tabQueryChild = execFile('ps', ['-o', 'pid=,tty=', '-p', pids.join(',')], { timeout: TAB_QUERY_TIMEOUT_MS, encoding: 'utf8' }, (psErr, psOut) => {
+          if (psErr && (typeof psOut !== 'string' || psOut.trim() === '')) {
+            endTabQuery()
+            return
+          }
+          state.tabByTty = tabByTty
+          state.ttyByPid = parseTtyByPid(psOut)
+          endTabQuery()
+        })
+      } catch (e) {
+        endTabQuery()
+      }
     })
-  })
+  } catch (e) {
+    // A spawn that throws synchronously (EMFILE, EAGAIN) must not strand the
+    // flag: the next tick has to be free to try again.
+    endTabQuery()
+  }
 }
 
 // --- Tab focus -----------------------------------------------------------
@@ -1542,6 +1607,7 @@ function restore() {
   } catch (e) {
     // Already exited, or never a real child; the exit matters more.
   }
+  abortTabQuery()
   try {
     if (rawEnabled && process.stdin.isTTY) process.stdin.setRawMode(false)
   } catch (e) {
