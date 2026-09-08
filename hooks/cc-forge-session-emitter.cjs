@@ -50,7 +50,7 @@ const CLAUDE_DIR = path.join(os.homedir(), '.claude')
 const TOKEN_PATH = path.join(CLAUDE_DIR, '.dash-token')
 const SEQ_DIR = path.join(CLAUDE_DIR, 'dash-seq')
 
-// --- Symlink-safe file primitives (the caveman hook's idiom) --------------
+// --- Symlink-safe file primitives ----------------------------------------
 
 function readSmallFile(file, maxBytes) {
   try {

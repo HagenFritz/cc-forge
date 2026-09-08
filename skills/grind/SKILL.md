@@ -30,7 +30,7 @@ What that means, stated plainly:
 5. **`/grind` never force-pushes, never pushes to `main`, never uses `--no-verify`, and never uses `git add -A`.** These do not become acceptable because the run is autonomous — for `/grind` or any subagent it dispatches.
 6. **Interrupting is always safe.** State lives in the plan doc, the review doc, and on GitHub. Ctrl-C or a hard kill at any point leaves a world Phase 2's reconciliation can re-enter.
 
-If the user has not opted into this by invoking `/grind`, do not run it. Never invoke `/grind` on your own initiative from another skill.
+The user has to opt into this. A slash command or a plain-English ask ("grind this plan", "just run the whole thing") both count as opting in; a plan that merely looks ready does not. Never start `/grind` on your own initiative or from inside another skill.
 
 ## Input
 
@@ -418,7 +418,7 @@ Every terminal outcome — `grind-complete`, `grind-stopped`, `grind-blocked` �
 
 ## Rules
 
-- **User-invoked only.** Never start `/grind` on your own initiative, and never from inside another skill.
+- **User-invoked only** — by slash command or plain-English ask ("grind this plan", "run the whole thing"), either one. Never start `/grind` on your own initiative, never from inside another skill, never wired to a git or CI hook, and never because a plan happens to look ready. An ambiguous or implied approval ("looks good to me") is not an ask — when in doubt, ask.
 - **One confirmation, then unattended.** The PR breakdown is confirmed; nothing after it is. Do not add prompts mid-run, and do not silently degrade to asking — if the run can't proceed autonomously, halt and say why.
 - **Serial.** Slice N is merged before slice N+1 starts. No parallel slices, no starting the next build while a PR is in review.
 - **One worktree per PR**, created off `origin/<default-branch>`, removed on merge. `/grind` runs from the primary checkout and never checks out a feature branch there.

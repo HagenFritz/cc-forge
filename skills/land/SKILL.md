@@ -11,7 +11,7 @@ allowed-tools: Bash, Read, Write, Grep, Glob
 
 `/land` takes an **open PR** from "ready" to "merged and synced" with zero prompts — invoking it is the confirmation. In order it: resolves the PR, runs the runnable items in the PR body's **Pre-merge Tests** checklist, waits on its **existing** CI checks (with the local test suite as the gate only when the repo reports no checks), squash-merges and deletes the branch, removes the `/tree` worktree when one holds it, syncs local `main`, and posts the `pr-merged` stamp on the linked issue. It never pushes a commit and never triggers a CI run that wasn't already running. Red — CI or local — halts the run with the failing output; `/land` proposes no fixes.
 
-Typical flow: open the PR with `/ship` → (remote-review flow: run `/catch-up` in the worktree first) → run `/land` → done: merged, branch deleted, worktree removed, on a fresh `main`, issue stamped.
+Typical flow: open the PR with `/ship` → run `/land` → done: merged, branch deleted, worktree removed, on a fresh `main`, issue stamped.
 
 ## Core Principles
 
@@ -79,7 +79,7 @@ Typical flow: open the PR with `/ship` → (remote-review flow: run `/catch-up` 
 
 ## Rules
 
-- Manual only — `/land` is never wired to a git or CI hook, and never invoked by another skill.
+- **User-invoked only** — by slash command or plain-English ask ("land this", "merge the PR"), either one. Never start `/land` on your own initiative, never from inside another skill, never wired to a git or CI hook, and never because a PR happens to look ready. An ambiguous or implied approval ("looks good to me") is not an ask — when in doubt, ask.
 - Operates on an **open** PR; refuse closed/merged PRs.
 - **Zero prompts, zero pushes:** `/land` never commits, never pushes, never edits the PR, and never asks. The merge and the issue stamp are its only writes.
 - **Red halts.** A failed pre-merge check, CI red, or local-suite red stops the run with the real output; no fix commits, no masked failures, no retries.

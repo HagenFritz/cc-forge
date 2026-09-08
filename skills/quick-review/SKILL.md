@@ -10,7 +10,6 @@ description: >
   Triggers on phrases like "quick review", "review this quickly", "light review",
   or /quick-review.
 user-invocable: true
-disable-model-invocation: true
 argument-hint: "[PR number, GitHub URL, branch name, or latest]"
 allowed-tools: Bash, Read, Write, Grep, Glob, Task
 ---
@@ -28,6 +27,8 @@ The review **document** format is non-negotiable and identical to `/deep-review`
 Follow [the review-protocol spec](../review-protocol/SKILL.md#prerequisites) — it owns the baseline every review needs (git repo, authenticated `gh`, clean main/master, a path for document reviews).
 
 This review adds none of its own. It needs no worktree permissions, because it never creates one.
+
+**User-invoked only** — by slash command or plain-English ask, either one. Never start it on your own initiative, and never from inside another skill.
 
 ## Main Tasks
 
