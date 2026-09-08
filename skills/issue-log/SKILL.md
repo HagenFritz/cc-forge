@@ -64,8 +64,8 @@ Optional keys:
 |---|---|---|---|
 | brainstorm | `requirements-written` | 🧠 | Doc path, full requirements list (direct port from the doc) |
 | blueprint | `plan-written` | 📋 | Plan path, unit count, every unit enumerated with a one-sentence summary |
-| deepen-blueprint | `plan-deepened` | 🔬 | Plan path, sections-deepened count, short summary, questions resolved, major restructures |
-| walk-blueprint | `blueprint-walk-complete` | 🚶 | Summary line + counts of units accepted, modified, retired, skipped; terms added to the glossary |
+| blueprint-deepen | `plan-deepened` | 🔬 | Plan path, sections-deepened count, short summary, questions resolved, major restructures |
+| blueprint-walk | `blueprint-walk-complete` | 🚶 | Summary line + counts of units accepted, modified, retired, skipped; terms added to the glossary |
 | tree | `worktree-created` | 🌳 | Branch, worktree path (also in `paths`) |
 | branch-from-issue | `branch-created` | 🌱 | Branch |
 | work | `unit-complete` | 🔨 | **Did** (always), **Solved** (only when a problem was solved) |
@@ -88,7 +88,7 @@ Optional keys:
 
 Event names are these exact strings. New events join this table before any skill emits them.
 
-Document-producing skills (brainstorm, blueprint, deepen-blueprint, deep-review, side-quest, review-sweep) start the human body with a `**Doc:**` field holding the repo-relative doc path, and carry the same path in the marker's `paths`.
+Document-producing skills (brainstorm, blueprint, blueprint-deepen, deep-review, side-quest, review-sweep) start the human body with a `**Doc:**` field holding the repo-relative doc path, and carry the same path in the marker's `paths`.
 
 Grind's `unit-complete`/`unit-blocked` stamps are posted by its build subagent mid-build (grind blocks on that agent, so only the agent can stamp in real time). The subagent authenticates as the same `gh` login, so the reader contract's author check is unaffected; grind embeds the filled templates and encoding rules in the agent's brief rather than assuming it reads this spec.
 

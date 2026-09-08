@@ -1,5 +1,5 @@
 ---
-name: walk-blueprint
+name: blueprint-walk
 description: >
   Walk through an implementation plan interactively, one unit at a time. Reads a plan
   produced by /blueprint, renders each unit's fields verbatim with a plain-English teach
@@ -7,13 +7,13 @@ description: >
   to a personal glossary without interrupting the walk, and `**Reviewed:**` state is
   written inline in the plan so progress is durable and resumable. Triggers on phrases
   like "walk the plan", "walk the blueprint", "review this plan with me",
-  "walk-blueprint", or passing a path to a docs/plans/*.md file.
+  "blueprint-walk", or passing a path to a docs/plans/*.md file.
 user-invocable: true
 argument-hint: "[path to docs/plans/*.md]"
 allowed-tools: Bash, Read, Edit, Write
 ---
 
-# Walk Blueprint
+# Blueprint Walk
 
 Guide a human through a `/blueprint`-produced plan one **implementation unit** at a
 time. Each unit is rendered verbatim, explained in plain English, and then acted on.
@@ -25,7 +25,7 @@ writes code, never adds units, and never renumbers units.
 
 It slots between `/blueprint` and `/work` and is entirely optional: a plan that is
 never walked behaves exactly as it does today. Walking is most useful *after*
-`/deepen-blueprint`, which splits and reorders units in place — a unit split after
+`/blueprint-deepen`, which splits and reorders units in place — a unit split after
 being walked hands its verdict to both halves, and nothing detects that.
 
 ## Step 1: Resolve the Plan Path
@@ -475,9 +475,9 @@ failure handling are defined in [the issue-log spec](../issue-log/SKILL.md).
 Compose the body below, write it to a temp file with the Write tool, and post:
 
 ```markdown
-<!-- cc-forge-log v1: {"skill":"walk-blueprint","event":"blueprint-walk-complete","paths":["docs/plans/<file>.md"]} -->
+<!-- cc-forge-log v1: {"skill":"blueprint-walk","event":"blueprint-walk-complete","paths":["docs/plans/<file>.md"]} -->
 
-### 🚶 /walk-blueprint — walk complete
+### 🚶 /blueprint-walk — walk complete
 
 **Summary:** <n> units walked — <n> accepted, <n> modified, <n> retired, <n> skipped
 **Unreviewed:** <n> skipped, <n> never reached, <n> left pending
