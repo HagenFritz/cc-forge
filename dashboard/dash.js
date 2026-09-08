@@ -79,11 +79,11 @@ const VM_END_EVENT = 'SessionEnd'
 const VM_END_STICKY_MS = 5000
 const VM_ROWS_MAX = 256
 // There is no heartbeat, so an idle session and a dead forward look identical:
-// silence is labeled rather than trusted. Ten minutes of it marks the row,
+// silence is labeled rather than trusted. Ten minutes of it flags the row,
 // twelve hours evicts it so ghosts do not accumulate across days.
 const VM_STALE_MS = 10 * 60 * 1000
 const VM_EVICT_MS = 12 * 60 * 60 * 1000
-const VM_STALE_STATUS = 'stale'
+const VM_STALE_LABEL = 'stale'
 // Number.isInteger(1e308) is true, so without a ceiling one forged event pins
 // the stored seq beyond every real one.
 const VM_SEQ_MAX = 2 ** 32
@@ -144,6 +144,9 @@ const ITERM_BUNDLE_ID = 'com.googlecode.iterm2'
 const SCRIPT_OK_PREFIX = 'ok:'
 const SCRIPT_NO_MATCH = 'no-match'
 const TTY_PATH_RE = /^\/dev\/tty[a-z0-9]+$/
+// A tmux client_tty is a device path, and on Linux it is a pts one, which
+// TTY_PATH_RE does not admit.
+const TMUX_CLIENT_TTY_RE = /^\/dev\/(pts\/\d{1,5}|tty[A-Za-z0-9]{1,16})$/
 
 const HELP_NORMAL = 'j/k: select  enter: focus  r: rename tab  q: quit'
 const HELP_RENAME = 'enter: confirm  esc: cancel  ^U: clear'
@@ -552,7 +555,7 @@ function layout(rows, width) {
   // An unknown status is the one thing the user most needs to read intact, so
   // the state column grows to fit the widest one present rather than clipping
   // it to the width the three known statuses happen to need.
-  const stateWidth = Math.min(STATE_CAP, Math.max(STATE_WIDTH, ...rows.map((r) => Array.from(r.status).length)))
+  const stateWidth = Math.min(STATE_CAP, Math.max(STATE_WIDTH, ...rows.map((r) => Array.from(r.stateCell).length)))
   const wantName = Math.min(NAME_CAP, Math.max(4, ...rows.map((r) => Array.from(r.nameCell).length)))
   const wantDir = Math.min(DIR_CAP, Math.max(3, ...rows.map((r) => Array.from(r.dirCell).length)))
 
@@ -594,7 +597,7 @@ function buildTable(rows, width) {
 
   const lines = [renderLine(headers, widths, width), '']
   for (const row of rows) {
-    const cells = [row.status, row.ageCell, row.nameCell]
+    const cells = [row.stateCell, row.ageCell, row.nameCell]
     if (cols.showDir) cells.push(row.dirCell)
     if (cols.showSummary) cells.push(row.summary)
     lines.push(renderLine(cells, widths, width))
@@ -620,6 +623,9 @@ function nameMarker(row) {
 function decorateRows(rows, observed, now) {
   resolveNames(rows)
   for (const row of rows) {
+    // A flag, not a status: the real status still drives the age, the sort
+    // rank, and the transitions the bell reads.
+    row.stateCell = row.stale ? VM_STALE_LABEL : row.status
     row.ageCell = formatAge(ageMsFor(row, observed, now))
     row.nameCell = row.label + nameMarker(row)
     row.dirCell = row.remote ? row.cwd : shortenDir(row.cwd)
@@ -710,16 +716,18 @@ function vmRowsAsRows(state) {
 
 // Tick-driven, because silence is not an event and nothing else will wake for
 // it. Compared against the Mac receipt time, so a VM clock running ahead cannot
-// make a row look fresh. A stale row keeps its position; the next real event
-// replaces the whole row object in applyVmEvent, which is what returns it to
-// normal. Local rows are never touched — this reads state.vmRows only.
+// make a row look fresh. The flag is deliberately not a status: overwriting the
+// status would reset the age, drop the row to the unknown sort rank, and make
+// the return to `waiting` an entry the bell rings on. The next real event
+// replaces the whole row object in applyVmEvent, which clears the flag. Local
+// rows are never touched — this reads state.vmRows only.
 function ageOutVmRows(state, now) {
   for (const [id, row] of state.vmRows) {
     const quiet = now - row.receivedAt
     if (quiet >= VM_EVICT_MS) {
       state.vmRows.delete(id)
     } else if (quiet >= VM_STALE_MS) {
-      row.status = VM_STALE_STATUS
+      row.stale = true
     }
   }
 }
@@ -728,21 +736,22 @@ function tick(state, opts) {
   const now = Date.now()
   const result = opts.fixture ? readFixture(opts.fixture) : readRegistry()
 
-  let localRows
   if (result.ok) {
-    localRows = enrichRows(validateRows(result.rows))
-    state.lastLocalRows = localRows
+    state.lastLocalRows = enrichRows(validateRows(result.rows))
     state.lastGoodAt = now
     state.error = null
     state.poll = 'good'
   } else {
-    localRows = state.lastLocalRows
     state.error = result.error
     state.poll = state.poll === 'never-good' ? 'never-good' : 'stale'
   }
 
   ageOutVmRows(state, now)
-  const rows = localRows.concat(vmRowsAsRows(state))
+  return renderRows(state, now)
+}
+
+function renderRows(state, now) {
+  const rows = state.lastLocalRows.concat(vmRowsAsRows(state))
   const transitions = observeRows(state.observed, rows, now)
   state.lastRows = sortRows(decorateRows(rows, state.observed, now))
   return transitions
@@ -769,6 +778,7 @@ function newState() {
     renameBuffer: '',
     renameTarget: null,
     transient: null,
+    focusGen: 0,
   }
 }
 
@@ -1001,9 +1011,7 @@ function applyVmEvent(state, payload, now) {
 
   row.seq = payload.seq
   // Mac-observed: a VM clock even slightly ahead would pin ages at 0s forever.
-  // emittedAt is kept for staleness comparison only, never for display.
   row.receivedAt = now
-  row.emittedAt = isEpochMs(payload.emittedAt) ? payload.emittedAt : null
   state.vmRows.set(row.id, row)
 }
 
@@ -1140,9 +1148,29 @@ function vmFocusScript() {
 }
 
 // An argv array, never a shell string: a metacharacter that slipped past
-// TMUX_SESSION_RE stays inert as one argument.
-function tmuxSwitchArgs(tmuxSession) {
-  return [VM_HOST, 'tmux', 'switch-client', '-t', tmuxSession]
+// TMUX_SESSION_RE stays inert as one argument. Without BatchMode an unknown
+// host key prompts on /dev/tty, which blocks for the whole timeout and paints
+// over the frame. The options precede the host so ssh cannot read them as the
+// remote command.
+const SSH_ARGS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=2']
+
+function tmuxListClientsArgs() {
+  return SSH_ARGS.concat([VM_HOST, 'tmux', 'list-clients', '-F', '#{client_tty}'])
+}
+
+// switch-client without -c moves whichever client tmux saw most recently, and
+// selecting the iTerm tab does not bump tmux activity — so with two attached
+// clients the focused tab could keep showing its old session.
+function tmuxSwitchArgs(clientTty, tmuxSession) {
+  return SSH_ARGS.concat([VM_HOST, 'tmux', 'switch-client', '-c', clientTty, '-t', tmuxSession])
+}
+
+function firstTmuxClient(out) {
+  for (const line of String(out).split('\n')) {
+    const tty = line.trim()
+    if (TMUX_CLIENT_TTY_RE.test(tty)) return tty
+  }
+  return null
 }
 
 // The tty reaches the script through a closed pattern, but a tab name is
@@ -1164,6 +1192,24 @@ function setTransient(state, message) {
   paint(state)
 }
 
+// Held so restore() can kill it: quitting mid-focus would otherwise leave
+// osascript or ssh running against a terminal already handed back.
+let focusChild = null
+
+function trackFocusChild(child) {
+  focusChild = child
+  return child
+}
+
+// Two overlapping Enter presses finish in whatever order osascript and ssh
+// return, so only the newest attempt may write the footer.
+function focusReporter(state) {
+  const gen = ++state.focusGen
+  return (message) => {
+    if (gen === state.focusGen) setTransient(state, message)
+  }
+}
+
 // Both focus and rename start the same way: a row with a live pid whose
 // controlling terminal iTerm can be searched for.
 function withRowTty(state, row, next) {
@@ -1182,23 +1228,24 @@ function withRowTty(state, row, next) {
   })
 }
 
-// One osascript call path for focus and rename. `onOk` receives whatever the
-// script returned after the success marker — empty for focus, the tab's
+// One osascript call path for focus and rename. `report` takes the footer
+// message, so a superseded focus attempt can drop it. `onOk` receives whatever
+// the script returned after the success marker — empty for focus, the tab's
 // read-back name for rename. `noMatch` is the message for a script that ran but
 // found no session, which names a tty locally and the devbox tab remotely.
-function runSessionScript(state, script, verb, noMatch, onOk) {
-  execFile('osascript', ['-e', script], { timeout: FOCUS_TIMEOUT_MS, encoding: 'utf8' }, (scriptErr, scriptOut) => {
+function runSessionScript(report, script, verb, noMatch, onOk) {
+  trackFocusChild(execFile('osascript', ['-e', script], { timeout: FOCUS_TIMEOUT_MS, encoding: 'utf8' }, (scriptErr, scriptOut) => {
     if (scriptErr) {
-      setTransient(state, `could not ${verb} the tab — is iTerm running?`)
+      report(`could not ${verb} the tab — is iTerm running?`)
       return
     }
     const out = String(scriptOut).trim()
     if (!out.startsWith(SCRIPT_OK_PREFIX)) {
-      setTransient(state, noMatch)
+      report(noMatch)
       return
     }
     onOk(out.slice(SCRIPT_OK_PREFIX.length))
-  })
+  }))
 }
 
 function focusHighlighted(state) {
@@ -1207,26 +1254,33 @@ function focusHighlighted(state) {
   // Before withRowTty, whose contract is pid-to-tty: a VM row carries no pid by
   // design, so reaching it would report the session as exited.
   if (row.remote) return focusVmRow(state, row)
+  const report = focusReporter(state)
   withRowTty(state, row, (tty) => {
-    runSessionScript(state, focusScript(tty), 'focus', `no iTerm tab is attached to ${tty}.`, () => setTransient(state, null))
+    runSessionScript(report, focusScript(tty), 'focus', `no iTerm tab is attached to ${tty}.`, () => report(null))
   })
 }
 
-// Two steps, both bounded: select the devbox tab in iTerm, then tell tmux over
-// ssh which session to show. A row with no tmux session stops after the tab.
 function focusVmRow(state, row) {
   // Snapshotted, not re-read: a session that ends mid-flight leaves the switch
-  // pointing at a dead tmux session. Same shape as W2's declined pid-reuse
-  // finding, accepted for the same reason and recorded rather than left silent.
+  // pointing at a tmux session that just went away, which is accepted for the
+  // same reason the pid-reuse window is.
   const tmuxSession = row.tmuxSession
-  runSessionScript(state, vmFocusScript(), 'focus', `no iTerm tab is running ssh ${VM_HOST}.`, () => {
+  const report = focusReporter(state)
+  runSessionScript(report, vmFocusScript(), 'focus', `no iTerm tab is running ssh ${VM_HOST}.`, () => {
     if (tmuxSession === null) {
-      setTransient(state, `focused the ${VM_HOST} tab — tmux session not detected.`)
+      report(`focused the ${VM_HOST} tab — tmux session not detected.`)
       return
     }
-    execFile('ssh', tmuxSwitchArgs(tmuxSession), { timeout: FOCUS_TIMEOUT_MS, encoding: 'utf8' }, (err) => {
-      setTransient(state, err ? `focused the ${VM_HOST} tab, but tmux could not switch to ${tmuxSession}.` : null)
-    })
+    trackFocusChild(execFile('ssh', tmuxListClientsArgs(), { timeout: FOCUS_TIMEOUT_MS, encoding: 'utf8' }, (listErr, listOut) => {
+      const clientTty = listErr ? null : firstTmuxClient(listOut)
+      if (clientTty === null) {
+        report(`focused the ${VM_HOST} tab, but tmux could not switch to ${tmuxSession} — no tmux client attached.`)
+        return
+      }
+      trackFocusChild(execFile('ssh', tmuxSwitchArgs(clientTty, tmuxSession), { timeout: FOCUS_TIMEOUT_MS, encoding: 'utf8' }, (err) => {
+        report(err ? `focused the ${VM_HOST} tab, but tmux could not switch to ${tmuxSession}.` : null)
+      }))
+    }))
   })
 }
 
@@ -1263,7 +1317,7 @@ function commitRename(state) {
   if (!name || !row) return
   if (row.remote) return setTransient(state, 'rename is local-only — VM tab names come from the devbox session')
   withRowTty(state, row, (tty) => {
-    runSessionScript(state, renameScript(tty, name), 'rename', `no iTerm tab is attached to ${tty}.`, (actual) => {
+    runSessionScript((message) => setTransient(state, message), renameScript(tty, name), 'rename', `no iTerm tab is attached to ${tty}.`, (actual) => {
       // A profile title format decorates the applied name, which otherwise
       // reads as the rename having done nothing at all.
       setTransient(state, actual === name ? null : `renamed — this profile's title format shows it as "${stripControls(actual)}"`)
@@ -1336,6 +1390,11 @@ let restored = false
 function restore() {
   if (restored) return
   restored = true
+  try {
+    if (focusChild) focusChild.kill()
+  } catch (e) {
+    // Already exited, or never a real child; the exit matters more.
+  }
   try {
     if (rawEnabled && process.stdin.isTTY) process.stdin.setRawMode(false)
   } catch (e) {
@@ -1581,7 +1640,22 @@ if (require.main === module) main()
 
 // The only testing seam this file has: a VM payload in (validateVmRow), an
 // event applied to a state (applyVmEvent over newState), the listener itself,
-// which cannot otherwise be reached without a pty, the VM focus path, whose two
-// builders and entry point cannot be exercised at all without iTerm and a live
-// devbox, and staleness, which is only reachable by handing it a clock.
-module.exports = { validateVmRow, applyVmEvent, newState, startListener, vmFocusScript, tmuxSwitchArgs, focusVmRow, ageOutVmRows }
+// which cannot otherwise be reached without a pty, the focus path — its script
+// and argv builders plus both entry points, none of which can be exercised at
+// all without iTerm and a live devbox — and staleness, which needs a clock
+// handed to ageOutVmRows and renderRows to reach the rendered cells.
+module.exports = {
+  validateVmRow,
+  applyVmEvent,
+  newState,
+  startListener,
+  focusScript,
+  renameScript,
+  vmFocusScript,
+  tmuxListClientsArgs,
+  tmuxSwitchArgs,
+  focusHighlighted,
+  focusVmRow,
+  ageOutVmRows,
+  renderRows,
+}
