@@ -22,6 +22,7 @@ Stage and commit all currently modified/untracked files, creating a **separate c
 
 ## Rules
 
+- **User-invoked only** — by slash command or plain-English ask, either one. Never start it on your own initiative, and never from inside another skill.
 - Do NOT use `git add -A` or `git add .`
 - Do NOT push to any remote
 - Do NOT skip hooks (no `--no-verify`)

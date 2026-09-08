@@ -2,7 +2,7 @@
 
 Slash-command skills for Claude Code. Each subdirectory is one skill with a `SKILL.md` (YAML frontmatter — `name`, `description`, `argument-hint`, `allowed-tools`, plus `user-invocable: false` + `disable-model-invocation: true` for reference-only skills — followed by the workflow prose). Claude Code loads these from `~/.claude/skills/`; editing a file here goes live only after re-running the plugin install or copying the folder into `~/.claude/`.
 
-A pre-commit hook runs `scripts/sync-workflows.sh`, which regenerates `.devin/workflows/*.md` (gitignored) from every `SKILL.md` here — except reference-only skills (`user-invocable: false`), which are skipped.
+A **git** pre-commit hook (distinct from the plugin hooks in `hooks/`) runs `scripts/sync-workflows.sh`, which regenerates `.devin/workflows/*.md` (gitignored) from every `SKILL.md` here — except reference-only skills (`user-invocable: false`), which are skipped.
 
 `issue-log/` is one such reference skill: it holds the issue-log stamp spec (envelope, event registry, shared rules) that the workflow skills' stamp blocks link to. When touching any stamp block, change shared rules only in the spec.
 
@@ -37,6 +37,7 @@ Two execution paths run a plan to merged code. `work/` → `ship/` are confirm-g
 
 ## Related
 
+- **PR #105** (2026-09-08): removed preview/, unpreview/, catch-up/, caveman/ and the caveman hook script; the /catch-up references in land/, review-push/, and review-protocol/ became `git pull --ff-only`; `disable-model-invocation` now appears only on the four reference skills
 - **PR #61** (2026-07-29): add /grind — autonomously executes a plan as a serial sequence of PRs (worktree → Opus build → Fable review → self-triage → Opus fix → merge on green CI); renamed /plan → /blueprint and /deepen-plan → /deepen-blueprint to clear the collision with Claude Code's built-in plan mode
 - **PR #60** (2026-07-24): /tree's main-sync now fetches origin/{default-branch} (remote-tracking ref only) instead of git fetch origin {default-branch}:{default-branch}, so it no longer hard-fails when another worktree has the default branch checked out; the new worktree branches off that fetched ref directly, and the git pull fast-forward for an already-main primary checkout is now additive rather than the sole fallback
 - **PR #59** (2026-07-21): issue-log stamp convention — new skills/issue-log reference spec (marker v1, event registry, reader contract) + ten skills stamp their key events onto the linked issue; posting hardened to --body-file after deep-review — [plan](docs/plans/2026-07-21-001-feat-issue-log-standard-plan.md)

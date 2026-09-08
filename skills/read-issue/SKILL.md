@@ -1,7 +1,6 @@
 ---
 name: read-issue
 description: Fetch a GitHub issue from the current repo by number and present a structured digest
-disable-model-invocation: false
 user-invocable: true
 argument-hint: "<issue-number>"
 allowed-tools: Bash

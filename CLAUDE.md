@@ -1,6 +1,6 @@
 # CC Forge - Agent Instructions
 
-Personal reference collection of Claude Code skills, agents, and hooks with GitHub integration. Not a package — people clone it and copy what they want into `~/.claude/`.
+Personal reference collection of Claude Code skills and agents with GitHub integration. Not a package — people clone it and copy what they want into `~/.claude/`.
 
 ## Structure
 
@@ -8,7 +8,7 @@ Personal reference collection of Claude Code skills, agents, and hooks with GitH
 .claude-plugin/   Plugin manifest (makes the symlinked clone load as forge@skills-dir)
 agents/           Specialized subagents (research, review, workflow, test)
 skills/           Slash commands (SKILL.md files)
-hooks/            Hook scripts (.cjs) + hooks.json (auto-wired when the plugin loads)
+hooks/            Hook scripts + hooks.json (auto-wired when the plugin loads; currently declares no hooks)
 dashboard/        Live terminal dashboard for monitoring sessions (not plugin-loaded)
 docs/             Plans, brainstorms, reviews, initiatives generated at runtime
 ```
@@ -52,6 +52,9 @@ Core workflow: brainstorm -> blueprint -> work -> review -> compound
 - `/review-walk` - Guided execution of a `/deep-review` document. Walks issues group-by-group with a plain-English teach moment per group, then per-issue **implement / defer / won't fix / add term / explain more**. Updates `Status:` inline in the review doc — durable, resumable. Auto-discovers the latest `docs/reviews/*.md` if no path is given. Falls back to issue-by-issue order on pre-enrichment review docs. At walk end, offers tracking issues for deferred items (using issue-from-context's template) and stamps the walk outcome on the linked issue.
 - `/review-sweep` - Unattended quick-win pass over a `/deep-review` document, and the conservative inverse of `/grind`'s accept-by-default triage: surfacing is the default, implementing the exception. Reads the cited code for each finding in doc order and implements only the cheap-and-certain ones — Effort Small at Confidence high or medium at any tier, plus Effort Medium at P1 with Confidence high; everything else stays `open` and gains a `**Sweep:** <reason>` line directly under `Status:` (fixed vocabulary) saying why a human still has to look. Low-confidence findings surface without the code being read; reviewer misreads become `wont-fix` with a `Skip reason:`, as do findings against protected artifacts. Zero prompts — invoking is the confirmation — and it stops before any edit on a `target:` mismatch. Files already dirty at preflight are never edited (that finding surfaces instead), edits land inline and uncommitted, and reverts are patch-based. The test suite runs once after the fixes with a 10-minute cap; a patch-file baseline runs only on red, a new failure is attributed by file overlap only, and the finding stays `done`. Stamps `sweep-complete` on the linked issue on every terminal outcome, including zero implemented. Never commits, pushes, stashes, creates files, or files issues. Typical flow: `/deep-review` → `/review-sweep` → `/review-walk` over what the sweep surfaced.
 
+- `/test-plan` - Generate a manual test plan from current branch diffs (unstaged, staged, and committed). Covers happy-path flows, regression, UX, and edge cases, and notes where unit/integration tests would help. Saves a living document to `docs/tests/` with pass/fail statuses you update as you test.
+- `/stand-up` - Summarize the past 28h of work (commits, PRs, linked issues).
+
 **Response modes:**
 - `/tldr` - Cap one response at N sentences and state it plainly. `/tldr <n> [question]` — the leading integer is a ceiling (not a target), everything after it is the prompt to answer. Plain language is half the skill: short common words, active voice, no jargon the answer doesn't need — but exact identifiers, error strings, and file paths are never paraphrased. Code blocks and file paths don't count against N. One-shot by design — no hook, no flag file, no persistence; it applies to the next response only.
 
@@ -69,6 +72,9 @@ Core workflow: brainstorm -> blueprint -> work -> review -> compound
 - `/ship` - Commit changes, push branch, and create a PR (auto-detects repo). Fetches the default branch into its local ref before diffing against it, so a worktree's stale local `main` doesn't skew the generated PR diff/body.
 - `/land` - Takes an open PR to merged with **zero prompts** — invoking it is the confirmation. Resolves the open PR for the current branch (or pass a PR number), runs the runnable items in the PR body's `**Pre-merge Tests**` checklist (backtick-prefixed items only, same-repo PRs only — a fork's body is untrusted and is listed as manual instead), waits on its existing CI checks via `gh pr checks --watch` (when the PR reports no checks at all, the local test suite is the only gate; when no test command is detectable either, the checklist is what gated the merge — ungated with a note only when it had nothing runnable), squash-merges + deletes the branch, removes the `/tree` worktree when a clean one holds the branch (dirty or mid-merge worktrees are left in place and reported — never forced), syncs `main` (`git fetch origin main:main` when another worktree holds it), and posts the `pr-merged` stamp on the linked issue. Never pushes a commit, so no merge ever triggers a second CI run; a failed pre-merge check, red CI, or a red local suite **halts** with the failing output — `/land` proposes no fixes. Checklist results go in the run report, never back into the PR body. Only claims "merged" after the merge actually succeeds.
 - `/review-push` - The remote-review handoff, run after `/review-walk`. Commits the applied review fixes, pushes them onto the PR branch, and posts a PR comment summarizing what was fixed, deferred, and skipped — sourced from the review doc's `Status:` lines — so the machine that lands it (and any human reviewer) sees what each finding turned into.
+- `/read-issue` - Fetch a GitHub issue from the current repo by number and present a structured digest.
+- `/triage-issue` - Fetch a GitHub issue and investigate the codebase to determine whether it is still present, already fixed, or needs more investigation. Produces a triage document in `docs/triage/`.
+- `/side-quest` - Document out-of-scope tasks, technical debt, or related ideas discovered during execution that should be tracked but not immediately addressed. Files a labeled GitHub tracking issue and stamps the originating issue.
 
 **Git utilities:**
 - `/commit-all` - Stage and commit all modified/untracked files, one commit per file with a meaningful message.
@@ -90,6 +96,7 @@ When referencing agents from within SKILL.md files, use fully-qualified names:
 
 ## Related
 
+- **PR #105** (2026-09-08): removed /preview, /unpreview, /catch-up, /caveman and the caveman hook script; hooks.json now declares no hooks; dropped `disable-model-invocation` from all non-reference skills, so they are model-invocable again
 - **PR #52** (2026-07-13): /deep-review deletes docs/reviews/.raw/<slug>/ after the synthesized doc is verified (never on fallback/clean-review); fixed README + CLAUDE.md plugin-reload guidance — /plugin update no-ops on an unchanged version, so use uninstall + rm -rf cache + install + restart
 - **PR #49** (2026-07-09): add /compact-prep — interactive skill that gathers git+session state, asks the next session's focus, writes a fresh-agent handoff doc to docs/handoff/, and prints the @-ref to paste after /compact; also gitignore docs/reviews/ — [plan](docs/plans/2026-07-07-001-feat-compact-prep-skill-plan.md)
 - **PR #43** (2026-06-25): remove document-review skill (broken agent refs, stale names), document plugin cache staleness workaround in README — [session](https://claude.ai/code/session_017p7uuzAi5nJw7s4usffXyD)

@@ -418,7 +418,7 @@ Every terminal outcome — `grind-complete`, `grind-stopped`, `grind-blocked` �
 
 ## Rules
 
-- **User-invoked only** — by slash command or plain-English ask, either one. Never start `/grind` on your own initiative, and never from inside another skill.
+- **User-invoked only** — by slash command or plain-English ask ("grind this plan", "run the whole thing"), either one. Never start `/grind` on your own initiative, never from inside another skill, never wired to a git or CI hook, and never because a plan happens to look ready. An ambiguous or implied approval ("looks good to me") is not an ask — when in doubt, ask.
 - **One confirmation, then unattended.** The PR breakdown is confirmed; nothing after it is. Do not add prompts mid-run, and do not silently degrade to asking — if the run can't proceed autonomously, halt and say why.
 - **Serial.** Slice N is merged before slice N+1 starts. No parallel slices, no starting the next build while a PR is in review.
 - **One worktree per PR**, created off `origin/<default-branch>`, removed on merge. `/grind` runs from the primary checkout and never checks out a feature branch there.

@@ -28,6 +28,8 @@ Follow [the review-protocol spec](../review-protocol/SKILL.md#prerequisites) —
 
 This review adds none of its own. It needs no worktree permissions, because it never creates one.
 
+**User-invoked only** — by slash command or plain-English ask, either one. Never start it on your own initiative, and never from inside another skill.
+
 ## Main Tasks
 
 ### 1. Determine Review Target

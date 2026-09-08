@@ -79,7 +79,7 @@ Typical flow: open the PR with `/ship` → run `/land` → done: merged, branch 
 
 ## Rules
 
-- Runs on the user's say-so — a slash command or a plain-English ask ("land this", "merge the PR") both count. What it must never be is Claude's own idea: never wired to a git or CI hook, never chained from another skill, never started because a PR happens to look ready.
+- **User-invoked only** — by slash command or plain-English ask ("land this", "merge the PR"), either one. Never start `/land` on your own initiative, never from inside another skill, never wired to a git or CI hook, and never because a PR happens to look ready. An ambiguous or implied approval ("looks good to me") is not an ask — when in doubt, ask.
 - Operates on an **open** PR; refuse closed/merged PRs.
 - **Zero prompts, zero pushes:** `/land` never commits, never pushes, never edits the PR, and never asks. The merge and the issue stamp are its only writes.
 - **Red halts.** A failed pre-merge check, CI red, or local-suite red stops the run with the real output; no fix commits, no masked failures, no retries.

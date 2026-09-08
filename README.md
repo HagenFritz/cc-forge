@@ -1,6 +1,6 @@
 # cc-forge
 
-A personal reference collection of Claude Code skills, agents, and hooks, built around a `brainstorm → blueprint → work → review → compound` loop with GitHub integration on top.
+A personal reference collection of Claude Code skills and agents, built around a `brainstorm → blueprint → work → review → compound` loop with GitHub integration on top.
 
 This is a **personal showcase**, not a package. Browse, copy the folders or ideas you want into your own `~/.claude/`, and adapt them. The workflows are tuned to one person's setup.
 
