@@ -58,7 +58,7 @@ Rows iTerm knows nothing about — VM rows, background sessions, a pid whose tty
 
 Bound to loopback only; the VM reaches it over an ssh reverse forward. Every request must be a `POST` carrying `x-dash-token` and `content-type: application/json`, with no `Origin` header; a body over 4 KB is rejected (4096 bytes is the largest accepted), cut off mid-stream with the socket destroyed. Anything else is rejected with 405 / 401 / 415 / 403 / 413 and touches no state.
 
-The shared secret lives at `~/.claude/.dash-token`, 64 hex characters, created `0600` at open time and read symlink-refusingly. It is generated on the first `--listen` run and the footer says so once — copy it to the VM and `chmod 600` it there (`scp` preserves neither mode nor a safe umask). Rotation is delete, restart, re-copy. A file that is there but unusable (a symlink, oversized, malformed, or unreadable) is never overwritten: the footer says so and VM rows are off for that run, so a transient read error cannot rotate a secret the VM still holds. A token readable beyond this user gets a footer warning, not a rotation.
+The shared secret lives at `~/.claude/.dash-token`, 64 hex characters, created `0600` at open time and read symlink-refusingly. It is generated on the first `--listen` run and the footer says so once; getting it onto the VM, and rotating it, is step 2 of *Wiring the devbox* below. A file that is there but unusable (a symlink, oversized, malformed, or unreadable) is never overwritten: the footer says so and VM rows are off for that run, so a transient read error cannot rotate a secret the VM still holds. A token readable beyond this user gets a footer warning, not a rotation.
 
 The token defends exactly two boundaries: a remote-triggered local request from a context that cannot read the filesystem (a browser tab, a postinstall script), and a non-root process on the devbox. A same-uid process on the Mac reads the token file and is not defended against.
 
@@ -75,6 +75,57 @@ Payload contract — anything else is ignored, `host` included (the host is pinn
 A VM row that has been quiet for 10 minutes shows `stale` in the STATE cell, and one quiet for 12 hours is dropped. Both are tick-driven off the Mac receipt time — there is no heartbeat, so silence cannot be told apart from an idle session or a dead forward, and labeling it is the honest answer. Staleness is a flag on the row, not a status: the STATE cell reads `stale`, the AGE keeps counting from the last received event rather than restarting, the row holds its sort position, and a stale row that reports again does not re-ring the bell — it never left the status the bell is edge-triggered on. The next real event replaces the row outright, which clears the flag. Local rows are never aged out.
 
 At most 256 VM rows are held; at the cap the least recently heard-from row is evicted for the new session, so a flood of fresh uuids cannot lock a real session out of the table. The sticky-end map is capped the same way, evicting the soonest-expiring record. Footer counters — rejected VM requests (a stale token copy on the VM) and dropped VM events (out of order, unknown event, or malformed) — each get their own footer line once non-zero, as do a listener that could not bind and the one-time new-token note.
+
+## Wiring the devbox
+
+Three per-machine steps, none of them committed — the same posture as
+`~/.local/bin/ccdash`. `~/.ssh/config` and the token file live outside the repo
+on both machines.
+
+**1. The reverse forward, on the Mac.** `~/.ssh/config` already has a
+`Host ro-devbox` entry (the IAP `ProxyCommand` `scripts/devbox` relies on), so
+these lines are added *inside* it rather than appended as a second block:
+
+```
+Host ro-devbox
+  # …existing ProxyCommand, User, IdentityFile…
+  RemoteForward 45800 127.0.0.1:45801
+  ControlMaster auto
+  ControlPersist 10m
+  ExitOnForwardFailure yes
+```
+
+The config is the only place that covers `devbox ssh`, `devbox <name>`,
+`devbox cc`, and a hand-typed `ssh ro-devbox` with one edit, which is why
+`scripts/devbox` needs no change. `RemoteForward` binds 45800 on the VM and
+carries it to `dash.js --listen 45801` on the Mac. `ControlMaster` and
+`ControlPersist` are load-bearing rather than tuning: with `RemoteForward` set, a
+second concurrent connection cannot bind the VM-side port, so without a shared
+connection only the first `devbox` invocation carries a working forward — and
+`devbox` opens a fresh connection per invocation. `ExitOnForwardFailure yes`
+turns a silent half-connection into a loud ssh error. The forward reaches the
+VM's loopback only, which assumes `GatewayPorts` stays `no` on the devbox (it is
+unset today); at `yes` the listener would be reachable from the whole VPC.
+
+**2. The token, on both machines.** Run the dashboard once with `--listen` to
+generate `~/.claude/.dash-token`, then copy it over and fix the mode there:
+
+```bash
+scp ~/.claude/.dash-token ro-devbox:.claude/.dash-token
+ssh ro-devbox 'chmod 600 ~/.claude/.dash-token'
+```
+
+`0600` on the Mac and on the VM. `scp` preserves neither the mode nor a safe
+umask, and the emitter treats a group- or other-readable token as absent
+silently, so the `chmod` is not optional — the VM-side permissions guard the one
+real privilege boundary in this design. Rotation is delete, restart the
+dashboard, re-copy; between the restart and the re-copy the symptom is a rising
+`N VM requests rejected` count in the footer, not an error.
+
+**3. The emitter, on the VM.** cc-forge is already loaded as a plugin there, so
+`git pull` in the devbox checkout plus `/reload-plugins` in a session on the VM
+is the whole install — `hooks/hooks.json` is wired automatically. Non-interactive
+ssh does not see `~/.local/bin/claude`, so a remote command needs `bash -lc`.
 
 ## Session emitter (VM side)
 
@@ -116,6 +167,9 @@ The bell rings once per tick when a session newly enters `waiting`.
 - A tab opened, closed, or dragged is reflected one poll (two seconds) later, since the tab query runs off the tick.
 - Tab order is iTerm-only. In any other terminal the query returns nothing and the table sorts by urgency, silently — the same degradation focus and rename already have.
 - A VM session that starts while the dashboard is down is invisible until its next event; there is no heartbeat and the dashboard never polls the VM. An idle VM session goes `stale` after 10 minutes for the same reason, which says only that nothing has been heard — not that the session is gone.
+- VM rows have no SUMMARY. The emitter carries a state and a tmux session name only, so the cell is blank — reading a VM transcript would mean an ssh round trip per row per tick.
+- `r` on a VM row reports that rename is local-only; it renames an iTerm tab, and a VM row has none.
+- Permission prompts arrive on two different hook events and both are wired, per *Session emitter* above (anthropics/claude-code#85171). If that is fixed upstream one entry becomes redundant rather than wrong: both map to `waiting`, so a session that emits both pays one extra no-op update and no second bell.
 - Transcript reads have no wall-clock guard (measured at ~1 ms cold; not addressed).
 - `DASH_PROJECTS_DIR` env override exists for testing but is not a documented user-facing feature.
 - A tab renamed with `r` is overwritten by Claude Code's own OSC 0 title on that session's next turn — the rename is not sticky. Mitigation is the iTerm profile toggle "Terminal may set tab/window title"; there is no scriptable lock.

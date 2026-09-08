@@ -8,7 +8,7 @@ Personal reference collection of Claude Code skills and agents with GitHub integ
 .claude-plugin/   Plugin manifest (makes the symlinked clone load as forge@skills-dir)
 agents/           Specialized subagents (research, review, workflow, test)
 skills/           Slash commands (SKILL.md files)
-hooks/            Hook scripts + hooks.json (auto-wired when the plugin loads; currently declares no hooks)
+hooks/            Hook scripts + hooks.json (auto-wired when the plugin loads; declares the dashboard's session emitter)
 dashboard/        Live terminal dashboard for monitoring sessions (not plugin-loaded)
 docs/             Plans, brainstorms, reviews, initiatives generated at runtime
 ```
@@ -87,7 +87,7 @@ This is a personal showcase repo, not a package — there's no build step or ins
 
 Because there is no cache, **editing a file or pulling a commit is the deploy** — the next session has it automatically. Mid-session: `SKILL.md` edits are live immediately; agent, hook, and manifest changes need `/reload-plugins`. The dashboard (`node dashboard/dash.js`) is run by hand in its own terminal tab and is not plugin-loaded, so `/reload-plugins` does not apply to it. Never use `/plugin install` / `/plugin update` for this repo — the marketplace route copies to a cache that goes stale on every edit. If one resurfaces: `claude plugin uninstall`, `claude plugin marketplace remove`, `rm -rf ~/.claude/plugins/cache/<name>/`, then re-symlink.
 
-`hooks/hooks.json` is wired automatically when the plugin loads. It currently declares no hooks. When adding one, put its script in `hooks/` and declare it in `hooks/hooks.json` (using `${CLAUDE_PLUGIN_ROOT}` for the path) so it's picked up automatically.
+`hooks/hooks.json` is wired automatically when the plugin loads. It declares one hook: `cc-forge-session-emitter.cjs`, on `SessionStart`, `UserPromptSubmit`, `Notification` (matcher `permission_prompt`), `PermissionRequest`, `Stop`, and `SessionEnd` — the VM half of the dashboard's `--listen` rows. When adding another, put its script in `hooks/` and declare it in `hooks/hooks.json` (using `${CLAUDE_PLUGIN_ROOT}` for the path) so it's picked up automatically.
 
 ## Agent References in Skills
 
