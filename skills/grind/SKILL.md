@@ -15,7 +15,7 @@ Two run-level guards wrap the loop. A **lifetime timer** (default on) stops the 
 
 The plan document is the durable state. `/grind` writes a `## PR Breakdown` table into it and updates each row as the PR advances; the review doc, worktrees, and unpushed-nothing per-unit cadence mean every checkpoint also exists on GitHub or on disk. An interrupted run — stopped, blocked, or hard-killed — is resumed by re-invoking `/grind` on the same plan.
 
-`/grind` is the autonomous sibling of `/work` → `/deep-review` → `/ship`. It does **not** call those skills (confirm-gated by design, they would deadlock an unattended run) or `/land` (click-free, but per-PR and human-invoked). It mirrors their processes instead — `/work`'s per-unit stamps and commit cadence, `/deep-review`'s roster and synthesizer, `/push-review`'s outcome reporting, `/ship`'s PR shape — so the issue thread and PR history of a grind run read identically to a manual run.
+`/grind` is the autonomous sibling of `/work` → `/deep-review` → `/ship`. It does **not** call those skills (confirm-gated by design, they would deadlock an unattended run) or `/land` (click-free, but per-PR and human-invoked). It mirrors their processes instead — `/work`'s per-unit stamps and commit cadence, `/deep-review`'s roster and synthesizer, `/review-push`'s outcome reporting, `/ship`'s PR shape — so the issue thread and PR history of a grind run read identically to a manual run.
 
 ## Autonomy Contract
 
@@ -219,9 +219,9 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
 
 22. **Dispatch the fleet.** Parallel by default; run serially when 6+ agents are configured (note the switch in the run log — there is no user to inform). Each agent's brief: the PR diff via `gh pr diff <N>` (the review is of the PR, not a working tree), the verbatim plan units this PR implements, the repo's `CLAUDE.md` conventions as the house bar, and the return contract — a structured findings list (severity `P1`/`P2`/`P3`, file:line, one-sentence description) plus an overall verdict; an empty list is a valid result. A roster agent that fails or returns nothing: proceed with partial coverage and name it in the `pr-reviewed` stamp — a missing lens is reportable, not fatal.
 
-23. **Persist raw findings** before synthesis: each agent's returned findings verbatim to `docs/reviews/.raw/<sanitized-slug>/<agent>.md` (slug from the branch name, deep-review's sanitization: lowercase, non-`[a-z0-9-]` → `-`, collapse repeats). The worktree's `docs/` is a symlink, so these land in the primary checkout and survive anything short of disk loss.
+23. **Persist raw findings** before synthesis: each agent's returned findings verbatim to `docs/reviews/.raw/<sanitized-slug>/<agent>.md` (slug from the branch name, the review protocol's sanitization: lowercase, non-`[a-z0-9-]` → `-`, collapse repeats). The worktree's `docs/` is a symlink, so these land in the primary checkout and survive anything short of disk loss.
 
-24. **Dispatch `forge:review:review-synthesizer`** with all seven of its required inputs: every agent's findings verbatim (including code-simplicity-reviewer), the learnings-researcher report, PR metadata + the branch slug, the protected-artifacts paths (`docs/brainstorms/*-requirements.md`, `docs/plans/*.md`, `docs/solutions/*.md`), the `cc-forge.local.md` review context when present, the **absolute path of the primary checkout's** `docs/reviews/` directory, and today's date. It writes `docs/reviews/YYYY-MM-DD-NNN-<slug>-review.md` and returns the doc path, per-tier counts, and summary rows — or a clean-review marker.
+24. **Dispatch `forge:review:review-synthesizer`** with every required input named in [the review-protocol spec](../review-protocol/SKILL.md#dispatching-the-synthesizer): the findings of every agent this run dispatched, PR metadata + the branch slug, the protected-artifacts paths (`docs/brainstorms/*-requirements.md`, `docs/plans/*.md`, `docs/solutions/*.md`), the **absolute path of the primary checkout's** `docs/reviews/` directory, and today's date. Pass the `cc-forge.local.md` review context too when present; that input is optional and its absence never stops the synthesizer. It writes `docs/reviews/YYYY-MM-DD-NNN-<slug>-review.md` and returns the doc path, per-tier counts, and summary rows — or a clean-review marker.
 
 25. **Clean review:** post a one-line PR comment ("Automated review found no issues — <n> agents, 0 findings"), post the `pr-reviewed` stamp with 0/0/0 counts, and jump to Phase 6.
 
@@ -275,7 +275,7 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
 
 34. **Verify the fixes landed** — `git -C <worktree> log origin/<branch>..HEAD` should be empty (everything pushed) and `gh pr view <N> --json commits` should show the new commits. If the agent reported success but nothing was pushed, retry once with a brief noting exactly what was missing; if the retry also fails, mark the row `blocked` and halt. On success, flip each fixed finding's `Status:` to `done` in the review doc.
 
-35. **Report the outcomes on the PR** — `/push-review`'s comment shape, built from the doc's `Status:` lines:
+35. **Report the outcomes on the PR** — `/review-push`'s comment shape, built from the doc's `Status:` lines:
     ```markdown
     ## Review pass — <N> fixed, <M> deferred, <K> skipped
 

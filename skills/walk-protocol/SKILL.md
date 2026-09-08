@@ -25,8 +25,7 @@ This file is the single source of truth for every rule that applies to more than
 of them. Walk skills embed only their own artifact-specific prose — path resolution,
 shape detection, how an item is rendered, where the state line sits, what the action
 verbs are — and reference this spec for everything below. **Never restate a rule from
-this file inside a walk**, not even paraphrased; a rule that drifts between three files
-is worse than a rule stated once.
+this file inside a walk**, not even paraphrased.
 
 Throughout, **item** means whatever that walk walks, and **doc** means the artifact it
 walks.

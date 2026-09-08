@@ -1,23 +1,23 @@
 ---
-name: push-review
+name: review-push
 description: >
   After /review-walk, commit the applied review fixes, push them onto the PR branch,
   and post a PR comment summarizing what was fixed, deferred, and skipped — sourced from
   the review doc's Status lines. This is the remote-review handoff: it puts the
   review-item context on the PR so the machine that lands it (and any human reviewer)
   can see exactly what each finding turned into. Triggers on "push the review fixes",
-  "push-review", or being run right after /review-walk on a PR branch.
+  "review-push", or being run right after /review-walk on a PR branch.
 user-invocable: true
 disable-model-invocation: true
 argument-hint: "[path to docs/reviews/*.md]"
 allowed-tools: Bash, AskUserQuestion, Read, Grep, Glob
 ---
 
-# Push Review
+# Review Push
 
-Take the fixes `/review-walk` just applied and (1) commit + push them onto the open PR branch, and (2) post a PR comment that maps each review finding to its outcome. Built for the remote-review flow (Model B): `/deep-review` → `/review-walk` → **`/push-review`**, all in one session on the review machine (e.g. a devbox VM). The review doc is local and gitignored; the PR comment is how its context reaches the branch and the landing machine.
+Take the fixes `/review-walk` just applied and (1) commit + push them onto the open PR branch, and (2) post a PR comment that maps each review finding to its outcome. Built for the remote-review flow (Model B): a review skill → `/review-walk` → **`/review-push`**, all in one session on the review machine (e.g. a devbox VM). The review doc is local and gitignored; the PR comment is how its context reaches the branch and the landing machine.
 
-This skill **reads** the review doc — it never edits it. `/review-walk` owns the `Status:` lines; `/push-review` only reports them.
+This skill **reads** the review doc — it never edits it. `/review-walk` owns the `Status:` lines; `/review-push` only reports them.
 
 ## Core Principles
 
@@ -30,17 +30,17 @@ This skill **reads** the review doc — it never edits it. `/review-walk` owns t
 
 ### Phase 1: Preconditions
 
-1. Verify `gh` is available (`gh --version`). If not, stop: "GitHub CLI (`gh`) is required for /push-review."
+1. Verify `gh` is available (`gh --version`). If not, stop: "GitHub CLI (`gh`) is required for /review-push."
 2. `git rev-parse --show-toplevel` for the repo root; scope all operations to it.
-3. `git branch --show-current`. If on `main`/`master`, stop: "You're on the default branch. /push-review pushes onto a PR's feature branch — check out the PR branch first (or run this on the machine where /review-walk ran)."
-4. **Resolve the open PR for this branch:** `gh pr view --json number,title,url,state,headRefName`. If no open PR, stop: "No open PR found for `<branch>`. /push-review pushes review fixes onto an existing PR — open one with /ship first." If `state` isn't `OPEN`, stop with the same shape.
+3. `git branch --show-current`. If on `main`/`master`, stop: "You're on the default branch. /review-push pushes onto a PR's feature branch — check out the PR branch first (or run this on the machine where /review-walk ran)."
+4. **Resolve the open PR for this branch:** `gh pr view --json number,title,url,state,headRefName`. If no open PR, stop: "No open PR found for `<branch>`. /review-push pushes review fixes onto an existing PR — open one with /ship first." If `state` isn't `OPEN`, stop with the same shape.
 
 ### Phase 2: Resolve the review doc
 
 5. **Find the doc:**
    - If a path arg was passed, use it (verify with `ls`).
    - Else auto-discover the newest: `ls docs/reviews/*.md 2>/dev/null | sort | tail -1` (lexicographic sort on the `YYYY-MM-DD-NNN-` prefix is deterministic).
-   - If none exists, stop: "No review doc found. /push-review summarizes a /deep-review doc — run the review first, or pass the path."
+   - If none exists, stop: "No review doc found. /review-push summarizes a review doc — run a review first, or pass the path."
 6. **Verify it's the right doc for this PR:** read the frontmatter `target:`. If it names a PR number or branch that doesn't match the resolved PR / current branch, warn and ask via `AskUserQuestion`: **Use it anyway** / **Cancel** — a mismatched doc would post a misleading comment.
 
 ### Phase 3: Parse outcomes
@@ -70,7 +70,7 @@ This skill **reads** the review doc — it never edits it. `/review-walk` owns t
     )"
     ```
     Keep the subject's ID list short; if more than ~4 findings, use `fix: address N review findings` and let the body carry the list.
-12. **Pre-flight and push:** `git fetch origin <headRefName>`. If the local branch is behind the remote (someone else pushed), stop **before pushing** — do not force: "The PR branch advanced on the remote. `git pull --rebase origin <headRefName>`, re-check, then re-run /push-review." Otherwise `git push origin HEAD`. Only on success proceed; on failure report that the fixes are committed locally but NOT on the PR, with the recovery command.
+12. **Pre-flight and push:** `git fetch origin <headRefName>`. If the local branch is behind the remote (someone else pushed), stop **before pushing** — do not force: "The PR branch advanced on the remote. `git pull --rebase origin <headRefName>`, re-check, then re-run /review-push." Otherwise `git push origin HEAD`. Only on success proceed; on failure report that the fixes are committed locally but NOT on the PR, with the recovery command.
 
 ### Phase 5: Post the PR comment
 
@@ -78,7 +78,7 @@ This skill **reads** the review doc — it never edits it. `/review-walk` owns t
     ```markdown
     ## Review pass — <N> fixed, <M> deferred, <K> skipped
 
-    Applied from `<review-doc-basename>` (via /review-walk).
+    Applied from `<review-doc-basename>` (walked with /review-walk).
 
     ### Fixed
     - **P1-2 <title>** — <one-line what-changed, drawn from the issue's Fix: intent> (`<file>`)

@@ -36,7 +36,7 @@ or produce new findings.
   sort picks the most recent doc deterministically (no `mtime` ambiguity if the file
   was edited mid-walk).
 
-- If no review docs exist, STOP and tell the user to run `/deep-review` first.
+- If no review docs exist, STOP and tell the user to run `/deep-review` or `/quick-review` first.
 - Confirm the resolved path back to the user before continuing:
   > "Walking review: `docs/reviews/<file>.md`. Proceed?"
   Use `AskUserQuestion` with Yes / Cancel.
@@ -285,7 +285,7 @@ After all issues are terminal:
   - If any `done` issues produced code changes, check whether the current branch has
     an open PR (`gh pr view --json state,number`):
     - **Open PR exists** (the remote-review flow — this walk ran against a shipped PR):
-      suggest **`/push-review`**, which commits the fixes, pushes them onto the PR
+      suggest **`/review-push`**, which commits the fixes, pushes them onto the PR
       branch, and posts a PR comment mapping each finding to its outcome (fixed /
       deferred / skipped). That skill owns the commit+push+comment; don't do it here.
     - **No PR**: suggest `/ship`.
