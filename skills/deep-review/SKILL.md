@@ -14,12 +14,9 @@ argument-hint: "[PR number, GitHub URL, branch name, or latest] [--serial]"
 
 ## Prerequisites
 
-<requirements>
-- Git repository with GitHub CLI (`gh`) installed and authenticated
-- Clean main/master branch
-- Proper permissions to create worktrees and access the repository
-- For document reviews: Path to a markdown file or document
-</requirements>
+Follow [the review-protocol spec](../review-protocol/SKILL.md#prerequisites) — it owns the baseline every review needs (git repo, authenticated `gh`, clean main/master, a path for document reviews).
+
+This review adds one of its own: permissions to create worktrees and access the repository, since it may offer an isolated checkout.
 
 ## Main Tasks
 
@@ -33,32 +30,13 @@ First, I need to determine the review target type and set up the code for analys
 
 #### Immediate Actions:
 
-<task_list>
+Follow [the review-protocol spec](../review-protocol/SKILL.md#determining-the-target) — it owns the argument-to-target mapping, the branch check, the PR-metadata fetch, the analysis-tool and security-scanning setup, and the rule that the code on disk must be the code being reviewed before any review agent is dispatched.
 
-- [ ] Determine review type: PR number (numeric), GitHub URL, file path (.md), or empty (current branch)
-- [ ] Check current git branch
-- [ ] If ALREADY on the target branch (PR branch, requested branch name, or the branch already checked out for review) → proceed with analysis on current branch
-- [ ] If DIFFERENT branch than the review target → offer to use worktree: "Use git-worktree skill for isolated Call `skill: git-worktree` with branch name"
-- [ ] Fetch PR metadata using `gh pr view --json` for title, body, files, linked issues
-- [ ] Set up language-specific analysis tools
-- [ ] Prepare security scanning environment
-- [ ] Make sure we are on the branch we are reviewing. Use gh pr checkout to switch to the branch or manually checkout the branch.
-
-Ensure that the code is ready for analysis (either in worktree or on current branch). ONLY then proceed to the next step.
-
-</task_list>
+This review's working-tree policy is a **worktree offer**: when the current branch is not the review target, offer an isolated checkout — "Use git-worktree skill for isolated Call `skill: git-worktree` with branch name" — or use `gh pr checkout` / a manual checkout to switch. Either way, the code must be ready for analysis (in the worktree or on the current branch) before proceeding.
 
 #### Protected Artifacts
 
-<protected_artifacts>
-The following paths must never be flagged for deletion, removal, or gitignore by any review agent:
-
-- `docs/brainstorms/*-requirements.md` — Requirements documents created by `/brainstorm`. These are the product-definition artifacts that planning depends on.
-- `docs/plans/*.md` — Plan files created by `/blueprint`. These are living documents that track implementation progress (checkboxes are checked off by `/work`).
-- `docs/solutions/*.md` — Solution documents created during the pipeline.
-
-If a review agent flags any file in these directories for cleanup or removal, the review-synthesizer discards that finding during synthesis — always pass this list in its dispatch.
-</protected_artifacts>
+Follow [the review-protocol spec](../review-protocol/SKILL.md#protected-artifacts) — it owns the protected paths and the rule that the synthesizer discards findings against them. Always pass that list in the synthesizer's dispatch.
 
 #### Load Review Agents
 
@@ -238,106 +216,42 @@ Run the Task forge:review:code-simplicity-reviewer() to see if we can simplify t
 
 #### Step 1: Dispatch the Review Synthesizer
 
-Collect the findings from every review agent — including code-simplicity-reviewer (section 4) and the learnings-researcher report — and dispatch a single synthesis task:
+Follow [the review-protocol spec](../review-protocol/SKILL.md#the-raw-findings-scratch-contract) — it owns the deterministic scratch path each review agent's raw findings are persisted to before synthesis, and why that write is the fallback's source of truth.
 
-```
-Task forge:review:review-synthesizer(
-  - all review-agent findings, verbatim
-  - the learnings-researcher report
-  - PR metadata and the branch-or-PR slug
-  - protected-artifacts paths
-  - cc-forge.local.md review context, if present
-  - absolute path of this repo's docs/reviews/ directory
-  - today's date
-)
-```
+Follow [the review-protocol spec](../review-protocol/SKILL.md#dispatching-the-synthesizer) — it owns the dispatch shape and its input list, what the synthesizer owns and returns, the clean-review marker, and the rule that the synthesizer is always-run infrastructure. Then follow [its count sanity-check](../review-protocol/SKILL.md#sanity-checking-the-returned-counts) on what comes back.
 
-The synthesizer's Inputs section (`agents/review/review-synthesizer.md`) is the authoritative description of each value — pass the values, not restatements of what they mean. The synthesizer owns the synthesis rules, the review-doc template, and the filename convention (`docs/reviews/YYYY-MM-DD-NNN-<slug>-review.md`); it sanitizes the slug (lowercase, non-`[a-z0-9-]` → `-`, collapse repeats), so a branch like `feat/foo` becomes `feat-foo`. It writes the document itself and returns: the doc path, per-tier counts, the P1/P2 summary rows, the group count, and how many findings it discarded under the protected-artifacts rule. When there are zero findings it writes nothing and returns a clean-review marker (still reporting any discarded count).
+This review's inputs to that dispatch:
 
-The synthesizer is always-run infrastructure — never list it in `review_agents` rosters, and it does not count toward the serial-mode agent threshold.
-
-Before dispatching, persist each review agent's raw returned findings to one deterministic path: `docs/reviews/.raw/<sanitized-slug>/<agent>.md` (same slug sanitization the synthesizer uses). This is the fallback's source of truth — do not rely on in-context memory surviving compaction across the phases between agent dispatch and synthesis. The fallback re-derives this path from the slug, so it works even if the write happened before a compaction. `docs/reviews/.raw/` is gitignored scratch, not a review artifact.
-
-After synthesis, sanity-check the returned counts: kept + discarded + merged-duplicates should roughly equal the raw findings dispatched. A large shortfall signals the payload overflowed the synthesizer's context and findings were silently dropped — on a very large review, dispatch findings in severity-ordered batches (mirroring `--serial`) rather than one oversized call.
+- The findings to collect are those of **every** review agent this run dispatched — including code-simplicity-reviewer (section 4) and the learnings-researcher report.
+- Its value for the spec's optional "local review context" input is the markdown body of `cc-forge.local.md`, if present (see [Load Review Agents](#load-review-agents)).
+- Because the synthesizer is always-run infrastructure, never list it in `review_agents` rosters, and it does not count toward the serial-mode agent threshold.
+- When a very large payload calls for severity-ordered batches, batch them mirroring `--serial`.
 
 #### Step 2: Verify the Review Document
 
-**First, the clean-review case:** if the synthesizer returned the clean-review marker (no `Doc path` to a written file), tell the user the review found no issues and skip the rest of this step — there is no file to verify.
+Follow [the review-protocol spec](../review-protocol/SKILL.md#verifying-the-review-document) — it owns the clean-review case, what counts as a failed dispatch, the model-rejection-versus-retry split, every structural and freshness check on the written doc, and the scratch deletion gated on those checks passing. When it falls through, follow [its inline fallback](../review-protocol/SKILL.md#inline-fallback).
 
-"Dispatch failed" means the Task call returned an error or returned without a `Doc path:` line. (A genuine hang is indistinguishable from slow synthesis in a prose-executed skill — there is no separate hang handling; rely on any session/tool-level timeout.) On failure:
-
-- **Model/spawn rejection** (the model pinned in `review-synthesizer.md` frontmatter is not on the org's allowlist): do NOT retry (a re-spawn with the same model always fails identically). Emit one line naming that pinned model and pointing at `agents/README.md` to repin, then go straight to inline fallback.
-- **Any other failure**: retry the dispatch once, then fall inline.
-
-On success, verify the doc rather than trusting the return message:
-- Confirm the returned path exists on disk.
-- Grep it for the structural anchors `/review-walk` needs: a `## Groups` heading, and at least one `### P<X>-<N>:` heading with `**Status:**` on the line below it. If missing, treat as a failed dispatch.
-- Confirm the frontmatter `target:` matches this run's branch/PR and `date:` matches today — guards against a stale same-path doc from an earlier run.
-- Re-read the verified file's `## Summary` section as the source of truth for the terminal summary.
-- Once the doc passes every check above, delete this run's scratch: `rm -rf docs/reviews/.raw/<sanitized-slug>/`. Only after a verified write — never on the fallback path, which reads from it. The clean-review case keeps its scratch (there is no verified doc to gate on).
-
-**Inline fallback:** read findings from the scratch files at `docs/reviews/.raw/<sanitized-slug>/` (not memory). Then locate the synthesizer's rules/template by trying, in order: (1) read `${CLAUDE_PLUGIN_ROOT}/agents/review/review-synthesizer.md` if that env var resolves to a non-empty path this session; (2) else `"$(git rev-parse --show-toplevel)"/agents/review/review-synthesizer.md`; (3) if neither Read succeeds, present the raw findings to the user grouped by severity rather than exiting with no output. Follow whichever resolved, and state in the terminal summary that the doc was produced by fallback, not the synthesizer.
-
-**Stamp the linked issue:** once the doc has passed every verification check above (the same gate that deleted the scratch), post a stamp on the issue this review's branch/PR is tied to. The clean-review case posts no stamp — there is no doc to reference. A fallback-produced doc never passes this gate, so it posts none either. Issue-number resolution (including the skip when none resolves), posting mechanics, marker encoding, and failure handling are defined in [the issue-log spec](../issue-log/SKILL.md).
-
-Compose the body below, write it to a temp file with the Write tool, and post:
+**Stamp the linked issue:** follow [the review-protocol spec](../review-protocol/SKILL.md#the-review-written-stamp) — it owns when the `review-written` stamp fires (and the clean-review and fallback cases that post none), the shared body below the marker heading, and the posting command. This review's filled template:
 
 ```markdown
 <!-- cc-forge-log v1: {"skill":"deep-review","event":"review-written","paths":["docs/reviews/<filename>"]} -->
 
 ### 🔍 /deep-review — review written
-
-**Doc:** `docs/reviews/<filename>`
-**Findings:** <n> P1 / <n> P2 / <n> P3
-
-| Tier | Count | Issue | Category | Effort |
-|------|-------|-------|----------|--------|
-| P1   | <n>   | **P1-1: <short title>** — <one-line description> | <category> | <effort> |
-| P2   | <n>   | **P2-1: <short title>** — <one-line description> | <category> | <effort> |
-| P3   | <n>   | _<n> nice-to-haves: <one-line roll-up of themes> (full detail in the review doc)_ | — | — |
 ```
-```bash
-gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
-```
-
-The table is the same one Step 3's terminal summary builds: every P1 and P2 gets its own row (copy them from the review doc's Summary), P3s are one roll-up row — nothing else in the body.
 
 #### Step 3: Summary Report
 
-After verifying the review file, present the terminal summary:
+Follow [the review-protocol spec](../review-protocol/SKILL.md#the-completion-report) — it owns the terminal summary's template, the one-row-per-P1/P2 rule with the P3 roll-up, and the note that review docs are gitignored working artifacts. Close it with [the spec's next-steps block](../review-protocol/SKILL.md#the-next-steps-block), verbatim.
 
-````markdown
-## ✅ Code Review Complete
+This review supplies its own `### Review Agents Used` section, between the Findings table and Next Steps ([the spec](../review-protocol/SKILL.md#the-review-agents-used-section) leaves its content to each review):
 
-**Review Target:** PR #XXXX - [PR Title] **Branch:** [branch-name]
-**Review document:** `docs/reviews/[filename]`
-
-### Findings
-
-| Tier | Count | Issue | Category | Effort |
-|------|-------|-------|----------|--------|
-| P1   | [n]   | **P1-1: [Short title]** — [one-line description] | [category] | [effort] |
-|      |       | **P1-2: [Short title]** — [one-line description] | [category] | [effort] |
-| P2   | [n]   | **P2-1: [Short title]** — [one-line description] | [category] | [effort] |
-| P3   | [n]   | _[n] nice-to-haves: [one-line roll-up of themes] (full detail in the review doc)_ | — | — |
-
-Every P1 and P2 gets its own row (copy the rows from the review doc's Summary); P3s are one roll-up row. Counts appear once per tier.
-
-Review docs are written under `docs/reviews/`, which is gitignored — they are local working artifacts, not committed repo content. `/review-walk` reads them from the working tree.
-
+```markdown
 ### Review Agents Used
 
 - [list only the agents that returned findings this run]
 - [if any dispatched agent failed or returned nothing, name it here: "Did not complete: <agent> — coverage for its area is missing"]
 - review-synthesizer (synthesis + document)
-
-### Next Steps
-
-1. **Address P1 findings** — critical; must be fixed before merge.
-2. **Sweep the quick wins** — run `/review-sweep docs/reviews/[filename]` to land the quick wins unattended, then `/review-walk` the findings it surfaced.
-3. **Walk the review** — run `/review-walk docs/reviews/[filename]` to step through issues group-by-group with implement / defer / skip choices. Status updates land in the review doc, so progress is durable.
-4. **Remote-review flow** (this machine is not the one that will land the PR — e.g. a review VM): run `/review-walk` here in this same session, then **`/push-review`** — which commits the applied fixes, pushes them onto the PR branch, and posts a PR comment mapping each finding to its outcome (fixed / deferred / skipped). Nothing needs to leave this machine by hand; the review doc stays local (gitignored) and the PR comment carries its context. On the landing machine, run **`/catch-up`** in the worktree to fast-forward and see what arrived, then `/land`.
-````
+```
 
 ### 6. End-to-End Testing (Optional)
 
@@ -424,4 +338,4 @@ The subagent will:
 
 ### Important: P1 Findings Block Merge
 
-Any **🔴 P1 (CRITICAL)** findings must be addressed before merging the PR. Present these prominently and ensure they're resolved before accepting the PR.
+Follow [the review-protocol spec](../review-protocol/SKILL.md#important-p1-findings-block-merge) — it owns the rule that P1 findings block the merge and must be presented prominently.
