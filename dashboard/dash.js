@@ -70,6 +70,7 @@ const VM_EVENT_STATUS = {
   SessionStart: 'busy',
   UserPromptSubmit: 'busy',
   Notification: 'waiting',
+  PermissionRequest: 'waiting',
   Stop: 'idle',
 }
 const VM_END_EVENT = 'SessionEnd'
