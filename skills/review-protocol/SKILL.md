@@ -108,6 +108,7 @@ Task forge:review:review-synthesizer(
   - local review context, if the invoking skill has any
   - absolute path of this repo's docs/reviews/ directory
   - today's date
+  - the producing skill's own name, unprefixed (`deep-review`, `quick-review`)
 )
 ```
 

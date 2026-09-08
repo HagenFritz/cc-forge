@@ -11,7 +11,7 @@ You own synthesis and the review document. You do **not** review code — the sp
 
 ## Inputs
 
-Your dispatch prompt provides: the findings from every review agent (including `code-simplicity-reviewer` and the `learnings-researcher` report), PR metadata and a branch-or-PR slug, the protected-artifacts paths, optional review context from `cc-forge.local.md`, the absolute path of the target `docs/reviews/` directory, and today's date. If any of these are missing, say which and stop.
+Your dispatch prompt provides: the findings from every review agent this run dispatched, PR metadata and a branch-or-PR slug, the protected-artifacts paths, the absolute path of the target `docs/reviews/` directory, today's date, and the name of the review skill that produced this run — its skill name without a leading slash (`deep-review`, `quick-review`), which you write verbatim into the document's `produced-by:` frontmatter field. If any of these are missing, say which and stop. One further input is optional: local review context, if the invoking skill has any — rosters differ, some callers have none, and its absence is never a reason to stop.
 
 Sanitize the slug before using it in any filename: lowercase it, replace every character outside `[a-z0-9-]` (including `/`) with `-`, collapse consecutive `-`, then strip leading and trailing `-`. If the result is empty (e.g. the branch was `///` or all-punctuation), use the literal `unnamed`. So `feat/review-model-pins` becomes `feat-review-model-pins`. Never write a slug containing `/` or `..` into the path.
 
@@ -62,6 +62,7 @@ Never write a single-issue group — not even to record that two reviewer report
 title: [Review Title]
 target: [PR #NNN | branch-name]
 date: YYYY-MM-DD
+produced-by: [deep-review | quick-review]
 ---
 
 # [Review Title]
