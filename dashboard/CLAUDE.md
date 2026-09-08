@@ -75,7 +75,14 @@ Per-session `seq` counters live at `~/.claude/dash-seq/<session-id>` (one small 
 Keys (live mode only):
 
 - `j` / Down, `k` / Up — move the highlight.
-- Enter — focus the highlighted session's iTerm tab.
+- Enter — focus the highlighted session's iTerm tab. On a VM row there is no pid
+  to resolve, so focus instead selects the iTerm tab whose session name contains
+  `ro-devbox` and then runs `ssh ro-devbox tmux switch-client -t <session>` as an
+  argv array. The AppleScript is built from the host alias alone — no byte of a VM
+  row reaches it — and the tmux name reaches only the argv, never an interpreter.
+  A row whose `tmuxSession` is `null` focuses the tab and says tmux was not
+  detected; an unreachable devbox is one transient footer line, bounded by the
+  same 3 s timeout as the AppleScript call.
 - `r` — rename that session's iTerm tab (inline prompt; Enter confirms, Esc cancels, `^U` clears).
 - `q` / `^C` — quit.
 
@@ -86,7 +93,7 @@ The bell rings once per tick when a session newly enters `waiting`.
 - Wide characters (emoji, CJK) misalign columns — widths are code points, not display cells. Declared scope boundary.
 - A status string over 16 characters is truncated (`STATE_CAP`).
 - Fixture rows always show `0s` age (no `<pid>.json` exists for synthetic pids); by design for deterministic output.
-- The module exports only `validateVmRow`, `applyVmEvent`, `newState`, and `startListener` — the VM ingest seam; anything else, such as in-process timing or a rendered frame, needs an instrumented copy or a live run.
+- The module exports only `validateVmRow`, `applyVmEvent`, `newState`, `startListener`, `vmFocusScript`, `tmuxSwitchArgs`, and `focusVmRow` — the VM ingest seam plus the VM focus path, which needs iTerm and a live devbox to run for real; anything else, such as in-process timing or a rendered frame, needs an instrumented copy or a live run.
 - A VM session that starts while the dashboard is down is invisible until its next event; there is no heartbeat and the dashboard never polls the VM.
 - Transcript reads have no wall-clock guard (measured at ~1 ms cold; not addressed).
 - `DASH_PROJECTS_DIR` env override exists for testing but is not a documented user-facing feature.
@@ -94,5 +101,7 @@ The bell rings once per tick when a session newly enters `waiting`.
 - A session whose iTerm profile defines a custom title format shows the new name wrapped in that format — renaming to `foo` can render as `foo (cloud-sql-proxy)`. The rename did apply; the profile decorates it. The dashboard reads the name back after setting it and reports the rendered form when it differs from what was typed, so this no longer looks like a rename that did nothing. A separate mechanism from the OSC 0 revert above, and it fires on the first rename rather than on the next turn. Changing it means editing the profile's title format in iTerm.
 - Rename input is ASCII printable only (`0x20`–`0x7e`), capped at 64 characters; other keystrokes are ignored.
 - Focus and rename are iTerm-only; elsewhere a transient footer message appears and the rest of the dashboard keeps working.
+- VM focus snapshots the row when Enter is pressed, so a session that ends while iTerm is being driven leaves the tmux switch pointing at a session that just went away. Accepted, for the same reason the pid-reuse window is.
+- One devbox tab is assumed: focus takes the first iTerm session whose name contains the host alias, so with two `ssh ro-devbox` tabs open it may pick either. The tmux switch still lands on the right session inside whichever tab it picked.
 - A bare Escape is delivered after a ~50 ms debounce, inherent to telling it apart from arrow keys.
 - Unrecognized escape sequences (Left/Right, Home, End, function keys) are silently dropped. Both CSI (`\x1b[`) and SS3 (`\x1bO`) forms are consumed to their terminator, so no tail leaks through as literal keystrokes.

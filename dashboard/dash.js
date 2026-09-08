@@ -1059,10 +1059,12 @@ function moveHighlight(state, delta) {
 // --- Tab focus -----------------------------------------------------------
 //
 // Enter hands the highlighted row to iTerm: pid -> tty via `ps`, tty -> tab via
-// AppleScript. Both calls are async with a timeout because a hung iTerm or a
-// modal dialog would otherwise freeze the paint loop, the poll timer, and every
-// keystroke for as long as it takes. Nothing here can fail loudly: a dead pid,
-// a missing iTerm, or a script error becomes one transient footer line.
+// AppleScript. A VM row has no pid to resolve, so it takes its own path — the
+// devbox tab by name, then `tmux switch-client` over ssh. Every call is async
+// with a timeout because a hung iTerm, a modal dialog, or an unreachable devbox
+// would otherwise freeze the paint loop, the poll timer, and every keystroke for
+// as long as it takes. Nothing here can fail loudly: a dead pid, a missing
+// iTerm, a script error, or a failed ssh becomes one transient footer line.
 //
 // `ps -o tty=` prints the bare device name (`ttys004 `, padded and newline
 // terminated) or `??` for a process with no controlling terminal, while
@@ -1077,16 +1079,17 @@ function normalizeTty(raw) {
   return TTY_PATH_RE.test(full) ? full : null
 }
 
-// `result` is the AppleScript expression returned once a session matches. It is
-// prefixed with a marker so a read-back tab name can never be mistaken for the
-// no-match sentinel.
-function sessionScript(tty, body, result = '"ok"') {
+// `condition` is the AppleScript test that picks the session and `result` the
+// expression returned once one matches; the result is prefixed with a marker so
+// a read-back tab name can never be mistaken for the no-match sentinel. Both
+// are assembled by the callers below from validated or constant text only.
+function sessionScript(condition, body, result = '"ok"') {
   return [
     `tell application id "${ITERM_BUNDLE_ID}"`,
     'repeat with w in windows',
     'repeat with t in tabs of w',
     'repeat with s in sessions of t',
-    `if tty of s is "${tty}" then`,
+    `if ${condition} then`,
     ...body,
     `return "${SCRIPT_OK_PREFIX}" & (${result})`,
     'end if',
@@ -1098,8 +1101,25 @@ function sessionScript(tty, body, result = '"ok"') {
   ].join('\n')
 }
 
+const FOCUS_BODY = ['select s', 'select t', 'select w', 'activate']
+
 function focusScript(tty) {
-  return sessionScript(tty, ['select s', 'select t', 'select w', 'activate'])
+  return sessionScript(`tty of s is "${tty}"`, FOCUS_BODY)
+}
+
+// iTerm's dictionary has no "running command" property, so the devbox tab is
+// found by its session name: an `ssh ro-devbox` tab carries the alias there
+// from the job name, and a remote shell that sets its own title carries it too.
+// Built from VM_HOST alone — no byte of a row reaches this script, which is the
+// one place a forged row could otherwise reach an interpreter.
+function vmFocusScript() {
+  return sessionScript(`name of s contains "${VM_HOST}"`, FOCUS_BODY)
+}
+
+// An argv array, never a shell string: a metacharacter that slipped past
+// TMUX_SESSION_RE stays inert as one argument.
+function tmuxSwitchArgs(tmuxSession) {
+  return [VM_HOST, 'tmux', 'switch-client', '-t', tmuxSession]
 }
 
 // The tty reaches the script through a closed pattern, but a tab name is
@@ -1113,7 +1133,7 @@ function escapeAppleScriptString(text) {
 // a profile's title format decorates the name it is given, so a round trip
 // compounds the decoration on every rename.
 function renameScript(tty, name) {
-  return sessionScript(tty, [`set name of s to "${escapeAppleScriptString(name)}"`], 'name of s')
+  return sessionScript(`tty of s is "${tty}"`, [`set name of s to "${escapeAppleScriptString(name)}"`], 'name of s')
 }
 
 function setTransient(state, message) {
@@ -1141,8 +1161,9 @@ function withRowTty(state, row, next) {
 
 // One osascript call path for focus and rename. `onOk` receives whatever the
 // script returned after the success marker — empty for focus, the tab's
-// read-back name for rename.
-function runSessionScript(state, script, verb, tty, onOk) {
+// read-back name for rename. `noMatch` is the message for a script that ran but
+// found no session, which names a tty locally and the devbox tab remotely.
+function runSessionScript(state, script, verb, noMatch, onOk) {
   execFile('osascript', ['-e', script], { timeout: FOCUS_TIMEOUT_MS, encoding: 'utf8' }, (scriptErr, scriptOut) => {
     if (scriptErr) {
       setTransient(state, `could not ${verb} the tab — is iTerm running?`)
@@ -1150,7 +1171,7 @@ function runSessionScript(state, script, verb, tty, onOk) {
     }
     const out = String(scriptOut).trim()
     if (!out.startsWith(SCRIPT_OK_PREFIX)) {
-      setTransient(state, `no iTerm tab is attached to ${tty}.`)
+      setTransient(state, noMatch)
       return
     }
     onOk(out.slice(SCRIPT_OK_PREFIX.length))
@@ -1158,8 +1179,31 @@ function runSessionScript(state, script, verb, tty, onOk) {
 }
 
 function focusHighlighted(state) {
-  withRowTty(state, state.lastRows[state.highlight.index], (tty) => {
-    runSessionScript(state, focusScript(tty), 'focus', tty, () => setTransient(state, null))
+  const row = state.lastRows[state.highlight.index]
+  if (!row) return
+  // Before withRowTty, whose contract is pid-to-tty: a VM row carries no pid by
+  // design, so reaching it would report the session as exited.
+  if (row.remote) return focusVmRow(state, row)
+  withRowTty(state, row, (tty) => {
+    runSessionScript(state, focusScript(tty), 'focus', `no iTerm tab is attached to ${tty}.`, () => setTransient(state, null))
+  })
+}
+
+// Two steps, both bounded: select the devbox tab in iTerm, then tell tmux over
+// ssh which session to show. A row with no tmux session stops after the tab.
+function focusVmRow(state, row) {
+  // Snapshotted, not re-read: a session that ends mid-flight leaves the switch
+  // pointing at a dead tmux session. Same shape as W2's declined pid-reuse
+  // finding, accepted for the same reason and recorded rather than left silent.
+  const tmuxSession = row.tmuxSession
+  runSessionScript(state, vmFocusScript(), 'focus', `no iTerm tab is running ssh ${VM_HOST}.`, () => {
+    if (tmuxSession === null) {
+      setTransient(state, `focused the ${VM_HOST} tab — tmux session not detected.`)
+      return
+    }
+    execFile('ssh', tmuxSwitchArgs(tmuxSession), { timeout: FOCUS_TIMEOUT_MS, encoding: 'utf8' }, (err) => {
+      setTransient(state, err ? `focused the ${VM_HOST} tab, but tmux could not switch to ${tmuxSession}.` : null)
+    })
   })
 }
 
@@ -1196,7 +1240,7 @@ function commitRename(state) {
   if (!name || !row) return
   if (row.remote) return setTransient(state, 'rename is local-only — VM tab names come from the devbox session')
   withRowTty(state, row, (tty) => {
-    runSessionScript(state, renameScript(tty, name), 'rename', tty, (actual) => {
+    runSessionScript(state, renameScript(tty, name), 'rename', `no iTerm tab is attached to ${tty}.`, (actual) => {
       // A profile title format decorates the applied name, which otherwise
       // reads as the rename having done nothing at all.
       setTransient(state, actual === name ? null : `renamed — this profile's title format shows it as "${stripControls(actual)}"`)
@@ -1513,6 +1557,8 @@ function main() {
 if (require.main === module) main()
 
 // The only testing seam this file has: a VM payload in (validateVmRow), an
-// event applied to a state (applyVmEvent over newState), and the listener
-// itself, which cannot otherwise be reached without a pty.
-module.exports = { validateVmRow, applyVmEvent, newState, startListener }
+// event applied to a state (applyVmEvent over newState), the listener itself,
+// which cannot otherwise be reached without a pty, and the VM focus path, whose
+// two builders and entry point cannot be exercised at all without iTerm and a
+// live devbox.
+module.exports = { validateVmRow, applyVmEvent, newState, startListener, vmFocusScript, tmuxSwitchArgs, focusVmRow }
