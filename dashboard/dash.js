@@ -59,6 +59,7 @@ const VM_HOST = 'ro-devbox'
 const LISTEN_HOST = '127.0.0.1'
 const LISTEN_PORT_MIN = 1024
 const LISTEN_PORT_MAX = 65535
+const O_NOFOLLOW = typeof fs.constants.O_NOFOLLOW === 'number' ? fs.constants.O_NOFOLLOW : 0
 const TOKEN_PATH = path.join(os.homedir(), '.claude', '.dash-token')
 const TOKEN_BYTES = 32
 const TOKEN_RE = /^[0-9a-f]{64}$/
@@ -76,6 +77,10 @@ const VM_END_EVENT = 'SessionEnd'
 // of the real session's re-registration.
 const VM_END_STICKY_MS = 5000
 const VM_ROWS_MAX = 256
+// Number.isInteger(1e308) is true, so without a ceiling one forged event pins
+// the stored seq beyond every real one.
+const VM_SEQ_MAX = 2 ** 32
+const VM_MAX_CONNECTIONS = 32
 
 const STATUS_RANK = { waiting: 0, idle: 1, busy: 2 }
 const UNKNOWN_STATUS_RANK = 3
@@ -316,7 +321,6 @@ function readStatusUpdatedAt(pid) {
     const st = fs.lstatSync(file)
     if (st.isSymbolicLink() || !st.isFile()) return null
     if (st.size > SESSION_FILE_MAX_BYTES) return null
-    const O_NOFOLLOW = typeof fs.constants.O_NOFOLLOW === 'number' ? fs.constants.O_NOFOLLOW : 0
     let fd
     let raw
     try {
@@ -401,7 +405,6 @@ function summaryFor(row) {
 }
 
 function readLastAssistantText(file, size) {
-  const O_NOFOLLOW = typeof fs.constants.O_NOFOLLOW === 'number' ? fs.constants.O_NOFOLLOW : 0
   let fd
   try {
     fd = fs.openSync(file, fs.constants.O_RDONLY | O_NOFOLLOW)
@@ -752,12 +755,7 @@ function newState() {
 // applyVmEvent. Bound to 127.0.0.1, so the callers it can reach are local
 // processes and whatever the ssh reverse forward carries.
 //
-// The token defends exactly two boundaries: a remote-triggered local request
-// from a context that cannot read the filesystem (a browser tab, a postinstall
-// script that poked a localhost port), and a non-root process on the devbox
-// that reaches the forwarded port but cannot read the token there. A same-uid
-// process on this Mac reads the token file and is not defended against — it
-// could equally replace this script.
+// What the token does and does not defend is in dashboard/CLAUDE.md.
 //
 // The custom auth header is itself the CSRF defense: a browser cannot attach
 // one cross-origin without a successful preflight, and the non-POST rejection
@@ -767,13 +765,26 @@ function newState() {
 
 let listenServer = null
 
-function readToken() {
+// null means there is no token file yet and the caller may create one;
+// TOKEN_REFUSED means one is there but unusable, and writing over it would
+// rotate a secret the VM still holds — or clobber a file this process cannot
+// even read.
+const TOKEN_REFUSED = Symbol('token refused')
+
+function readToken(state) {
+  let st
   try {
-    const st = fs.lstatSync(TOKEN_PATH)
-    if (st.isSymbolicLink() || !st.isFile() || st.size > TOKEN_MAX_BYTES) return null
-    const O_NOFOLLOW = typeof fs.constants.O_NOFOLLOW === 'number' ? fs.constants.O_NOFOLLOW : 0
+    st = fs.lstatSync(TOKEN_PATH)
+  } catch (e) {
+    return e.code === 'ENOENT' ? null : TOKEN_REFUSED
+  }
+  if (st.isSymbolicLink() || !st.isFile() || st.size > TOKEN_MAX_BYTES) return TOKEN_REFUSED
+  if ((st.mode & 0o077) !== 0) {
+    state.listenNote = `${stripControls(TOKEN_PATH)} is readable beyond this user — chmod 600 it`
+  }
+  let raw
+  try {
     let fd
-    let raw
     try {
       fd = fs.openSync(TOKEN_PATH, fs.constants.O_RDONLY | O_NOFOLLOW)
       const buf = Buffer.alloc(TOKEN_MAX_BYTES)
@@ -782,11 +793,11 @@ function readToken() {
     } finally {
       if (fd !== undefined) fs.closeSync(fd)
     }
-    const token = raw.trim()
-    return TOKEN_RE.test(token) ? token : null
   } catch (e) {
-    return null
+    return TOKEN_REFUSED
   }
+  const token = raw.trim()
+  return TOKEN_RE.test(token) ? token : TOKEN_REFUSED
 }
 
 // 0600 at open time rather than a chmod afterwards: a secret that is briefly
@@ -801,21 +812,30 @@ function writeToken() {
   }
   const token = crypto.randomBytes(TOKEN_BYTES).toString('hex')
   const temp = path.join(dir, `.dash-token.${process.pid}.${Date.now()}`)
-  const O_NOFOLLOW = typeof fs.constants.O_NOFOLLOW === 'number' ? fs.constants.O_NOFOLLOW : 0
   const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | O_NOFOLLOW
-  let fd
   try {
-    fd = fs.openSync(temp, flags, 0o600)
-    fs.writeSync(fd, token + '\n')
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd)
+    let fd
+    try {
+      fd = fs.openSync(temp, flags, 0o600)
+      fs.writeSync(fd, token + '\n')
+    } finally {
+      if (fd !== undefined) fs.closeSync(fd)
+    }
+    fs.renameSync(temp, TOKEN_PATH)
+  } catch (e) {
+    // Otherwise a failed write strands a live token in a 0600 file nothing reads.
+    try { fs.unlinkSync(temp) } catch (e2) { /* never created */ }
+    throw e
   }
-  fs.renameSync(temp, TOKEN_PATH)
   return token
 }
 
 function resolveToken(state) {
-  const existing = readToken()
+  const existing = readToken(state)
+  if (existing === TOKEN_REFUSED) {
+    state.listenError = `${stripControls(TOKEN_PATH)} exists but could not be read — fix or delete it; VM rows are off for this run`
+    return null
+  }
   if (existing !== null) return existing
   let token
   try {
@@ -823,17 +843,20 @@ function resolveToken(state) {
   } catch (e) {
     token = null
   }
-  if (token !== null) state.listenNote = `new token at ${TOKEN_PATH} — copy it to the VM as 0600 for VM rows to appear`
+  if (token !== null) state.listenNote = `new token at ${stripControls(TOKEN_PATH)} — copy it to the VM as 0600 for VM rows to appear`
   return token
 }
 
 function startListener(state, port) {
   state.vmToken = resolveToken(state)
   if (state.vmToken === null) {
-    state.listenError = `could not read or create ${TOKEN_PATH} — VM rows are off for this run`
+    if (state.listenError === null) {
+      state.listenError = `could not create ${stripControls(TOKEN_PATH)} — VM rows are off for this run`
+    }
     return null
   }
   const server = http.createServer((req, res) => handleVmRequest(state, req, res))
+  server.maxConnections = VM_MAX_CONNECTIONS
   server.on('error', (e) => {
     state.listenError = e.code === 'EADDRINUSE'
       ? `port ${port} is already in use — VM rows are off for this run`
@@ -912,7 +935,7 @@ function applyVmEvent(state, payload, now) {
   // is still waiting.
   const status = ending ? 'idle' : VM_EVENT_STATUS[payload.event]
   if (status === undefined) return dropVmEvent(state)
-  if (!Number.isInteger(payload.seq) || payload.seq < 0) return dropVmEvent(state)
+  if (!Number.isInteger(payload.seq) || payload.seq < 0 || payload.seq > VM_SEQ_MAX) return dropVmEvent(state)
 
   // Built even for SessionEnd, which needs only the id: namespacing lives in
   // one place, and it is the validator's.
@@ -933,16 +956,24 @@ function applyVmEvent(state, payload, now) {
   }
 
   const prior = state.vmRows.get(row.id)
-  if (prior !== undefined && payload.seq <= prior.seq) return dropVmEvent(state)
+  // A lower seq is accepted once the row has gone quiet for the SessionEnd
+  // window, so a stale jump or a reset emitter counter unfreezes the row on the
+  // same timescale instead of dropping every later event forever.
+  if (prior !== undefined && payload.seq <= prior.seq && now - prior.receivedAt <= VM_END_STICKY_MS) {
+    return dropVmEvent(state)
+  }
 
   if (ending) {
     state.vmRows.delete(row.id)
     noteVmEnd(state, row.id, now)
     return
   }
-  // A loop of POSTs with fresh uuids would otherwise grow the map until
-  // eviction; a known session still updates when the map is full.
-  if (prior === undefined && state.vmRows.size >= VM_ROWS_MAX) return dropVmEvent(state)
+  // A loop of POSTs with fresh uuids would otherwise grow the map without
+  // bound; at the cap the least recently heard-from row gives way, so a flood
+  // cannot lock a real session out of the table.
+  if (prior === undefined && state.vmRows.size >= VM_ROWS_MAX) {
+    state.vmRows.delete(oldestKey(state.vmRows, (held) => held.receivedAt))
+  }
 
   row.seq = payload.seq
   // Mac-observed: a VM clock even slightly ahead would pin ages at 0s forever.
@@ -956,7 +987,23 @@ function noteVmEnd(state, id, now) {
   for (const [key, until] of state.vmEnded) {
     if (until <= now) state.vmEnded.delete(key)
   }
-  if (state.vmEnded.size < VM_ROWS_MAX) state.vmEnded.set(id, now + VM_END_STICKY_MS)
+  if (state.vmEnded.size >= VM_ROWS_MAX) {
+    state.vmEnded.delete(oldestKey(state.vmEnded, (until) => until))
+  }
+  state.vmEnded.set(id, now + VM_END_STICKY_MS)
+}
+
+function oldestKey(map, at) {
+  let key = null
+  let oldest = Infinity
+  for (const [candidate, value] of map) {
+    const when = at(value)
+    if (when < oldest) {
+      oldest = when
+      key = candidate
+    }
+  }
+  return key
 }
 
 // A rotated token is otherwise total, silent VM-row loss: the emitter exits 0
