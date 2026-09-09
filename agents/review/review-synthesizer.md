@@ -22,7 +22,8 @@ Sanitize the slug before using it in any filename: lowercase it, replace every c
 - Discard protected-artifacts findings by two gates, and count everything discarded:
   - **Path gate (mechanical, primary):** any finding whose `File(s)` falls under a protected-artifacts path — `docs/brainstorms/*-requirements.md`, or anywhere under `docs/plans/` or `docs/solutions/` at any nesting depth (treat these as `docs/plans/**` and `docs/solutions/**`) — is discarded when its Fix touches that file's existence or tracking — deletion, removal, gitignore, archiving, pruning, moving, or "cleanup" — regardless of the exact wording.
   - **Wording gate (secondary):** any finding that recommends deleting, removing, or gitignoring a protected file, even if `File(s)` names it obliquely.
-- Remove duplicate or overlapping findings.
+- Remove duplicate or overlapping findings. When several reports collapse into one finding, the finding keeps every reporter — see `Raised by:` below.
+- Record `Raised by:` on every finding: the agent name(s) whose report(s) contained it, comma-separated, using the same names the reports were dispatched under (the scratch filenames in `docs/reviews/.raw/<slug>/<agent>.md` when the caller persisted them). A finding merged from three reports lists three names. Never leave it empty and never guess — a report you cannot attribute is listed as `unattributed`.
 - Assign severity: 🔴 P1 (critical — security vulnerabilities, data corruption, breaking changes; blocks merge), 🟡 P2 (important — performance, reliability, significant architecture or quality issues; should fix), 🔵 P3 (nice-to-have — minor improvements, cleanup, docs).
 - Estimate effort for each finding (Small/Medium/Large).
 - Assign exactly one Category, a Confidence + one-line rationale, and a Plain English summary per finding (vocabularies below).
@@ -106,6 +107,8 @@ write a single line: `_None — issues are independent._`
 **Status:** `open` <!-- open | in-progress | done | deferred | wont-fix -->
 
 **Category:** [one of: security | correctness | performance | architecture | duplication | maintainability | testing | docs]
+
+**Raised by:** [agent-name, agent-name — every agent whose report contained this finding]
 
 **Confidence:** [high | medium | low]
 
