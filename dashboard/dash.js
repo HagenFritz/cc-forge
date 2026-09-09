@@ -993,7 +993,9 @@ function resolveNames(rows) {
 // --- Layout --------------------------------------------------------------
 //
 // Fixed budgets for state, age, name, and dir; the summary absorbs whatever
-// remains and is the first column dropped when there is not enough, then dir.
+// remains. When there is not enough, skill and agents drop together first, then
+// summary, then dir: a narrow pane should shed what was just added rather than
+// the summary that has always been there.
 
 function formatAge(ms) {
   const secs = Math.floor(ms / 1000)
@@ -2413,8 +2415,18 @@ if (require.main === module) main()
 // ageOutVmRows and renderRows to reach the rendered cells, and tab-order
 // sorting, whose two query outputs cannot be produced off a Mac: the parsers
 // take that output as text, sortRows takes the resulting map, and handleKey with
-// moveHighlight and buildTable's row-to-line map covers movement and expansion
-// without a pty.
+// moveHighlight, buildTable's row-to-line map, and reconcileExpanded covers
+// movement and expansion without a pty.
+//
+// Not exported, deliberately: skillFor, agentsFor, and the scan reducers
+// (applyScanLine and the three it dispatches to). They look testable, but
+// skillFor and agentsFor take a row rather than a cache entry — each rebuilds a
+// path against PROJECTS_DIR and reads the module-private summaryCache, so
+// reaching either means laying down real transcript files, which is a fixture
+// seam and not the pure-function one it resembles. The reducers under them are
+// pure, but nothing exported reaches them, so exporting one without the rest
+// buys no coverage. Making scanDelta's cache injectable is what would change
+// this; until then they are inspection-only, alongside refreshTabOrder.
 module.exports = {
   validateVmRow,
   applyVmEvent,
