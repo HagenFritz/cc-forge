@@ -13,6 +13,11 @@
 // devbox hook events and puts them in the same table; `--listen <port>` moves
 // that port and `--no-listen` turns it off.
 //
+// In live mode each session's turn tail is sent to Anthropic's API and
+// summarized by Haiku, using the operator's own key from ANTHROPIC_API_KEY or
+// the repo-root .env; with no key, or on any failure, SUMMARY shows the raw
+// tail and the footer says summaries are off. `--once` never calls out.
+//
 // Zero dependencies, Node >= 22, stdlib only. Run by hand:
 //   node dashboard/dash.js
 //
@@ -27,6 +32,7 @@ const { execFile, execFileSync } = require('child_process')
 const crypto = require('crypto')
 const fs = require('fs')
 const http = require('http')
+const https = require('https')
 const path = require('path')
 const os = require('os')
 
@@ -49,6 +55,21 @@ const SCAN_CHUNK_MAX_BYTES = 8 * 1024 * 1024
 // is much the widest of them (every tool call carries one), but a dispatch's own
 // tool_result is the only completion signal a foreground agent ever emits.
 const SCAN_MARKERS = ['<command-name>', '"Task"', '"Agent"', 'task-notification', '"tool_use_id"']
+
+const ENV_PATH = path.join(__dirname, '..', '.env')
+const ENV_MAX_BYTES = 8 * 1024
+const HAIKU_HOST = 'api.anthropic.com'
+const HAIKU_PATH = '/v1/messages'
+const HAIKU_MODEL = 'claude-haiku-4-5-20251001'
+const HAIKU_VERSION = '2023-06-01'
+const HAIKU_MAX_TOKENS = 64
+// Enough of the turn to say what it was about; the whole 400-char SUMMARY_MAX
+// tail would still be a small prompt, but the cost is per turn per session.
+const HAIKU_INPUT_MAX_CHARS = 2000
+const HAIKU_TIMEOUT_MS = 8000
+const HAIKU_RESPONSE_MAX_BYTES = 64 * 1024
+const HAIKU_PROMPT = 'Below is the last assistant message from a coding session. In at most two sentences, say what the session is doing. Reply with the summary only.'
+const HAIKU_UNAVAILABLE_NOTE = 'summaries unavailable — showing raw transcript text'
 
 const DEFAULT_WIDTH = 80
 const STATE_WIDTH = 8
@@ -426,6 +447,16 @@ function ageMsFor(row, observed, now) {
 // directory, so the exact .jsonl path is opened and the folder never listed.
 // Every failure — missing file, permissions, drift in the line format — is a
 // blank summary; a row never turns into an error.
+//
+// That text is also what gets summarized: each turn's tail is sent to Haiku and
+// the reply replaces it in the cell once it lands. The raw tail is what shows
+// until then, and what shows again if the call fails, so the column degrades to
+// its pre-summary behavior rather than to a blank.
+//
+// The cache is never evicted: one entry per distinct transcript for the process
+// lifetime, now holding a Map, a Set, and an in-flight request flag. A dashboard
+// left up for days across many sessions is the growth case, and it is small
+// enough to leave alone rather than bound.
 
 const summaryCache = new Map()
 
@@ -448,6 +479,10 @@ function newCacheEntry() {
     // rather than dropped, or the dispatch would stay running forever.
     orphanDone: new Set(),
     scannedTo: 0,
+    // The model's summary of the current turn, and whether a call for it is in
+    // flight. Both are dropped with the entry when a transcript is rotated.
+    haiku: '',
+    pending: false,
   }
 }
 
@@ -471,12 +506,160 @@ function summaryFor(row) {
     const st = fs.lstatSync(file)
     if (st.isSymbolicLink() || !st.isFile()) return ''
     const entry = cacheEntryFor(file, st)
-    if (entry.size === st.size && entry.mtimeMs === st.mtimeMs) return entry.text
+    if (entry.size === st.size && entry.mtimeMs === st.mtimeMs) return entry.haiku || entry.text
     scanDelta(file, entry, st.size)
     entry.text = sanitize(readLastAssistantText(file, st.size))
     entry.size = st.size
     entry.mtimeMs = st.mtimeMs
+    // A new turn invalidates the old summary, so the raw tail shows again until
+    // this turn's reply lands rather than the previous turn's summary lingering.
+    entry.haiku = ''
+    requestSummary(entry)
     return entry.text
+  } catch (e) {
+    return ''
+  }
+}
+
+// --- Summarizer ------------------------------------------------------------
+//
+// The only outbound call this program makes. Live mode arms it once at startup
+// and every turn of every local session sends that turn's tail to Haiku; the
+// reply lands asynchronously and swaps into the cell on a later frame. Nothing
+// in the paint path awaits, so a slow or hung API cannot cost a frame — only
+// the summary, which falls back to the raw tail it was going to replace.
+//
+// `--once` never arms it: the one-shot frame must be byte-stable and must not
+// depend on the network. The exported render seam is unarmed for the same
+// reason — arming is a live-mode act, not a render-path one.
+//
+// The key is never rendered, never logged, and never carried in a footer or an
+// error: a caught `https` error can hold the request options, headers included,
+// so every failure here collapses to one fixed note.
+
+let summarizer = null
+
+// Line-wise, for one key, with readToken's posture: lstat before any open so a
+// symlink is refused rather than followed, a bounded single read rather than
+// readFileSync, and a loose mode warned about rather than refused — the file is
+// the operator's own and refusing it would just turn summaries off silently.
+function readEnvKey(state) {
+  let st
+  try {
+    st = fs.lstatSync(ENV_PATH)
+  } catch (e) {
+    return null
+  }
+  if (st.isSymbolicLink() || !st.isFile() || st.size > ENV_MAX_BYTES) return null
+  // Its own field, not listenNote: the token's one-time note would otherwise
+  // clobber this one, or be clobbered by it.
+  if ((st.mode & 0o077) !== 0) {
+    state.envNote = `${stripControls(ENV_PATH)} is readable beyond this user — chmod 600 it`
+  }
+  let raw
+  try {
+    let fd
+    try {
+      fd = fs.openSync(ENV_PATH, fs.constants.O_RDONLY | O_NOFOLLOW)
+      const buf = Buffer.alloc(ENV_MAX_BYTES)
+      const n = fs.readSync(fd, buf, 0, ENV_MAX_BYTES, 0)
+      raw = buf.slice(0, n).toString('utf8')
+    } finally {
+      if (fd !== undefined) fs.closeSync(fd)
+    }
+  } catch (e) {
+    return null
+  }
+  for (const line of raw.split(/\r?\n/)) {
+    const match = /^\s*(?:export\s+)?ANTHROPIC_API_KEY\s*=\s*(.*)$/.exec(line)
+    if (!match) continue
+    const value = match[1].trim().replace(/^(['"])(.*)\1$/, '$2')
+    if (value) return value
+  }
+  return null
+}
+
+function armSummarizer(state) {
+  const key = process.env.ANTHROPIC_API_KEY || readEnvKey(state)
+  if (!key) {
+    state.summaryNote = HAIKU_UNAVAILABLE_NOTE
+    return
+  }
+  summarizer = { key, state }
+}
+
+// Fire-and-forget: the caller is mid-frame and never sees the outcome. One call
+// per turn is the `pending` flag plus summaryFor only reaching here when the
+// size or mtime moved; `pending` is cleared on every exit path, since a stuck
+// one would silence that session for the life of the process.
+function requestSummary(entry) {
+  if (summarizer === null || entry.pending || !entry.text) return
+  entry.pending = true
+  const body = JSON.stringify({
+    model: HAIKU_MODEL,
+    max_tokens: HAIKU_MAX_TOKENS,
+    messages: [{ role: 'user', content: `${HAIKU_PROMPT}\n\n${entry.text.slice(0, HAIKU_INPUT_MAX_CHARS)}` }],
+  })
+  const options = {
+    host: HAIKU_HOST,
+    path: HAIKU_PATH,
+    method: 'POST',
+    headers: {
+      'x-api-key': summarizer.key,
+      'anthropic-version': HAIKU_VERSION,
+      'content-type': 'application/json',
+      'content-length': Buffer.byteLength(body),
+    },
+    timeout: HAIKU_TIMEOUT_MS,
+  }
+  let req
+  const fail = () => {
+    if (!entry.pending) return
+    entry.pending = false
+    if (summarizer !== null) summarizer.state.summaryNote = HAIKU_UNAVAILABLE_NOTE
+    if (req) req.destroy()
+  }
+  try {
+    req = https.request(options, (res) => {
+      const chunks = []
+      let size = 0
+      res.on('data', (chunk) => {
+        size += chunk.length
+        if (size > HAIKU_RESPONSE_MAX_BYTES) {
+          fail()
+          res.destroy()
+          return
+        }
+        chunks.push(chunk)
+      })
+      res.on('end', () => {
+        if (!entry.pending) return
+        entry.pending = false
+        const text = res.statusCode === 200 ? summaryFromResponse(Buffer.concat(chunks).toString('utf8')) : ''
+        // Through the same sanitize the raw tail takes: the wrap in buildTable
+        // splits on spaces, so an embedded newline would break it.
+        if (text) entry.haiku = sanitize(text)
+        else if (summarizer !== null) summarizer.state.summaryNote = HAIKU_UNAVAILABLE_NOTE
+      })
+      res.on('error', fail)
+    })
+    req.on('timeout', fail)
+    req.on('error', fail)
+    req.end(body)
+  } catch (e) {
+    fail()
+  }
+}
+
+function summaryFromResponse(raw) {
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || !Array.isArray(parsed.content)) return ''
+    return parsed.content
+      .filter((block) => block && block.type === 'text' && typeof block.text === 'string')
+      .map((block) => block.text)
+      .join(' ')
+      .trim()
   } catch (e) {
     return ''
   }
@@ -1116,6 +1299,8 @@ function newState() {
     vmDropped: 0,
     listenError: null,
     listenNote: null,
+    summaryNote: null,
+    envNote: null,
     mode: 'normal',
     interactive: false,
     highlight: { id: null, index: -1 },
@@ -1396,6 +1581,10 @@ function vmFooterLines(state) {
     lines.push(`${state.vmAuthRejects} VM request${state.vmAuthRejects === 1 ? '' : 's'} rejected — the VM's token copy may be stale`)
   }
   if (state.vmDropped > 0) lines.push(`${state.vmDropped} VM event${state.vmDropped === 1 ? '' : 's'} dropped`)
+  if (state.envNote) lines.push(state.envNote)
+  // One fixed line for every summarizer failure — no key, no message, no
+  // options object, all three of which a caught https error can carry.
+  if (state.summaryNote) lines.push(state.summaryNote)
   return lines
 }
 
@@ -1998,6 +2187,7 @@ function runLive(opts) {
   const state = newState()
   state.interactive = true
   registerRestore()
+  armSummarizer(state)
   if (opts.listen !== null) startListener(state, opts.listen)
   entered = true
   write(ESC_ALT_ENTER + ESC_CURSOR_HIDE + ESC_TITLE_SET)
