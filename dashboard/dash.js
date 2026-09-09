@@ -44,9 +44,11 @@ const SUMMARY_MAX_CHARS = 400
 // A delta read is bounded so a session that appended megabytes between two
 // ticks still costs one sized allocation; the remainder is caught up next tick.
 const SCAN_CHUNK_MAX_BYTES = 8 * 1024 * 1024
-// Only these four substrings can make a line matter, and every candidate line
-// costs a JSON.parse — on a 50 MB transcript this is 72 lines of 8,156.
-const SCAN_MARKERS = ['<command-name>', '"Task"', '"Agent"', 'task-notification']
+// Only these substrings can make a line matter, and every candidate line costs
+// a JSON.parse — on a 50 MB transcript this is 1,489 lines of 8,156. tool_use_id
+// is much the widest of them (every tool call carries one), but a dispatch's own
+// tool_result is the only completion signal a foreground agent ever emits.
+const SCAN_MARKERS = ['<command-name>', '"Task"', '"Agent"', 'task-notification', '"tool_use_id"']
 
 const DEFAULT_WIDTH = 80
 const STATE_WIDTH = 8
@@ -59,6 +61,7 @@ const DIR_MIN = 8
 // 14, not 20: at 20 the width below which SUMMARY drops rises to 128 columns,
 // past two of the panes this runs in. Only the longest skill names truncate.
 const SKILL_WIDTH = 14
+const AGENTS_WIDTH = 6
 const SUMMARY_MIN = 10
 const COLUMN_GAP = 4
 
@@ -500,6 +503,21 @@ function skillFor(row) {
   return truncate(name.replace(/^forge:/, ''), SKILL_WIDTH)
 }
 
+// --- Agents ----------------------------------------------------------------
+//
+// How many subagents the session has dispatched and not yet seen finish. The
+// scan pairs each dispatch with the completion naming its tool_use id, so the
+// count is the size of what is left unpaired and cannot go negative.
+
+function agentsFor(row) {
+  if (row.remote) return '-'
+  const file = transcriptPath(row)
+  if (file === null) return '-'
+  const entry = summaryCache.get(file)
+  if (!entry || entry.running.size === 0) return '-'
+  return String(entry.running.size)
+}
+
 // --- Incremental scan ------------------------------------------------------
 //
 // SKILL and AGENTS are whole-history questions — the last `<command-name>` sits
@@ -553,6 +571,7 @@ function applyScanLine(entry, line) {
   if (!record || record.isSidechain === true) return
   if (record.type === 'assistant') return applyDispatches(entry, record)
   if (record.type === 'user') return applyUserScanLine(entry, record)
+  if (record.type === 'attachment') return applyCompletion(entry, queuedCommandTextOf(record))
 }
 
 function applyDispatches(entry, record) {
@@ -573,14 +592,51 @@ function applyDispatches(entry, record) {
 }
 
 function applyUserScanLine(entry, record) {
+  applyToolResults(entry, record)
   const text = userTextOf(record)
   if (!text) return
   const command = /<command-name>([^<]*)<\/command-name>/.exec(text)
   if (command) entry.lastSkill = command[1].trim()
+  applyCompletion(entry, text)
+}
+
+// The dispatch's own tool_result, which every agent produces whether it ran in
+// the foreground or the background. Notifications only cover the background
+// case, so pairing on them alone left every foreground agent running forever.
+function applyToolResults(entry, record) {
+  const content = record.message && record.message.content
+  if (!Array.isArray(content)) return
+  for (const block of content) {
+    if (!block || block.type !== 'tool_result') continue
+    if (typeof block.tool_use_id !== 'string') continue
+    // Only ids that are actually dispatches: every tool call produces a
+    // tool_result, and feeding the rest to orphanDone would grow it without
+    // bound and let a stale id cancel a later dispatch that reuses it.
+    entry.running.delete(block.tool_use_id)
+  }
+}
+
+// A completion pairs off its dispatch, or is remembered as an orphan when the
+// dispatch predates the scan window. Kept apart from the `<command-name>` match
+// above because the two read different text: a notification also arrives on an
+// attachment record, which carries no command a session actually ran.
+function applyCompletion(entry, text) {
+  if (!text) return
   if (!text.includes('<task-notification>') || !text.includes('<status>completed</status>')) return
   const id = /<tool-use-id>([^<]*)<\/tool-use-id>/.exec(text)
   if (!id) return
   if (!entry.running.delete(id[1])) entry.orphanDone.add(id[1])
+}
+
+// The shape a completion takes when it lands while the session is mid-turn: the
+// notification is queued as a pending prompt rather than delivered as a user
+// message, and only this record type survives in the transcript. The narrow
+// type check matters — a prompt_snapshot attachment quotes whole notifications
+// inside its systemPrompt, and reading those would pair off live dispatches.
+function queuedCommandTextOf(record) {
+  const attachment = record.attachment
+  if (!attachment || attachment.type !== 'queued_command') return ''
+  return typeof attachment.prompt === 'string' ? attachment.prompt : ''
 }
 
 function userTextOf(record) {
@@ -764,10 +820,10 @@ function layout(rows, width) {
   const nameWidth = Math.max(NAME_MIN, Math.min(wantName, width - beforeName))
   const base = beforeName + nameWidth
 
-  // Skill drops before summary: a narrow pane should shed the newer column
-  // rather than the one that has always been there.
+  // Skill and agents drop together, before summary: a narrow pane should shed
+  // the newer columns rather than the one that has always been there.
   for (const showSkill of [true, false]) {
-    const fixed = base + (showSkill ? COLUMN_GAP + SKILL_WIDTH : 0)
+    const fixed = base + (showSkill ? COLUMN_GAP + SKILL_WIDTH + COLUMN_GAP + AGENTS_WIDTH : 0)
     const afterDir = width - fixed - COLUMN_GAP - wantDir
     if (afterDir - COLUMN_GAP < SUMMARY_MIN) continue
     return { stateWidth, nameWidth, showSkill, dirWidth: wantDir, showDir: true, showSummary: true, summaryWidth: afterDir - COLUMN_GAP }
@@ -794,6 +850,8 @@ function buildTable(rows, width) {
   if (cols.showSkill) {
     widths.push(SKILL_WIDTH)
     headers.push('SKILL')
+    widths.push(AGENTS_WIDTH)
+    headers.push('AGENTS')
   }
   if (cols.showDir) {
     widths.push(cols.dirWidth)
@@ -807,7 +865,10 @@ function buildTable(rows, width) {
   const lines = [renderLine(headers, widths, width), '']
   for (const row of rows) {
     const cells = [row.stateCell, row.ageCell, row.nameCell]
-    if (cols.showSkill) cells.push(row.skillCell)
+    if (cols.showSkill) {
+      cells.push(row.skillCell)
+      cells.push(row.agentsCell)
+    }
     if (cols.showDir) cells.push(row.dirCell)
     if (cols.showSummary) cells.push(row.summary)
     lines.push(renderLine(cells, widths, width))
@@ -843,6 +904,7 @@ function decorateRows(rows, observed, now) {
     // current once that has run.
     row.summary = row.remote ? '' : summaryFor(row)
     row.skillCell = skillFor(row)
+    row.agentsCell = agentsFor(row)
   }
   return rows
 }
