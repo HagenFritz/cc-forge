@@ -41,6 +41,12 @@ const PROJECTS_DIR = process.env.DASH_PROJECTS_DIR || path.join(os.homedir(), '.
 const TAIL_BYTES = 256 * 1024
 const TAIL_RETRY_BYTES = 1024 * 1024
 const SUMMARY_MAX_CHARS = 400
+// A delta read is bounded so a session that appended megabytes between two
+// ticks still costs one sized allocation; the remainder is caught up next tick.
+const SCAN_CHUNK_MAX_BYTES = 8 * 1024 * 1024
+// Only these four substrings can make a line matter, and every candidate line
+// costs a JSON.parse — on a 50 MB transcript this is 72 lines of 8,156.
+const SCAN_MARKERS = ['<command-name>', '"Task"', '"Agent"', 'task-notification']
 
 const DEFAULT_WIDTH = 80
 const STATE_WIDTH = 8
@@ -411,6 +417,33 @@ function transcriptPath(row) {
   return path.join(PROJECTS_DIR, row.cwd.replace(/[^a-zA-Z0-9]/g, '-'), `${row.id}.jsonl`)
 }
 
+function newCacheEntry() {
+  return {
+    size: 0,
+    mtimeMs: 0,
+    text: '',
+    lastSkill: '',
+    // Keyed by tool_use id so a completion can clear the exact dispatch it
+    // names; the count is the size of what is left.
+    running: new Map(),
+    // Completions can be scanned before the dispatch they name is — never in one
+    // pass, but a chunk boundary splits them — so an unmatched id is held here
+    // rather than dropped, or the dispatch would stay running forever.
+    orphanDone: new Set(),
+    scannedTo: 0,
+  }
+}
+
+function cacheEntryFor(file, st) {
+  const cached = summaryCache.get(file)
+  // A file that shrank or moved backward in time was rotated or replaced, so
+  // the bytes behind scannedTo are not the ones that were scanned.
+  if (cached && st.size >= cached.scannedTo && st.mtimeMs >= cached.mtimeMs) return cached
+  const entry = newCacheEntry()
+  summaryCache.set(file, entry)
+  return entry
+}
+
 function summaryFor(row) {
   // Before any path building: a VM cwd could otherwise mangle into a real
   // local transcript path and show another session's text.
@@ -420,14 +453,111 @@ function summaryFor(row) {
   try {
     const st = fs.lstatSync(file)
     if (st.isSymbolicLink() || !st.isFile()) return ''
-    const cached = summaryCache.get(file)
-    if (cached && cached.size === st.size && cached.mtimeMs === st.mtimeMs) return cached.text
-    const text = sanitize(readLastAssistantText(file, st.size))
-    summaryCache.set(file, { size: st.size, mtimeMs: st.mtimeMs, text })
-    return text
+    const entry = cacheEntryFor(file, st)
+    if (entry.size === st.size && entry.mtimeMs === st.mtimeMs) return entry.text
+    scanDelta(file, entry, st.size)
+    entry.text = sanitize(readLastAssistantText(file, st.size))
+    entry.size = st.size
+    entry.mtimeMs = st.mtimeMs
+    return entry.text
   } catch (e) {
     return ''
   }
+}
+
+// --- Incremental scan ------------------------------------------------------
+//
+// SKILL and AGENTS are whole-history questions — the last `<command-name>` sits
+// anywhere and dispatches pair with completions across the whole file — so the
+// backward tail summaryFor uses cannot answer them. Re-reading the file every
+// tick can: ~130 ms on the largest real transcript (50 MB), and the size+mtime
+// cache key does not absorb it because an actively-appending session invalidates
+// it every tick, which is exactly when these columns matter. So only the bytes
+// appended since the last tick are read, which measures under a millisecond.
+//
+// A session already running when the dashboard starts is scanned from its
+// current end, so dispatches made before that are never seen. That is one-time
+// per session, not per tick, and is documented rather than engineered around.
+
+function scanDelta(file, entry, size) {
+  if (size <= entry.scannedTo) return
+  const start = entry.scannedTo
+  const length = Math.min(size - start, SCAN_CHUNK_MAX_BYTES)
+  let fd
+  let buf
+  let read
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | O_NOFOLLOW)
+    const st = fs.fstatSync(fd)
+    if (!st.isFile()) return
+    buf = Buffer.allocUnsafe(length)
+    read = fs.readSync(fd, buf, 0, length, start)
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd)
+  }
+  // The boundary is found in bytes, not in the decoded string: a chunk can end
+  // mid-character, and decoding that would substitute a replacement character
+  // whose byte length is not the one that was read.
+  const end = buf.lastIndexOf(0x0a, read - 1)
+  if (end === -1) return
+  for (const line of buf.toString('utf8', 0, end).split('\n')) applyScanLine(entry, line)
+  // Only after every line parsed, so a throw mid-chunk leaves scannedTo where it
+  // was and the same bytes are rescanned rather than silently skipped.
+  entry.scannedTo = start + end + 1
+}
+
+function applyScanLine(entry, line) {
+  if (!line || line[0] !== '{') return
+  if (!SCAN_MARKERS.some((marker) => line.includes(marker))) return
+  let record
+  try {
+    record = JSON.parse(line)
+  } catch (e) {
+    return
+  }
+  if (!record || record.isSidechain === true) return
+  if (record.type === 'assistant') return applyDispatches(entry, record)
+  if (record.type === 'user') return applyUserScanLine(entry, record)
+}
+
+function applyDispatches(entry, record) {
+  const content = record.message && record.message.content
+  if (!Array.isArray(content)) return
+  for (const block of content) {
+    if (!block || block.type !== 'tool_use') continue
+    if (block.name !== 'Task' && block.name !== 'Agent') continue
+    if (typeof block.id !== 'string') continue
+    if (entry.orphanDone.delete(block.id)) continue
+    const input = block.input && typeof block.input === 'object' ? block.input : {}
+    entry.running.set(block.id, {
+      type: typeof input.subagent_type === 'string' ? input.subagent_type : 'general-purpose',
+      description: typeof input.description === 'string' ? input.description : '',
+      dispatchedAt: Date.parse(record.timestamp) || 0,
+    })
+  }
+}
+
+function applyUserScanLine(entry, record) {
+  const text = userTextOf(record)
+  if (!text) return
+  const command = /<command-name>([^<]*)<\/command-name>/.exec(text)
+  if (command) entry.lastSkill = command[1].trim()
+  if (!text.includes('<task-notification>') || !text.includes('<status>completed</status>')) return
+  const id = /<tool-use-id>([^<]*)<\/tool-use-id>/.exec(text)
+  if (!id) return
+  if (!entry.running.delete(id[1])) entry.orphanDone.add(id[1])
+}
+
+function userTextOf(record) {
+  const content = record.message && record.message.content
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  const parts = []
+  for (const block of content) {
+    if (typeof block === 'string') parts.push(block)
+    else if (block && block.type === 'text' && typeof block.text === 'string') parts.push(block.text)
+  }
+  return parts.join('\n')
 }
 
 function readLastAssistantText(file, size) {
