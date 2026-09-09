@@ -900,12 +900,28 @@ function buildTable(rows, width, expanded, now) {
       cells.push(row.agentsCell)
     }
     if (cols.showDir) cells.push(row.dirCell)
-    if (cols.showSummary) cells.push(row.summary)
+    const [head, overflow] = cols.showSummary ? splitSummary(row.summary, cols.summaryWidth) : ['', '']
+    if (cols.showSummary) cells.push(head)
     rowLineIndex.push(lines.length)
     lines.push(renderLine(cells, widths, width))
+    // Before the roster: the continuation is part of the row above it, and the
+    // agent lines belong under the whole of it.
+    if (overflow) lines.push(renderLine(cells.map(() => '').fill(overflow, cells.length - 1), widths, width))
     if (row.id === expanded) lines.push(...agentLines(row, width, now))
   }
   return { lines, rowLineIndex }
+}
+
+// Two lines, no more: the second holds what did not fit and is itself clipped
+// by the column. The break prefers the last space that fits, since a mid-word
+// cut reads as corruption rather than as a wrap; a token longer than the column
+// has no space to break at and is cut hard.
+function splitSummary(summary, summaryWidth) {
+  const chars = Array.from(summary)
+  if (chars.length <= summaryWidth) return [summary, '']
+  const space = chars.lastIndexOf(' ', summaryWidth)
+  const cut = space > 0 ? space : summaryWidth
+  return [chars.slice(0, cut).join(''), chars.slice(space > 0 ? cut + 1 : cut).join('').trim()]
 }
 
 // One line per running agent, under the row it belongs to. No status word and
