@@ -138,10 +138,11 @@ cheapest-and-most-decisive first, so nothing reads code it did not have to.
 | 4 | `Confidence:` is `low` | Surface: `low confidence`. **Do not read the code.** |
 | 5 | Any cited path is in the dirty baseline | Surface: `dirty file: <path>`. Nothing is edited. |
 | 6 | Any cited path cannot be resolved, or resolves to a directory | Surface: `stale citation`. |
-| 7 | Any cited path is contested by a surfaced P1 | Surface: `overlaps surfaced P1-<N>`. |
-| 8 | The finding belongs to a group whose `Cascade:` is not independent | Surface: `cascade`. |
+| 7 | Any cited path is a **sensitive path** (see 3a) | Surface: `sensitive path: <path>`. **Do not read the code.** |
+| 8 | Any cited path is contested by a surfaced P1 | Surface: `overlaps surfaced P1-<N>`. |
+| 9 | The finding belongs to a group whose `Cascade:` is not independent | Surface: `cascade`. |
 
-Only a finding that matches none of the eight reaches the code.
+Only a finding that matches none of the nine reaches the code.
 
 ### 3a. Extracting the cited paths
 
@@ -157,6 +158,18 @@ resolve each against the repo root:
   citation and the non-path spans are prose.
 
 Line numbers in the field are **hints only**. Earlier fixes in this run shift them.
+
+A cited path is **sensitive** (condition 7) when any of these hold, matched against the
+repo-relative path, case-insensitively:
+
+- a path segment is `alembic`, or any segment contains `migration`;
+- the path is under `.github/workflows/`;
+- the extension is `.yaml`, `.yml`, or `.tf`.
+
+These are the files where a wrong unattended edit does the most damage — a migration runs against
+production on the next push, a workflow or config change alters what CI and deploys do — and the
+repo's review history shows findings against them are declined at three times the rate of ordinary
+source. The sweep never edits them; the finding surfaces unread, the same posture as low confidence.
 
 ### 3b. Contested files
 
@@ -184,11 +197,12 @@ that is a human's call.
 
 ### 3d. The implement rule
 
-Two rows. Everything else surfaces.
+Three rows. Everything else surfaces.
 
 | Effort | Tier | Confidence | Category | Implement? |
 |--------|------|-----------|----------|------------|
-| Small | any | `high` or `medium` | any | Yes |
+| Small | any | `high` | any | Yes |
+| Small | P1 or P2 | `medium` | any | Yes |
 | Medium | P1 or P2 | `high` | not `testing`, not `architecture` | Yes |
 
 A Medium-effort P1/P2 finding at high confidence whose `Category:` is `testing` or `architecture`
@@ -198,8 +212,8 @@ where a Medium fix means authoring test infrastructure or changing deploy and wo
 which the repo's history shows are declined far more often than any other kind of finding; the
 sweep never lands either unattended.
 
-Anything else — Large at any tier, Medium at P3, Medium at P1/P2 without high confidence — is
-surfaced with `outside the sweep rule`. This is not a judgment that the finding is wrong: the code
+Anything else — Large at any tier, Small at P3 with `medium` confidence, Medium at P3, Medium at
+P1/P2 without high confidence — is surfaced with `outside the sweep rule`. This is not a judgment that the finding is wrong: the code
 was read and the problem confirmed. It is a judgment that the fix is too big to land unattended.
 
 ### 3e. Preconditions, checked before `in-progress`
@@ -260,7 +274,16 @@ In this order, no step skipped:
    finding `open` + `**Sweep:** uncited file`. Because the patch carried the earlier findings'
    fixes, they survive intact. Leaving a stray tracked edit behind would false-trip every later
    finding's scope self-check and would ride into step 5d's baseline as pre-sweep code.
-6. **Otherwise, set `Status: done`.**
+6. **Otherwise, set `Status: done`** and append the sweep's signature directly under it:
+
+   ```
+     **Status:** `done`
+     **Sweep:** implemented — <one line: what changed, in what-changed terms>
+   ```
+
+   Every finding the sweep lands carries this line. It is how a later reader — or a later
+   analysis of the doc — tells a sweep fix from a `/review-walk` fix: the walk never writes
+   `Sweep:`, and the sweep never writes `Applied:`.
 
 ## Step 4: Status Update Protocol
 
@@ -295,21 +318,31 @@ between turns.
 
 ### The `Sweep:` line
 
-A surfaced finding keeps `Status: open` and gains one new line **directly under the Status line**:
+The `Sweep:` line is the sweep's signature: every finding the sweep decided — surfaced or landed —
+carries exactly one, **directly under the Status line**, and nothing else ever writes one. A
+surfaced finding keeps `Status: open` and gains a reason; a landed finding is `done` and gains
+`implemented`:
 
 ```
 **Status:** `open` <!-- open | in-progress | done | deferred | wont-fix -->
 **Sweep:** <reason>
 ```
 
+```
+**Status:** `done` <!-- open | in-progress | done | deferred | wont-fix -->
+**Sweep:** implemented — <one line: what changed>
+```
+
 It always sits directly under `Status:`; any other reason line follows it. Exactly one `Sweep:`
 line per finding, ever — a re-run skips a finding that already has one rather than appending a
-second.
+second, and a suite regression on a landed fix (5e) extends the existing `implemented` line rather
+than adding another.
 
 The reason comes from this fixed vocabulary. The reason is the instruction: it tells the human what
-they are being asked to do. Every reason but the last belongs to a finding left `open`; the last,
-`suspected suite regression`, is the one reason attached to a finding that stays `done` — its fix
-landed, and the line is a flag on a landed fix rather than a request to adjudicate an unfixed one.
+they are being asked to do. Every reason but the last two belongs to a finding left `open`; the
+last two belong to a finding that is `done` — `implemented` is the signature on a landed fix, and
+`suspected suite regression` is a flag appended to that signature rather than a request to
+adjudicate an unfixed finding.
 
 | Reason | What it means | What the human does |
 |--------|---------------|---------------------|
@@ -320,11 +353,13 @@ landed, and the line is a flag on a landed fix rather than a request to adjudica
 | `uncited file` | The fix could not be made without touching a file the finding never cited; the edit was reverted. | Look at what the fix really requires — the scope is bigger than the finding claims. |
 | `dirty file: <path>` | A cited file already had uncommitted changes before the run. | Commit or stash your work, then re-run the sweep or fix it by hand. |
 | `stale citation` | The cited path or the described code could not be found. | Re-check against the current code; the review may have drifted. |
+| `sensitive path: <path>` | A cited path is a migration, a CI workflow, or a `.yaml`/`.yml`/`.tf` file; the sweep did not read the code. | Read it and decide — an unattended edit here has too large a blast radius. |
 | `overlaps surfaced P1-<N>` | A cited file also holds a P1 that was surfaced, not fixed. | Settle P1-`<N>` first; then this one is likely trivial. |
 | `cascade` | Its group's `Cascade:` says fix order matters. | Fix the group in `Suggested order:` — `/review-walk` does this well. |
 | `test precondition` | A testing finding failed the R5 shape check or names a test file that does not exist. | Write the test yourself, or decide it is not worth writing. |
 | `interrupted` | A previous sweep run died mid-fix on this finding. | Check the working tree for a half-applied edit before doing anything else. |
-| `suspected suite regression: <test>` | The fix landed (`done`), and `<test>` fails now but passed at the baseline; one of this finding's files is the failing test's subject. | Read the fix against `<test>`. Either the fix is wrong or the test was. |
+| `implemented — <what changed>` | The fix landed (`done`); the sweep made this edit. | Read the diff. It is uncommitted and in the working tree. |
+| `implemented; suspected suite regression: <test>` | The fix landed (`done`), and `<test>` fails now but passed at the baseline; one of this finding's files is the failing test's subject. | Read the fix against `<test>`. Either the fix is wrong or the test was. |
 
 ### `wont-fix` and `Skip reason:`
 
@@ -435,8 +470,9 @@ findings overlapping the same failing test are both named; a failure whose subje
 in the touched set is reported unattributed.
 
 An attributed finding **stays `done`** — the fix landed, and reverting it unattended would be a
-second unreviewed edit. It gains a `**Sweep:** suspected suite regression: <test>` line under its
-Status, and the report leads with it.
+second unreviewed edit. Its existing `**Sweep:** implemented — …` line is extended to
+`**Sweep:** implemented; suspected suite regression: <test> — …` (one line, never a second), and
+the report leads with it.
 
 **Never mask a failure.** No skipped or deleted tests, no loosened assertions, no bumped timeouts,
 no `--bail`, no rerunning until green. Red is red; the report says so and the human decides.
@@ -552,7 +588,8 @@ gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
   on a shared file would take an earlier finding's fix with it, and a `git stash pop` conflict is
   the one failure mode that can lose the user's work outright.
 - **The `Sweep:` line sits directly under `Status:`**, one per finding for the life of the doc, with
-  any other reason line following it.
+  any other reason line following it. It is written on every finding the sweep decides, landed
+  fixes included — it is the sweep's signature, and no other skill writes one.
 - **The doc is the source of truth and is re-read before each edit.** Never write from a cached read
   of the doc, and never infer a finding's state from what the sweep remembers doing to it.
 - **Never mask a test failure.** No deleted or skipped tests, no loosened assertions, no raised
