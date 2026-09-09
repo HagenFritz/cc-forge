@@ -56,6 +56,9 @@ const NAME_CAP = 24
 const NAME_MIN = 8
 const DIR_CAP = 30
 const DIR_MIN = 8
+// 14, not 20: at 20 the width below which SUMMARY drops rises to 128 columns,
+// past two of the panes this runs in. Only the longest skill names truncate.
+const SKILL_WIDTH = 14
 const SUMMARY_MIN = 10
 const COLUMN_GAP = 4
 
@@ -465,6 +468,38 @@ function summaryFor(row) {
   }
 }
 
+// --- Skill -----------------------------------------------------------------
+//
+// The last slash command a session ran, which persists until the next one: the
+// transcript carries no end-of-skill signal, so "still in it" and "finished it"
+// are indistinguishable and the last one is the better guess. Built-ins say
+// nothing about the work and are dropped.
+
+const SKILL_BLOCKLIST = new Set([
+  'model',
+  'compact',
+  'mcp',
+  'plugin',
+  'reload-plugins',
+  'clear',
+  'help',
+  'config',
+  'artifacts',
+  'tasks',
+  'workflows',
+])
+
+function skillFor(row) {
+  if (row.remote) return ''
+  const file = transcriptPath(row)
+  if (file === null) return ''
+  const entry = summaryCache.get(file)
+  if (!entry || !entry.lastSkill) return ''
+  const name = entry.lastSkill.replace(/^\//, '')
+  if (SKILL_BLOCKLIST.has(name)) return ''
+  return truncate(name.replace(/^forge:/, ''), SKILL_WIDTH)
+}
+
 // --- Incremental scan ------------------------------------------------------
 //
 // SKILL and AGENTS are whole-history questions — the last `<command-name>` sits
@@ -727,17 +762,21 @@ function layout(rows, width) {
 
   const beforeName = stateWidth + COLUMN_GAP + AGE_WIDTH + COLUMN_GAP
   const nameWidth = Math.max(NAME_MIN, Math.min(wantName, width - beforeName))
-  const fixed = beforeName + nameWidth
-  const afterDir = width - fixed - COLUMN_GAP - wantDir
-  const showSummary = afterDir - COLUMN_GAP >= SUMMARY_MIN
-  if (showSummary) {
-    return { stateWidth, nameWidth, dirWidth: wantDir, showDir: true, showSummary: true, summaryWidth: afterDir - COLUMN_GAP }
+  const base = beforeName + nameWidth
+
+  // Skill drops before summary: a narrow pane should shed the newer column
+  // rather than the one that has always been there.
+  for (const showSkill of [true, false]) {
+    const fixed = base + (showSkill ? COLUMN_GAP + SKILL_WIDTH : 0)
+    const afterDir = width - fixed - COLUMN_GAP - wantDir
+    if (afterDir - COLUMN_GAP < SUMMARY_MIN) continue
+    return { stateWidth, nameWidth, showSkill, dirWidth: wantDir, showDir: true, showSummary: true, summaryWidth: afterDir - COLUMN_GAP }
   }
 
-  // Summary goes first; dir then shrinks into whatever is left and is dropped
-  // only when there is no room for a usable stub of it.
-  const dirWidth = Math.min(wantDir, width - fixed - COLUMN_GAP)
-  return { stateWidth, nameWidth, dirWidth, showDir: dirWidth >= DIR_MIN, showSummary: false, summaryWidth: 0 }
+  // Then summary; dir shrinks into whatever is left and is dropped only when
+  // there is no room for a usable stub of it.
+  const dirWidth = Math.min(wantDir, width - base - COLUMN_GAP)
+  return { stateWidth, nameWidth, showSkill: false, dirWidth, showDir: dirWidth >= DIR_MIN, showSummary: false, summaryWidth: 0 }
 }
 
 function renderLine(cells, cols, width) {
@@ -752,6 +791,10 @@ function buildTable(rows, width) {
   const cols = layout(rows, width)
   const widths = [cols.stateWidth, AGE_WIDTH, cols.nameWidth]
   const headers = ['STATE', 'AGE', 'NAME']
+  if (cols.showSkill) {
+    widths.push(SKILL_WIDTH)
+    headers.push('SKILL')
+  }
   if (cols.showDir) {
     widths.push(cols.dirWidth)
     headers.push('DIR')
@@ -764,6 +807,7 @@ function buildTable(rows, width) {
   const lines = [renderLine(headers, widths, width), '']
   for (const row of rows) {
     const cells = [row.stateCell, row.ageCell, row.nameCell]
+    if (cols.showSkill) cells.push(row.skillCell)
     if (cols.showDir) cells.push(row.dirCell)
     if (cols.showSummary) cells.push(row.summary)
     lines.push(renderLine(cells, widths, width))
@@ -795,7 +839,10 @@ function decorateRows(rows, observed, now) {
     row.ageCell = formatAge(ageMsFor(row, observed, now))
     row.nameCell = row.label + nameMarker(row)
     row.dirCell = row.remote ? row.cwd : shortenDir(row.cwd)
+    // summaryFor is what advances the scan, so the skill it read is only
+    // current once that has run.
     row.summary = row.remote ? '' : summaryFor(row)
+    row.skillCell = skillFor(row)
   }
   return rows
 }
