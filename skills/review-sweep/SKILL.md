@@ -186,12 +186,19 @@ that is a human's call.
 
 Two rows. Everything else surfaces.
 
-| Effort | Tier | Confidence | Implement? |
-|--------|------|-----------|------------|
-| Small | any | `high` or `medium` | Yes |
-| Medium | P1 only | `high` | Yes |
+| Effort | Tier | Confidence | Category | Implement? |
+|--------|------|-----------|----------|------------|
+| Small | any | `high` or `medium` | any | Yes |
+| Medium | P1 or P2 | `high` | not `testing`, not `architecture` | Yes |
 
-Anything else — Large at any tier, Medium below P1, Medium at P1 without high confidence — is
+A Medium-effort P1/P2 finding at high confidence whose `Category:` is `testing` or `architecture`
+is surfaced with `excluded category: <category>`. It stays `open` — not `wont-fix`, not
+`deferred` — so `/review-walk` presents it for a deliberate decision. Those two categories are
+where a Medium fix means authoring test infrastructure or changing deploy and workflow structure,
+which the repo's history shows are declined far more often than any other kind of finding; the
+sweep never lands either unattended.
+
+Anything else — Large at any tier, Medium at P3, Medium at P1/P2 without high confidence — is
 surfaced with `outside the sweep rule`. This is not a judgment that the finding is wrong: the code
 was read and the problem confirmed. It is a judgment that the fix is too big to land unattended.
 
@@ -308,6 +315,7 @@ landed, and the line is a flag on a landed fix rather than a request to adjudica
 |--------|---------------|---------------------|
 | `low confidence` | The reviewer flagged low confidence; the sweep did not read the code. | Read it and decide — it may well be noise. |
 | `outside the sweep rule` | Real, confirmed in the code, too large to land unattended. | Fix it deliberately; it is a genuine finding. |
+| `excluded category: <testing\|architecture>` | Real, confirmed in the code, Medium effort at P1/P2 with high confidence — but a test-infrastructure or structural change the sweep never lands unattended. | Decide it in the walk: implement, defer, or won't-fix. The sweep took no position. |
 | `vague fix` | The problem is real; the `Fix:` text does not say what to change. | Decide the fix yourself, then apply it. |
 | `uncited file` | The fix could not be made without touching a file the finding never cited; the edit was reverted. | Look at what the fix really requires — the scope is bigger than the finding claims. |
 | `dirty file: <path>` | A cited file already had uncommitted changes before the run. | Commit or stash your work, then re-run the sweep or fix it by hand. |
