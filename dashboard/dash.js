@@ -65,6 +65,16 @@ const AGENTS_WIDTH = 6
 const SUMMARY_MIN = 10
 const COLUMN_GAP = 4
 
+// The expanded agent roster. Indented under its session rather than aligned to
+// the table's columns: these lines answer a different question than the row
+// does, and the indent is what says so.
+const AGENT_INDENT = '  '
+const AGENT_GLYPH = '●'
+// Five, not four: `1h00` is the longest age formatAge produces under a day and
+// fills four exactly, leaving no gap before the type.
+const AGENT_AGE_WIDTH = 5
+const AGENT_TYPE_WIDTH = 26
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const PID_RE = /^[0-9]{1,10}$/
 const TMUX_SESSION_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
@@ -138,10 +148,11 @@ const KEY_CTRL_C = 0x03
 const KEY_ESC = 0x1b
 const KEY_ENTER = 0x0d
 const KEY_ENTER_LF = 0x0a
-const KEY_J = 0x6a
-const KEY_K = 0x6b
 const KEY_Q = 0x71
 const KEY_R = 0x72
+// Shares the value of PRINTABLE_MIN by coincidence, not by meaning: this is the
+// expand toggle, that one is the low edge of the rename-buffer's character set.
+const KEY_SPACE = 0x20
 const KEY_CTRL_U = 0x15
 const KEY_BACKSPACE = 0x7f
 const KEY_BACKSPACE_BS = 0x08
@@ -169,7 +180,7 @@ const TTY_PATH_RE = /^\/dev\/tty[a-z0-9]+$/
 // TTY_PATH_RE does not admit.
 const TMUX_CLIENT_TTY_RE = /^\/dev\/(pts\/\d{1,5}|tty[A-Za-z0-9]{1,16})$/
 
-const HELP_NORMAL = 'j: up  k: down  enter: focus  r: rename tab  q: quit'
+const HELP_NORMAL = '↑/↓: move  space: agents  enter: focus  r: rename tab  q: quit'
 const HELP_RENAME = 'enter: confirm  esc: cancel  ^U: clear'
 const RENAME_PROMPT = 'Tab name: '
 
@@ -518,6 +529,24 @@ function agentsFor(row) {
   return String(entry.running.size)
 }
 
+// The same Map the count comes from, as a list. Only running agents exist to
+// list: applyToolResults deletes a dispatch the moment its result lands, so a
+// finished agent leaves no record to render.
+function agentRosterFor(row) {
+  if (row.remote) return []
+  const file = transcriptPath(row)
+  if (file === null) return []
+  const entry = summaryCache.get(file)
+  if (!entry) return []
+  return Array.from(entry.running.values())
+}
+
+// `forge:review:correctness-auditor` is 33 characters of which 13 say nothing
+// about which agent it is.
+function shortAgentType(type) {
+  return type.replace(/^forge:[^:]*:/, '')
+}
+
 // --- Incremental scan ------------------------------------------------------
 //
 // SKILL and AGENTS are whole-history questions — the last `<command-name>` sits
@@ -843,7 +872,7 @@ function renderLine(cells, cols, width) {
   return truncate(parts.join(' '.repeat(COLUMN_GAP)).replace(/\s+$/, ''), width)
 }
 
-function buildTable(rows, width) {
+function buildTable(rows, width, expanded, now) {
   const cols = layout(rows, width)
   const widths = [cols.stateWidth, AGE_WIDTH, cols.nameWidth]
   const headers = ['STATE', 'AGE', 'NAME']
@@ -863,6 +892,7 @@ function buildTable(rows, width) {
   }
 
   const lines = [renderLine(headers, widths, width), '']
+  const rowLineIndex = []
   for (const row of rows) {
     const cells = [row.stateCell, row.ageCell, row.nameCell]
     if (cols.showSkill) {
@@ -871,9 +901,23 @@ function buildTable(rows, width) {
     }
     if (cols.showDir) cells.push(row.dirCell)
     if (cols.showSummary) cells.push(row.summary)
+    rowLineIndex.push(lines.length)
     lines.push(renderLine(cells, widths, width))
+    if (row.id === expanded) lines.push(...agentLines(row, width, now))
   }
-  return lines
+  return { lines, rowLineIndex }
+}
+
+// One line per running agent, under the row it belongs to. No status word and
+// no glyph distinction: every line here is running by construction, so a state
+// column would repeat itself down the whole roster.
+function agentLines(row, width, now) {
+  return agentRosterFor(row)
+    .map((agent) => {
+      const age = agent.dispatchedAt ? formatAge(Math.max(0, now - agent.dispatchedAt)) : '-'
+      const cells = [pad(truncate(age, AGENT_AGE_WIDTH), AGENT_AGE_WIDTH), pad(truncate(shortAgentType(agent.type), AGENT_TYPE_WIDTH), AGENT_TYPE_WIDTH), agent.description]
+      return truncate(`${AGENT_INDENT}${AGENT_GLYPH} ${cells.join(' ')}`.replace(/\s+$/, ''), width)
+    })
 }
 
 // --- Frame ---------------------------------------------------------------
@@ -923,12 +967,15 @@ function buildFrame(state, width, now) {
   return lines
 }
 
-// The table occupies the top of the frame with a header line and a blank line
-// under it, so a row's frame line is its highlight index plus two.
+// Read from the map buildTable just wrote rather than computed: an expanded
+// roster inserts lines mid-table, so a row's frame line is no longer its index
+// plus the two-line preamble.
 function highlightLineIndex(state) {
   if (noTableYet(state) || state.lastRows.length === 0) return -1
   const index = state.highlight.index
-  return index >= 0 && index < state.lastRows.length ? index + 2 : -1
+  if (index < 0 || index >= state.lastRows.length) return -1
+  const line = state.rowLineIndex[index]
+  return line === undefined ? -1 : line
 }
 
 // A never-good local poll is only a bare error body while there is nothing
@@ -952,7 +999,11 @@ function frameLines(state, width, now) {
   if (state.lastRows.length === 0) {
     lines.push('No Claude Code sessions running. Start one with `claude` in any directory.')
   } else {
-    lines.push(...buildTable(state.lastRows, width))
+    const table = buildTable(state.lastRows, width, state.expanded, now)
+    // Where each row landed, which is no longer a function of its index once an
+    // expanded roster has pushed the rows below it down.
+    state.rowLineIndex = table.rowLineIndex
+    lines.push(...table.lines)
   }
   lines.push('')
 
@@ -1052,6 +1103,8 @@ function newState() {
     mode: 'normal',
     interactive: false,
     highlight: { id: null, index: -1 },
+    expanded: null,
+    rowLineIndex: [],
     renameBuffer: '',
     renameTarget: null,
     transient: null,
@@ -1336,6 +1389,16 @@ function vmFooterLines(state) {
 // statuses change, so the index is derived from the id after every tick. A
 // vanished session hands the selection to whatever row now sits nearest its
 // old position rather than dropping it.
+
+// An expansion outlives neither its session nor its roster. Rows come and go
+// every poll, so a dead id left set would re-expand a session that reused it,
+// and a roster that drained to nothing would hold open an empty expansion that
+// Space's no-op-at-zero rule never gets the chance to close.
+function reconcileExpanded(state) {
+  if (state.expanded === null) return
+  const row = state.lastRows.find((r) => r.id === state.expanded)
+  if (!row || agentRosterFor(row).length === 0) state.expanded = null
+}
 
 function reconcileHighlight(state) {
   const rows = state.lastRows
@@ -1936,6 +1999,7 @@ function runLive(opts) {
       state.poll = state.poll === 'never-good' ? 'never-good' : 'stale'
     }
     reconcileHighlight(state)
+    reconcileExpanded(state)
     // One bell per tick, not one per transition: three sessions all going
     // waiting at once is one event to the person hearing it.
     if (shouldBell(transitions, opts)) write(BELL)
@@ -2068,15 +2132,38 @@ function handleKey(state, key) {
     if (state.highlight.index >= 0) enterRename(state)
     return
   }
-  // j up, k down — the reverse of vi, less, git, and tmux, deliberately: this
-  // is a single-user tool and the binding that matches the owner's hands wins.
-  if (code === KEY_J || key === SEQ_UP) {
+  // Below the rename dispatch above, so a space typed into a tab name stays a
+  // literal character and can never toggle an expansion.
+  if (code === KEY_SPACE) {
+    toggleExpanded(state)
+    paint(state)
+    return
+  }
+  // Arrows only. j/k were bound here in the reverse of vi, less, git, and tmux
+  // — the binding that matched the owner's hands — and were then more
+  // distracting than either direction was useful.
+  if (key === SEQ_UP) {
     moveHighlight(state, -1)
     paint(state)
-  } else if (code === KEY_K || key === SEQ_DOWN) {
+  } else if (key === SEQ_DOWN) {
     moveHighlight(state, 1)
     paint(state)
   }
+}
+
+// One session expanded at a time: two open rosters push the rows under them far
+// enough down that the table stops reading as a list. A row with nothing running
+// has nothing to show, so the key does nothing there rather than collapsing what
+// is already open.
+function toggleExpanded(state) {
+  const row = state.lastRows[state.highlight.index]
+  if (!row) return
+  if (state.expanded === row.id) {
+    state.expanded = null
+    return
+  }
+  if (agentRosterFor(row).length === 0) return
+  state.expanded = row.id
 }
 
 // --- Entry ---------------------------------------------------------------
@@ -2111,7 +2198,8 @@ if (require.main === module) main()
 // ageOutVmRows and renderRows to reach the rendered cells, and tab-order
 // sorting, whose two query outputs cannot be produced off a Mac: the parsers
 // take that output as text, sortRows takes the resulting map, and handleKey with
-// moveHighlight covers the j/k swap without a pty.
+// moveHighlight and buildTable's row-to-line map covers movement and expansion
+// without a pty.
 module.exports = {
   validateVmRow,
   applyVmEvent,
@@ -2132,4 +2220,6 @@ module.exports = {
   tabIndexOf,
   handleKey,
   moveHighlight,
+  buildTable,
+  reconcileExpanded,
 }
