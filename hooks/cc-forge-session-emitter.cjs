@@ -3,8 +3,8 @@
 //
 // Posts one state transition per hook event to a listener on
 // 127.0.0.1:45800 (DASH_EMIT_PORT overrides), which an ssh reverse forward
-// carries to `dash.js --listen 45801` on the Mac. Those two ports are the
-// documented default pair; see dashboard/CLAUDE.md.
+// carries to the dashboard's listener on 45801 on the Mac. Those two ports are
+// the documented default pair; see dashboard/CLAUDE.md.
 //
 // This runs inside the user's session on every prompt, so it never waits: a
 // 300 ms socket timeout, no response body read, every failure silent, exit 0

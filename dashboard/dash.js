@@ -9,8 +9,9 @@
 // extends that to idle). `--once` prints a single plain
 // frame and exits, with no keys, no bell, and no help line; `--fixture <path>`
 // feeds rows from a JSON file through the same pipeline so the program can be
-// checked without live sessions. `--listen <port>` adds an authenticated
-// loopback endpoint that turns devbox hook events into rows in the same table.
+// checked without live sessions. Live mode also listens on 127.0.0.1:45801 for
+// devbox hook events and puts them in the same table; `--listen <port>` moves
+// that port and `--no-listen` turns it off.
 //
 // Zero dependencies, Node >= 22, stdlib only. Run by hand:
 //   node dashboard/dash.js
@@ -58,6 +59,10 @@ const TMUX_SESSION_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const VM_HOST = 'ro-devbox'
 
 const LISTEN_HOST = '127.0.0.1'
+// The Mac half of the documented port pair (the emitter posts to 45800 on the
+// VM and the ssh reverse forward carries it here); `ccdash` alone must show VM
+// rows, so this is the default rather than a flag to remember.
+const LISTEN_PORT_DEFAULT = 45801
 const LISTEN_PORT_MIN = 1024
 const LISTEN_PORT_MAX = 65535
 const O_NOFOLLOW = typeof fs.constants.O_NOFOLLOW === 'number' ? fs.constants.O_NOFOLLOW : 0
@@ -174,7 +179,8 @@ const ERROR_BODIES = {
 // port) and they all extend here.
 
 function parseArgs(argv) {
-  const opts = { once: false, width: null, fixture: null, alertIdle: false, listen: null }
+  const opts = { once: false, width: null, fixture: null, alertIdle: false, listen: LISTEN_PORT_DEFAULT }
+  let listenFlag = false
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--once') {
@@ -193,6 +199,9 @@ function parseArgs(argv) {
         throw new Error(`--listen needs a port between ${LISTEN_PORT_MIN} and ${LISTEN_PORT_MAX}, got ${raw}`)
       }
       opts.listen = n
+      listenFlag = true
+    } else if (arg === '--no-listen') {
+      opts.listen = null
     } else if (arg === '--fixture') {
       const raw = argv[++i]
       if (!raw) throw new Error('--fixture needs a path')
@@ -201,7 +210,7 @@ function parseArgs(argv) {
       throw new Error(`unknown argument: ${arg}`)
     }
   }
-  if (opts.listen !== null && opts.once) throw new Error('--listen cannot be combined with --once — a one-shot frame cannot receive events')
+  if (listenFlag && opts.once) throw new Error('--listen cannot be combined with --once — a one-shot frame cannot receive events')
   return opts
 }
 
@@ -1843,7 +1852,7 @@ function main() {
   }
   guardStdout()
   if (!opts.once && !process.stdout.isTTY) {
-    process.stderr.write(`dash: stdout is not a terminal; printing one frame as with --once${opts.listen === null ? '' : ' (--listen is inactive)'}.\n`)
+    process.stderr.write(`dash: stdout is not a terminal; printing one frame as with --once${opts.listen === null ? '' : ' (the VM listener is inactive)'}.\n`)
     opts.once = true
   }
   if (opts.once) {

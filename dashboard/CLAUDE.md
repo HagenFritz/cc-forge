@@ -42,7 +42,8 @@ Flags:
 - `--width <n>` fixes column width (used by `--once` for reproducible frames).
 - `--fixture <path>` feeds synthetic rows for deterministic output.
 - `--alert-idle` also bells on idle transitions; waiting-only by default.
-- `--listen <port>` accepts VM session events on `127.0.0.1:<port>` (1024–65535). Live mode only — it cannot be combined with `--once`.
+- `--listen <port>` moves the VM listener off its default `127.0.0.1:45801` (1024–65535). Live mode only — it cannot be combined with `--once`.
+- `--no-listen` runs live mode without the VM listener, for a Mac with no devbox.
 
 ## Sort order
 
@@ -54,9 +55,9 @@ Two spawns per poll feed the order — one `ps -o pid=,tty=` for every local row
 
 Rows iTerm knows nothing about — VM rows, background sessions, a pid whose tty is gone — sort after the tabbed ones, on `startedAt` then id so they hold their relative order across ticks regardless of status. With no tab order at all (no iTerm, Linux, `--once`) the whole table falls back to the urgency sort, unannounced, the same way focus already degrades off a Mac; `ps -p` exiting non-zero because one pid is gone is the normal case, so its output is the signal there and its exit status is not. A failed or timed-out osascript keeps the previous map rather than clearing it — one hung iTerm would otherwise reshuffle every row for a tick — but only for five consecutive failures, after which both maps are cleared and the urgency fallback takes over; a `ps` failure with nothing on stdout keeps both cached maps for the same reason. The query is skipped outright off darwin, and a watchdog slightly longer than the 3 s timeout kills a wedged child, so the one-in-flight flag cannot strand.
 
-## VM listener (`--listen`)
+## VM listener
 
-Bound to loopback only; the VM reaches it over an ssh reverse forward. Every request must be a `POST` carrying `x-dash-token` and `content-type: application/json`, with no `Origin` header; a body over 4 KB is rejected (4096 bytes is the largest accepted), cut off mid-stream with the socket destroyed. Anything else is rejected with 405 / 401 / 415 / 403 / 413 / 400 — the last for a body that is malformed or non-object JSON — and touches no state.
+On by default in live mode at `127.0.0.1:45801`, so `ccdash` alone shows VM rows; `--listen <port>` moves it and `--no-listen` turns it off. Bound to loopback only; the VM reaches it over an ssh reverse forward. Every request must be a `POST` carrying `x-dash-token` and `content-type: application/json`, with no `Origin` header; a body over 4 KB is rejected (4096 bytes is the largest accepted), cut off mid-stream with the socket destroyed. Anything else is rejected with 405 / 401 / 415 / 403 / 413 / 400 — the last for a body that is malformed or non-object JSON — and touches no state.
 
 The shared secret lives at `~/.claude/.dash-token`, 64 hex characters, created `0600` at open time and read symlink-refusingly. It is generated on the first `--listen` run and the footer says so once; getting it onto the VM, and rotating it, is step 2 of *Wiring the devbox* below. A file that is there but unusable (a symlink, oversized, malformed, or unreadable) is never overwritten: the footer says so and VM rows are off for that run, so a transient read error cannot rotate a secret the VM still holds. A token readable beyond this user gets a footer warning, not a rotation.
 
@@ -101,7 +102,7 @@ Host ro-devbox
 The config is the only place that covers `devbox ssh`, `devbox <name>`,
 `devbox cc`, and a hand-typed `ssh ro-devbox` with one edit, which is why
 `scripts/devbox` needs no change. `RemoteForward` binds 45800 on the VM and
-carries it to `dash.js --listen 45801` on the Mac. `ControlMaster`, `ControlPath`,
+carries it to the dashboard's listener on 45801 on the Mac. `ControlMaster`, `ControlPath`,
 and `ControlPersist` are load-bearing rather than tuning: with `RemoteForward`
 set, a second concurrent connection cannot bind the VM-side port, so without a
 shared connection only the first `devbox` invocation carries a working forward —
@@ -119,8 +120,8 @@ on the `RemoteForward` line is not a client-side substitute — per ssh_config(5
 remote bind address only succeeds when the server's `GatewayPorts` is enabled, so
 against today's `no` it would break the forward rather than pin it.
 
-**2. The token, on both machines.** Run the dashboard once with `--listen` to
-generate `~/.claude/.dash-token`, then copy it over in one command:
+**2. The token, on both machines.** Run the dashboard once (it listens by
+default) to generate `~/.claude/.dash-token`, then copy it over in one command:
 
 ```bash
 ssh ro-devbox 'umask 077; mkdir -p ~/.claude; cat > ~/.claude/.dash-token' < ~/.claude/.dash-token
