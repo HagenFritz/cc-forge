@@ -551,8 +551,8 @@ function readEnvKey(state) {
     return null
   }
   if (st.isSymbolicLink() || !st.isFile() || st.size > ENV_MAX_BYTES) return null
-  // Its own field, not listenNote: the token's one-time note would otherwise
-  // clobber this one, or be clobbered by it.
+  // Its own field, and a standing one like tokenWarning: a loose mode stays
+  // true until the operator chmods it, so nothing ever clears this.
   if ((st.mode & 0o077) !== 0) {
     state.envNote = `${stripControls(ENV_PATH)} is readable beyond this user — chmod 600 it`
   }
@@ -638,8 +638,12 @@ function requestSummary(entry) {
         const text = res.statusCode === 200 ? summaryFromResponse(Buffer.concat(chunks).toString('utf8')) : ''
         // Through the same sanitize the raw tail takes: the wrap in buildTable
         // splits on spaces, so an embedded newline would break it.
-        if (text) entry.haiku = sanitize(text)
-        else if (summarizer !== null) summarizer.state.summaryNote = HAIKU_UNAVAILABLE_NOTE
+        if (text) {
+          entry.haiku = sanitize(text)
+          // A transient failure must not leave the note up for the process
+          // lifetime — one success proves summaries are working again.
+          if (summarizer !== null) summarizer.state.summaryNote = null
+        } else if (summarizer !== null) summarizer.state.summaryNote = HAIKU_UNAVAILABLE_NOTE
       })
       res.on('error', fail)
     })
@@ -1298,7 +1302,8 @@ function newState() {
     vmAuthRejects: 0,
     vmDropped: 0,
     listenError: null,
-    listenNote: null,
+    tokenNote: null,
+    tokenWarning: null,
     summaryNote: null,
     envNote: null,
     mode: 'normal',
@@ -1345,7 +1350,7 @@ function readToken(state) {
   }
   if (st.isSymbolicLink() || !st.isFile() || st.size > TOKEN_MAX_BYTES) return TOKEN_REFUSED
   if ((st.mode & 0o077) !== 0) {
-    state.listenNote = `${stripControls(TOKEN_PATH)} is readable beyond this user — chmod 600 it`
+    state.tokenWarning = `${stripControls(TOKEN_PATH)} is readable beyond this user — chmod 600 it`
   }
   let raw
   try {
@@ -1408,7 +1413,7 @@ function resolveToken(state) {
   } catch (e) {
     token = null
   }
-  if (token !== null) state.listenNote = `new token at ${stripControls(TOKEN_PATH)} — copy it to the VM as 0600 for VM rows to appear`
+  if (token !== null) state.tokenNote = `new token at ${stripControls(TOKEN_PATH)} — copy it to the VM as 0600 for VM rows to appear`
   return token
 }
 
@@ -1444,6 +1449,9 @@ function handleVmRequest(state, req, res) {
     state.vmAuthRejects += 1
     return rejectVm(res, 401)
   }
+  // Before every other rejection: a malformed body from a correctly-tokened VM
+  // still proves the operator finished the copy the note asks for.
+  state.tokenNote = null
   const type = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase()
   if (type !== 'application/json') return rejectVm(res, 415)
   if (req.headers.origin !== undefined) return rejectVm(res, 403)
@@ -1576,7 +1584,8 @@ function oldestKey(map, at) {
 function vmFooterLines(state) {
   const lines = []
   if (state.listenError) lines.push(state.listenError)
-  if (state.listenNote) lines.push(state.listenNote)
+  if (state.tokenNote) lines.push(state.tokenNote)
+  if (state.tokenWarning) lines.push(state.tokenWarning)
   if (state.vmAuthRejects > 0) {
     lines.push(`${state.vmAuthRejects} VM request${state.vmAuthRejects === 1 ? '' : 's'} rejected — the VM's token copy may be stale`)
   }
