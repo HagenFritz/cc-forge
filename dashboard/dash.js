@@ -68,7 +68,11 @@ const HAIKU_MAX_TOKENS = 64
 const HAIKU_INPUT_MAX_CHARS = 2000
 const HAIKU_TIMEOUT_MS = 8000
 const HAIKU_RESPONSE_MAX_BYTES = 64 * 1024
-const HAIKU_PROMPT = 'Below is the last assistant message from a coding session. In at most two sentences, say what the session is doing. Reply with the summary only.'
+// The two style instructions are what feed the SUMMARY column's token styling:
+// the model marks its own emphasis, which is more reliable than inferring it,
+// and both markers are ones renderMarkdown already renders. Kept to one clause
+// each — this prompt is billed on every turn of every session.
+const HAIKU_PROMPT = 'Below is the last assistant message from a coding session. In at most two sentences, say what the session is doing. Wrap the thing being worked on in **bold** and any file, function, or flag in backticks. Reply with the summary only.'
 const HAIKU_UNAVAILABLE_NOTE = 'summaries unavailable — showing raw transcript text'
 // The key is read once at startup, so adding one to .env now takes a restart to
 // pick up. Saying so is the whole fix: the note is how the operator finds out
@@ -188,6 +192,7 @@ const ESC_REVERSE_OFF = '\x1b[27m'
 // buildFrame wraps around it.
 const ESC_AMBER = '\x1b[33m'
 const ESC_GREEN = '\x1b[32m'
+const ESC_RED = '\x1b[31m'
 const ESC_DIM = '\x1b[2m'
 const ESC_COLOR_OFF = '\x1b[39m'
 const ESC_DIM_OFF = '\x1b[22m'
@@ -206,6 +211,22 @@ const MD_ITALIC_ON = '\x1b[3m'
 const MD_ITALIC_OFF = '\x1b[23m'
 const MD_CODE_ON = ESC_DIM
 const MD_CODE_OFF = ESC_DIM_OFF
+
+// Typed tokens inside the SUMMARY prose. A path is context the eye skips over
+// until it needs it, so it recedes; a count is the number the summary exists to
+// report, so it advances. PR/issue refs take the amber the waiting marker
+// already owns — the palette has three colours, green and red are spent on
+// outcomes, and amber is the only one left that is not the dim used for chrome.
+const TOK_PATH_ON = ESC_DIM
+const TOK_PATH_OFF = ESC_DIM_OFF
+const TOK_REF_ON = ESC_AMBER
+const TOK_REF_OFF = ESC_COLOR_OFF
+const TOK_NUM_ON = MD_BOLD_ON
+const TOK_NUM_OFF = MD_BOLD_OFF
+const TOK_GOOD_ON = ESC_GREEN
+const TOK_GOOD_OFF = ESC_COLOR_OFF
+const TOK_BAD_ON = ESC_RED
+const TOK_BAD_OFF = ESC_COLOR_OFF
 
 // Set once at startup rather than read per cell: --once must stay byte-stable
 // for the smoke test, and the exported render seam is uncoloured for the same
@@ -1034,8 +1055,16 @@ function stripControls(text) {
 // bytes, so escapes written first would be stripped right back out. Truncation
 // to SUMMARY_MAX_CHARS then runs against the styled string, which is why
 // truncate counts display width rather than code points.
+//
+// Pass order is markdown, then paths, then quantities, then outcome words, and
+// it is the one thing here that is not arbitrary. The model's own markers are
+// the most explicit signal in the text, so they claim their spans first; a path
+// claims next because `error-handler.js` is one filename rather than a filename
+// with a red word in it, and the same for `2.3s` versus a bare `3`. Every pass
+// after the first skips text already inside an escape, so a span is styled once
+// and the ordering above is what decides by whom.
 function sanitize(text) {
-  return truncate(renderMarkdown(stripControls(text)), SUMMARY_MAX_CHARS)
+  return truncate(styleTokens(renderMarkdown(stripControls(text))), SUMMARY_MAX_CHARS)
 }
 
 // `**bold**`, `` `code` ``, `*italic*`. Fenced/indented blocks and links are
@@ -1055,6 +1084,44 @@ function renderMarkdown(text) {
     if (bold !== undefined) return colorEnabled ? MD_BOLD_ON + bold + MD_BOLD_OFF : bold
     return colorEnabled ? MD_ITALIC_ON + italic + MD_ITALIC_OFF : italic
   })
+}
+
+// A path needs a separator or a known extension to count, so a bare word never
+// becomes one; `docs/reviews/foo.md` and `dash.js:1092` both qualify, and the
+// optional `:line` is part of the same token so the number inside it is not
+// read as a quantity later. Trailing sentence punctuation is left outside.
+const TOK_PATH_RE = /(?:[\w.@~-]+\/)+[\w@-]+(?:\.[\w@-]+)*(?::\d+)?|[\w@-]+\.(?:js|cjs|mjs|ts|tsx|jsx|json|md|py|sh|yml|yaml|toml|html|css|txt|lock)(?::\d+)?/g
+const TOK_REF_RE = /#\d+/g
+// The unit is required: a bare number is as often an ordinal as a measurement,
+// and `2` bolded mid-sentence reads as a typo. Only the number takes the bold —
+// the unit is the label, and bolding both makes the phrase shout.
+const TOK_NUM_RE = /\b(\d+(?:\.\d+)?)(%|s\b|ms\b|m\b|h\b|x\b| ?[KMGT]?B\b|(?= (?:findings?|files?|rows?|tests?|errors?|issues?|commits?|lines?|sessions?|agents?|units?|PRs?|seconds?|minutes?|hours?)\b))/g
+const TOK_GOOD_RE = /\b(?:green|passed|complete|completed|done|fixed|verified|success|succeeded|merged)\b/gi
+const TOK_BAD_RE = /\b(?:failed|failing|error|errors|broken|blocked|wrong|bug|bugs|red|crash|crashed)\b/gi
+
+// Splits on SGR so a pass only ever rewrites the runs that carry no styling
+// yet, which is what makes "first pass wins" hold without tracking offsets.
+// The escapes themselves pass through untouched, so display width is unchanged
+// and every opener the passes add is one truncateStyled already knows how to
+// close.
+function styleUnstyled(text, re, wrap) {
+  if (!colorEnabled) return text
+  const open = []
+  const out = text.split(SGR_SPLIT_RE).map((token) => {
+    if (token === '') return token
+    if (SGR_ONE_RE.test(token)) { applyStyleToken(open, token); return token }
+    return open.length > 0 ? token : token.replace(re, wrap)
+  })
+  return out.join('')
+}
+
+function styleTokens(text) {
+  if (!colorEnabled || !text) return text
+  let out = styleUnstyled(text, TOK_PATH_RE, (m) => TOK_PATH_ON + m + TOK_PATH_OFF)
+  out = styleUnstyled(out, TOK_REF_RE, (m) => TOK_REF_ON + m + TOK_REF_OFF)
+  out = styleUnstyled(out, TOK_NUM_RE, (m, num, unit) => TOK_NUM_ON + num + TOK_NUM_OFF + unit)
+  out = styleUnstyled(out, TOK_GOOD_RE, (m) => TOK_GOOD_ON + m + TOK_GOOD_OFF)
+  return styleUnstyled(out, TOK_BAD_RE, (m) => TOK_BAD_ON + m + TOK_BAD_OFF)
 }
 
 // --- Sort and naming -----------------------------------------------------
@@ -1146,10 +1213,15 @@ const SGR_ONE_RE = /^\x1b\[[0-9;]*m$/
 // Openers are tracked, not closers: SGR 22 ends bold *and* dim, so a closer
 // alone cannot say which of the two it shut, and reopening across a wrap needs
 // to know exactly that.
+// Keyed by opener string, so the typed-token openers that reuse a markdown or
+// state colour (dim, bold) collapse onto the same entry rather than adding one.
 const SGR_CLOSERS = new Map([
   [MD_BOLD_ON, MD_BOLD_OFF],
   [MD_ITALIC_ON, MD_ITALIC_OFF],
   [MD_CODE_ON, MD_CODE_OFF],
+  [TOK_REF_ON, TOK_REF_OFF],
+  [TOK_GOOD_ON, TOK_GOOD_OFF],
+  [TOK_BAD_ON, TOK_BAD_OFF],
 ])
 
 
