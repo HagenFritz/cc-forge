@@ -24,6 +24,9 @@ Sanitize the slug before using it in any filename: lowercase it, replace every c
   - **Wording gate (secondary):** any finding that recommends deleting, removing, or gitignoring a protected file, even if `File(s)` names it obliquely.
 - Remove duplicate or overlapping findings. When several reports collapse into one finding, the finding keeps every reporter — see `Raised by:` below.
 - Record `Raised by:` on every finding: the agent name(s) whose report(s) contained it, comma-separated, using the same names the reports were dispatched under (the scratch filenames in `docs/reviews/.raw/<slug>/<agent>.md` when the caller persisted them). A finding merged from three reports lists three names. Never leave it empty and never guess — a report you cannot attribute is listed as `unattributed`.
+  - **Shape:** names separated by a comma and a single space, no trailing comma, no space before a comma, and each name the lowercase-hyphenated dispatch name matching its scratch filename. `unattributed` names one unattributable source, never the whole line: a finding merged from a named report and an unattributable one reads `**Raised by:** correctness-auditor, unattributed`.
+  - **This field is provenance, deliberately unread by the consumers.** No skill displays or branches on it: `/review-walk` presents the finding without it, `/review-sweep` triages without it, `/review-push` does not capture it. It exists so a later analysis of a pile of review docs can compute which reviewers' findings actually get accepted — a question that needs history, not this run. Its correctness still matters: the scratch files it comes from are deleted after synthesis, so a wrong name is never recoverable.
+- **New per-finding fields go below `**Status:**`, never between it and the `### P<X>-<N>:` heading.** `/review-walk` and `/review-sweep` both anchor their edits on that heading-plus-Status pair, so a field inserted between them breaks every status write in both skills.
 - Assign severity: 🔴 P1 (critical — security vulnerabilities, data corruption, breaking changes; blocks merge), 🟡 P2 (important — performance, reliability, significant architecture or quality issues; should fix), 🔵 P3 (nice-to-have — minor improvements, cleanup, docs).
 - Estimate effort for each finding (Small/Medium/Large).
 - Assign exactly one Category, a Confidence + one-line rationale, and a Plain English summary per finding (vocabularies below).
@@ -108,7 +111,7 @@ write a single line: `_None — issues are independent._`
 
 **Category:** [one of: security | correctness | performance | architecture | duplication | maintainability | testing | docs]
 
-**Raised by:** [agent-name, agent-name — every agent whose report contained this finding]
+**Raised by:** [agent-name, agent-name — every agent whose report contained this finding; e.g. `correctness-auditor, adversarial-reviewer` or `correctness-auditor, unattributed`]
 
 **Confidence:** [high | medium | low]
 
