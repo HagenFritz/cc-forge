@@ -70,6 +70,17 @@ const HAIKU_TIMEOUT_MS = 8000
 const HAIKU_RESPONSE_MAX_BYTES = 64 * 1024
 const HAIKU_PROMPT = 'Below is the last assistant message from a coding session. In at most two sentences, say what the session is doing. Reply with the summary only.'
 const HAIKU_UNAVAILABLE_NOTE = 'summaries unavailable — showing raw transcript text'
+// The key is read once at startup, so adding one to .env now takes a restart to
+// pick up. Saying so is the whole fix: the note is how the operator finds out
+// the key is missing, and without this they add it and watch nothing happen.
+const HAIKU_NO_KEY_NOTE = 'summaries unavailable — set ANTHROPIC_API_KEY (or .env) and restart'
+// A runaway ceiling across every session, not a throttle: the per-session
+// pending flag already bounds a healthy session to one call per tick, and
+// measured peak is about half this. What it stops is the case nothing else
+// does — a loop, or a transcript rewritten in place — billing unbounded.
+const HAIKU_MAX_CALLS_PER_MIN = 60
+const HAIKU_RATE_WINDOW_MS = 60_000
+const HAIKU_RATE_NOTE = 'summaries paused — call ceiling hit; resumes within a minute'
 
 const DEFAULT_WIDTH = 80
 const STATE_WIDTH = 8
@@ -489,8 +500,11 @@ function newCacheEntry() {
 function cacheEntryFor(file, st) {
   const cached = summaryCache.get(file)
   // A file that shrank or moved backward in time was rotated or replaced, so
-  // the bytes behind scannedTo are not the ones that were scanned.
-  if (cached && st.size >= cached.scannedTo && st.mtimeMs >= cached.mtimeMs) return cached
+  // the bytes behind scannedTo are not the ones that were scanned. Measured
+  // against the size last recorded rather than the parse cursor: an append
+  // wider than one chunk leaves the cursor behind, and a replacement landing in
+  // that gap would otherwise read as ordinary growth.
+  if (cached && st.size >= cached.size && st.mtimeMs >= cached.mtimeMs) return cached
   const entry = newCacheEntry()
   summaryCache.set(file, entry)
   return entry
@@ -538,6 +552,27 @@ function summaryFor(row) {
 // so every failure here collapses to one fixed note.
 
 let summarizer = null
+// Timestamps of the calls inside the rolling window, oldest first.
+const haikuCalls = []
+
+// Drops what has aged out, then answers whether one more call fits. Called on
+// the paint path, so it stays a shift over a list bounded by the ceiling.
+function haikuRateAllows(now) {
+  while (haikuCalls.length > 0 && now - haikuCalls[0] >= HAIKU_RATE_WINDOW_MS) haikuCalls.shift()
+  return haikuCalls.length < HAIKU_MAX_CALLS_PER_MIN
+}
+
+// Spend, where the poll clock already is. Silent until a call has been made, so
+// a dashboard with no key never shows a counter for a thing it is not doing,
+// and marked at the ceiling because a paused summarizer looks identical to an
+// idle one otherwise.
+function haikuRateCell(now) {
+  if (summarizer === null) return ''
+  while (haikuCalls.length > 0 && now - haikuCalls[0] >= HAIKU_RATE_WINDOW_MS) haikuCalls.shift()
+  if (haikuCalls.length === 0) return ''
+  const capped = haikuCalls.length >= HAIKU_MAX_CALLS_PER_MIN ? ' capped' : ''
+  return `  ·  ${haikuCalls.length}/${HAIKU_MAX_CALLS_PER_MIN} summaries/min${capped}`
+}
 
 // Line-wise, for one key, with readToken's posture: lstat before any open so a
 // symlink is refused rather than followed, a bounded single read rather than
@@ -582,7 +617,7 @@ function readEnvKey(state) {
 function armSummarizer(state) {
   const key = process.env.ANTHROPIC_API_KEY || readEnvKey(state)
   if (!key) {
-    state.summaryNote = HAIKU_UNAVAILABLE_NOTE
+    state.summaryNote = HAIKU_NO_KEY_NOTE
     return
   }
   summarizer = { key, state }
@@ -594,7 +629,17 @@ function armSummarizer(state) {
 // one would silence that session for the life of the process.
 function requestSummary(entry) {
   if (summarizer === null || entry.pending || !entry.text) return
+  const now = Date.now()
+  if (!haikuRateAllows(now)) {
+    summarizer.state.summaryNote = HAIKU_RATE_NOTE
+    return
+  }
+  haikuCalls.push(now)
   entry.pending = true
+  // The turn this request describes. A reply that lands after the transcript
+  // moved on is answering a question no longer on screen, so it is dropped
+  // rather than rendered over the newer turn's tail.
+  const issuedFor = entry.mtimeMs
   const body = JSON.stringify({
     model: HAIKU_MODEL,
     max_tokens: HAIKU_MAX_TOKENS,
@@ -636,10 +681,14 @@ function requestSummary(entry) {
         if (!entry.pending) return
         entry.pending = false
         const text = res.statusCode === 200 ? summaryFromResponse(Buffer.concat(chunks).toString('utf8')) : ''
-        // Through the same sanitize the raw tail takes: the wrap in buildTable
-        // splits on spaces, so an embedded newline would break it.
         if (text) {
-          entry.haiku = sanitize(text)
+          // A reply for a turn the transcript has moved past is dropped rather
+          // than rendered over the newer tail — but the call itself worked, so
+          // it still clears the note.
+          //
+          // Through the same sanitize the raw tail takes: the wrap in buildTable
+          // splits on spaces, so an embedded newline would break it.
+          if (entry.mtimeMs === issuedFor) entry.haiku = sanitize(text)
           // A transient failure must not leave the note up for the process
           // lifetime — one success proves summaries are working again.
           if (summarizer !== null) summarizer.state.summaryNote = null
@@ -690,15 +739,23 @@ const SKILL_BLOCKLIST = new Set([
   'workflows',
 ])
 
-function skillFor(row) {
-  if (row.remote) return ''
+// The one place that knows how to reach a row's scan state. A VM row short-
+// circuits here rather than in each caller, before any path is built: its cwd
+// would otherwise mangle into a real local transcript path.
+function cacheEntryOf(row) {
+  if (row.remote) return null
   const file = transcriptPath(row)
-  if (file === null) return ''
-  const entry = summaryCache.get(file)
+  return file === null ? null : summaryCache.get(file)
+}
+
+function skillFor(row) {
+  const entry = cacheEntryOf(row)
   if (!entry || !entry.lastSkill) return ''
-  const name = entry.lastSkill.replace(/^\//, '')
+  // Stripped before the lookup, not after: the blocklist holds bare names, so
+  // testing a still-namespaced one misses and displays the name it should hide.
+  const name = entry.lastSkill.replace(/^\//, '').replace(/^forge:/, '')
   if (SKILL_BLOCKLIST.has(name)) return ''
-  return truncate(name.replace(/^forge:/, ''), SKILL_WIDTH)
+  return truncate(name, SKILL_WIDTH)
 }
 
 // --- Agents ----------------------------------------------------------------
@@ -708,10 +765,7 @@ function skillFor(row) {
 // count is the size of what is left unpaired and cannot go negative.
 
 function agentsFor(row) {
-  if (row.remote) return '-'
-  const file = transcriptPath(row)
-  if (file === null) return '-'
-  const entry = summaryCache.get(file)
+  const entry = cacheEntryOf(row)
   if (!entry || entry.running.size === 0) return '-'
   return String(entry.running.size)
 }
@@ -720,12 +774,8 @@ function agentsFor(row) {
 // list: applyToolResults deletes a dispatch the moment its result lands, so a
 // finished agent leaves no record to render.
 function agentRosterFor(row) {
-  if (row.remote) return []
-  const file = transcriptPath(row)
-  if (file === null) return []
-  const entry = summaryCache.get(file)
-  if (!entry) return []
-  return Array.from(entry.running.values())
+  const entry = cacheEntryOf(row)
+  return entry ? Array.from(entry.running.values()) : []
 }
 
 // `forge:review:correctness-auditor` is 33 characters of which 13 say nothing
@@ -768,7 +818,14 @@ function scanDelta(file, entry, size) {
   // mid-character, and decoding that would substitute a replacement character
   // whose byte length is not the one that was read.
   const end = buf.lastIndexOf(0x0a, read - 1)
-  if (end === -1) return
+  if (end === -1) {
+    // A partial line still being written is caught up next tick. A whole chunk
+    // with no newline in it is a single line wider than the cap, and waiting for
+    // one would re-read the same bytes forever: skip it and resync on the next
+    // newline, losing that line rather than the rest of the session.
+    if (read >= SCAN_CHUNK_MAX_BYTES) entry.scannedTo = start + read
+    return
+  }
   for (const line of buf.toString('utf8', 0, end).split('\n')) applyScanLine(entry, line)
   // Only after every line parsed, so a throw mid-chunk leaves scannedTo where it
   // was and the same bytes are rescanned rather than silently skipped.
@@ -800,8 +857,11 @@ function applyDispatches(entry, record) {
     if (entry.orphanDone.delete(block.id)) continue
     const input = block.input && typeof block.input === 'object' ? block.input : {}
     entry.running.set(block.id, {
-      type: typeof input.subagent_type === 'string' ? input.subagent_type : 'general-purpose',
-      description: typeof input.description === 'string' ? input.description : '',
+      // Sanitized and capped here rather than at render, the same boundary
+      // validateRows guards: an agent's description is whatever the dispatching
+      // session typed, and the roster prints it verbatim once expanded.
+      type: typeof input.subagent_type === 'string' ? stripControls(input.subagent_type.slice(0, PAYLOAD_STRING_MAX)) : 'general-purpose',
+      description: typeof input.description === 'string' ? stripControls(input.description.slice(0, PAYLOAD_STRING_MAX)) : '',
       dispatchedAt: Date.parse(record.timestamp) || 0,
     })
   }
@@ -812,7 +872,9 @@ function applyUserScanLine(entry, record) {
   const text = userTextOf(record)
   if (!text) return
   const command = /<command-name>([^<]*)<\/command-name>/.exec(text)
-  if (command) entry.lastSkill = command[1].trim()
+  // Sanitized at the parse boundary, the way validateRows treats a VM payload:
+  // a transcript carries whatever an agent read, and the cell is drawn every tick.
+  if (command) entry.lastSkill = stripControls(command[1]).trim()
   applyCompletion(entry, text)
 }
 
@@ -1093,8 +1155,6 @@ function buildTable(rows, width, expanded, now) {
     if (cols.showSummary) cells.push(head)
     rowLineIndex.push(lines.length)
     lines.push(renderLine(cells, widths, width))
-    // Before the roster: the continuation is part of the row above it, and the
-    // agent lines belong under the whole of it.
     if (overflow) lines.push(renderLine(cells.map(() => '').fill(overflow, cells.length - 1), widths, width))
     if (row.id === expanded) lines.push(...agentLines(row, width, now))
   }
@@ -1113,9 +1173,8 @@ function splitSummary(summary, summaryWidth) {
   return [chars.slice(0, cut).join(''), chars.slice(space > 0 ? cut + 1 : cut).join('').trim()]
 }
 
-// One line per running agent, under the row it belongs to. No status word and
-// no glyph distinction: every line here is running by construction, so a state
-// column would repeat itself down the whole roster.
+// No status word and no glyph distinction: every line here is running by
+// construction, so a state column would repeat itself down the whole roster.
 function agentLines(row, width, now) {
   return agentRosterFor(row)
     .map((agent) => {
@@ -1223,7 +1282,7 @@ function frameLines(state, width, now) {
     const age = formatAge(Math.max(0, now - state.lastGoodAt))
     lines.push(`polled ${stamp(now)}  ·  ${ERROR_BODIES[state.error] || state.error} (last good poll ${age} ago)`)
   } else {
-    lines.push(`polled ${stamp(now)}  ·  ${state.lastRows.length} session${state.lastRows.length === 1 ? '' : 's'}`)
+    lines.push(`polled ${stamp(now)}  ·  ${state.lastRows.length} session${state.lastRows.length === 1 ? '' : 's'}${haikuRateCell(now)}`)
   }
   lines.push(...vmFooterLines(state))
   if (state.transient) lines.push(state.transient)
@@ -2418,15 +2477,19 @@ if (require.main === module) main()
 // moveHighlight, buildTable's row-to-line map, and reconcileExpanded covers
 // movement and expansion without a pty.
 //
-// Not exported, deliberately: skillFor, agentsFor, and the scan reducers
-// (applyScanLine and the three it dispatches to). They look testable, but
-// skillFor and agentsFor take a row rather than a cache entry — each rebuilds a
-// path against PROJECTS_DIR and reads the module-private summaryCache, so
-// reaching either means laying down real transcript files, which is a fixture
-// seam and not the pure-function one it resembles. The reducers under them are
-// pure, but nothing exported reaches them, so exporting one without the rest
-// buys no coverage. Making scanDelta's cache injectable is what would change
-// this; until then they are inspection-only, alongside refreshTabOrder.
+// scanDelta and newCacheEntry are the seam for the counting logic, which is the
+// one part of this file whose wrong answer is silent: a miscount renders as a
+// plausible number and has shipped that way once already. scanDelta takes the
+// entry it mutates, so a caller supplies its own and drives the reducers under
+// it — dispatch pairing, orphan reclamation, the chunk boundary — against a
+// written transcript, with no cache and no projects tree involved.
+//
+// Not exported, deliberately: skillFor and agentsFor. Both take a row rather
+// than a cache entry, rebuilding a path against PROJECTS_DIR and reading the
+// module-private summaryCache, so reaching either means laying down real
+// transcript files under a simulated tree — a fixture seam, not the
+// pure-function one they resemble. They are inspection-only, alongside
+// refreshTabOrder.
 module.exports = {
   validateVmRow,
   applyVmEvent,
@@ -2449,4 +2512,6 @@ module.exports = {
   moveHighlight,
   buildTable,
   reconcileExpanded,
+  scanDelta,
+  newCacheEntry,
 }
