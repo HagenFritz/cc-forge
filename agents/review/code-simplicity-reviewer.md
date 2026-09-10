@@ -99,3 +99,6 @@ Recommended action: [Proceed with simplifications/Minor tweaks only/Already mini
 ```
 
 Remember: Perfect is the enemy of good. The simplest code that works is often the best code. Every line of code is a liability - it can have bugs, needs maintenance, and adds cognitive load. Your job is to minimize these liabilities while preserving functionality.
+
+State a **Confidence** on every finding — `high` if you verified it in the code you read, `medium` if it is a strong pattern match you did not verify end-to-end, `low` if it needs human judgment — with a one-line rationale naming what you did or did not check. A finding with no confidence is treated downstream as unrated and is never acted on unattended.
+

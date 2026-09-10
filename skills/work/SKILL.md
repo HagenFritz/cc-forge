@@ -196,12 +196,12 @@ This command takes a work document (plan, specification, or todo file) and execu
    - Follow project coding standards (see CLAUDE.md)
    - When in doubt, grep for similar implementations
 
-4. **Test Continuously**
+4. **Write Tests, Don't Run Them**
 
-   - Run relevant tests after each significant change
-   - Don't wait until the end to test
-   - Fix failures immediately
-   - Add new tests for new functionality
+   - **Never run the test suite during the dispatch loop** — not per unit, not per "significant
+     change", not a narrowed subset. The suite runs exactly once, in Phase 3, before submitting.
+     Per-unit runs bog the loop down for feedback the Phase 3 run gives anyway.
+   - Add new tests for new functionality as each unit lands; they are part of the unit's diff.
    - **Unit tests with mocks prove logic in isolation. Integration tests with real objects prove the layers work together.** If your change touches callbacks, middleware, or error handling — you need both.
 
 5. **Simplify as You Go**
@@ -322,11 +322,11 @@ Most plans should use subagent dispatch from standard mode. Agent teams consume 
 - Load those references and follow them
 - Don't reinvent - match what exists
 
-### Test As You Go
+### Tests Ship With the Unit, and Run Once
 
-- Run tests after each change, not at the end
-- Fix failures immediately
-- Continuous testing prevents big surprises
+- Every unit lands with the tests its change needs
+- The suite runs once, in Phase 3, not during the loop
+- Fix failures when that run surfaces them
 
 ### Quality is Built In
 

@@ -70,3 +70,6 @@ When analyzing code:
 - Consider the project's maturity and technical debt tolerance
 
 If you encounter project-specific patterns or conventions (especially from AGENTS.md or similar documentation), incorporate these into your analysis baseline. Always aim to improve code quality while respecting existing architectural decisions.
+
+State a **Confidence** on every finding — `high` if you verified it in the code you read, `medium` if it is a strong pattern match you did not verify end-to-end, `low` if it needs human judgment — with a one-line rationale naming what you did or did not check. A finding with no confidence is treated downstream as unrated and is never acted on unattended.
+

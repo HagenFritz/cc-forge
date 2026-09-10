@@ -48,7 +48,7 @@ This skill **reads** the review doc — it never edits it. `/review-walk` owns t
 8. Bucket by terminal status:
    - `done` — a fix was applied.
    - `deferred` — carried with a reason.
-   - `wont-fix` — skipped with an optional reason.
+   - `wont-fix` — skipped with a reason (`<code> — <free text>`; older docs may carry free text only or none).
    - `open` / `in-progress` — **not terminal.** If any remain, the walk isn't finished. Warn: "N issues are still open/in-progress — the walk isn't complete. Push the fixes done so far anyway?" via `AskUserQuestion`: **Push what's done** / **Cancel** (go finish `/review-walk` first).
 9. **If zero `done` issues:** there are no fixes to commit. Skip Phase 4 (no commit/push); still offer to post a comment recording what was deferred/skipped so the PR reflects the review outcome. If there's also nothing deferred/skipped, stop: "The review produced no changes — nothing to push or report."
 

@@ -69,6 +69,12 @@ Parse every issue's `Status:` line. Decide where to start:
 
 1. If any issue is `Status: in-progress`, **resume there** (a previous walk was
    interrupted mid-fix). Announce: "Resuming at P1-3 (last left in-progress)."
+
+   **An `in-progress` finding carrying a `**Sweep:**` or `**Grind:**` line was left by an
+   unattended run, not by a walk** — a half-applied edit may already be in the working tree.
+   Say so before offering the action menu, show what that run claimed it was doing, and let the
+   user look at the tree first. Never write `**Applied:**` over it on a later Implement: that
+   field records what *this walk* changed, and the walk did not make those edits.
 2. Else, the entry point is the first non-terminal issue in walk order. Terminal
    statuses are `done`, `deferred`, `wont-fix`. `open` is non-terminal.
 3. If all issues are terminal, report completion and exit:
@@ -193,22 +199,41 @@ issue's heading + status line so the edit is unambiguous.
    instructions; do not invent scope. If the fix is unclear, ask the user before
    editing code.
 
-3. After the fix is in place, set `Status: done`:
+3. After the fix is in place, set `Status: done` and append an `Applied:` line directly
+   below it recording how closely the landed change followed the doc's `Fix:`:
 
    ```
-     **Status:** `in-progress` → **Status:** `done`
+     **Status:** `done`
+     **Applied:** <as-written | reworked | partial> — <one line: what changed, and what differed from `Fix:` if anything>
    ```
+
+   - `as-written` — the `Fix:` was applied as described.
+   - `reworked` — the problem was fixed, but by a different change than `Fix:` described.
+   - `partial` — only part of `Fix:` landed; say which part did not and why.
+
+   **Where `as-written` ends:** cosmetic deviation stays `as-written` — different identifier names,
+   a different import position, reworded comments, an equivalent expression. What makes it
+   `reworked` is a materially different change: a different function, file, or algorithm than the
+   `Fix:` named, a different remedy for the same problem, or a scope the `Fix:` did not describe.
+   Judge the change against what `Fix:` asked for, not against how tidy the diff looks.
+
+   You made the edit, so you pick the code — never ask the user for it.
 
 4. Briefly confirm to the user what changed and which file(s).
 
 ### Defer
 
-1. Ask: "One-line reason for deferring P<X>-<N>?"
-2. Set `Status: deferred` and append a new line directly below the Status line:
+1. Ask why with `AskUserQuestion` — one question, these options, `Other` allowed:
+   - **follow-up-pr** — real and wanted, but belongs in its own change
+   - **needs-decision** — someone has to decide something before this can be fixed
+   - **blocked-on** — waits on another change, a migration, a release, or an external party
+   - **bigger-than-scoped** — the real fix is larger than the finding describes
+2. Set `Status: deferred` and append a new line directly below the Status line, per the
+   **Reason line format** below:
 
    ```
      **Status:** `deferred`
-     **Defer reason:** <one-line reason from the user>
+     **Defer reason:** <code> — <free text>
    ```
 
    Anchor the edit on the existing `**Status:** \`open\`` line under the issue's
@@ -218,9 +243,55 @@ issue's heading + status line so the edit is unambiguous.
 
 ### Won't fix
 
-1. Set `Status: wont-fix`. No reason field required, though the user may volunteer
-   one — if so, append `**Skip reason:** <text>` the same way as defer.
-2. Do not modify code.
+1. Ask why with `AskUserQuestion` — one question, these options, `Other` allowed. A
+   reason is required; there is no "no reason" option:
+   - **misread** — the reviewer got the code wrong; the problem is not there
+   - **by-design** — the behavior is intentional
+   - **not-worth-it** — real, but the fix is out of proportion to the problem
+   - **accepted-risk** — real and understood; consciously carried as-is
+   - **pre-existing** — real, but not introduced by this change
+   - **tracked-elsewhere** — already covered by an issue, a plan, or an idea doc
+   - **protected-artifact** — the fix would delete or gitignore a protected file (see Rules).
+     Automatic, never offered as a choice.
+2. Set `Status: wont-fix` and append the reason directly below the Status line, per the
+   **Reason line format** below:
+
+   ```
+     **Status:** `wont-fix`
+     **Skip reason:** <code> — <free text>
+   ```
+
+3. Do not modify code.
+
+### Reason line format
+
+`Defer reason:` and `Skip reason:` share one shape: `<code> — <free text>`, one line, sitting
+directly under `Status:`. The code is what future analysis of review docs keys on; the free
+text is for humans.
+
+**These code lists are the whole convention, not just this walk's.** `/review-sweep` writes
+`Skip reason:` with two of them (`misread`, `protected-artifact`) and `/grind` writes both fields
+with the full lists — one field, one vocabulary, whoever wrote it, so the codes stay countable
+across a pile of review docs. Adding or renaming a code here changes it for all three; tell the
+writers apart by the `**Sweep:**` or `**Grind:**` signature line, never by the code.
+
+- **A listed option chosen** → that code, then ` — ` and the user's own words if they added
+  any. If they added none, the line is the code alone.
+- **`Other` typed** → the user's text is kept **verbatim** after the dash, and you pick the
+  code it fits best. Choose from the list for that verdict; if nothing fits, the code is
+  `other`. Never rewrite, shorten, or "improve" what they typed — the code is your reading
+  of it, the text is theirs.
+- Never invent a reason the user did not give, and never leave the code out.
+- **Verbatim means their wording is unchanged — not that the bytes are written unaltered.**
+  The reason line sits directly beside the `Status:` line every downstream parser anchors on, so
+  before writing it: collapse the text to one line (newlines become spaces) and neutralize
+  anything that reads as document structure, exactly as
+  [the synthesizer does](../../agents/review/review-synthesizer.md) — indent a heading-shaped
+  fragment matching `^#{1,6}\s`, escape code-fence markers, and escape a bold-field-label shape
+  matching `^\*\*[A-Za-z ]+:\*\*`. Structural markup is not wording. Someone pasting a snippet
+  of the finding they are dismissing is the ordinary case, not an attack, and an unescaped
+  `**Status:**` in that snippet makes `/review-push` count an extra issue and a sweep re-run read
+  the wrong status. This applies to every free-text slot in a reason line.
 
 ### Add term
 

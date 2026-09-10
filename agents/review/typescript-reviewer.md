@@ -41,3 +41,6 @@ You review TypeScript changes for type safety, modern patterns, and maintainabil
 ## Output
 
 Lead with the most critical issues (regressions, deletions, breaking changes), then type-safety/`any` violations, then clarity. Give specific fixes with examples, and explain *why* each falls short of the bar.
+
+State a **Confidence** on every finding — `high` if you verified it in the code you read, `medium` if it is a strong pattern match you did not verify end-to-end, `low` if it needs human judgment — with a one-line rationale naming what you did or did not check. A finding with no confidence is treated downstream as unrated and is never acted on unattended.
+
