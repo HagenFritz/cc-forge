@@ -85,7 +85,9 @@ const HAIKU_RATE_NOTE = 'summaries paused — call ceiling hit; resumes within a
 const DEFAULT_WIDTH = 80
 const STATE_WIDTH = 8
 const STATE_CAP = 16
-const AGE_WIDTH = 6
+// Five, not six: formatAge maxes at `1h04` (four), and the extra column is
+// breathing room before the next gutter rather than slack inside the cell.
+const AGE_WIDTH = 5
 const NAME_CAP = 24
 const NAME_MIN = 8
 const DIR_CAP = 30
@@ -95,7 +97,10 @@ const DIR_MIN = 8
 const SKILL_WIDTH = 14
 const AGENTS_WIDTH = 6
 const SUMMARY_MIN = 10
-const COLUMN_GAP = 4
+// Two, not four: at four the columns sat 10-24 display columns apart and the
+// table read as scattered islands rather than one grid. The reclaimed width
+// goes to SUMMARY, which is the only column that grows to fill.
+const COLUMN_GAP = 2
 
 // The expanded agent roster. Indented under its session rather than aligned to
 // the table's columns: these lines answer a different question than the row
@@ -175,6 +180,37 @@ const ESC_TITLE_RESET = '\x1b]0;\x07'
 
 const ESC_REVERSE_ON = '\x1b[7m'
 const ESC_REVERSE_OFF = '\x1b[27m'
+
+// Colour is additive only: every cell it touches already reads correctly in
+// plain text (`waiting!` keeps its trailing marker), so a NO_COLOR terminal,
+// a pipe, or --once loses emphasis and nothing else. SGR 39/22 rather than 0
+// so a reset inside a highlighted line does not also cancel the reverse video
+// buildFrame wraps around it.
+const ESC_AMBER = '\x1b[33m'
+const ESC_GREEN = '\x1b[32m'
+const ESC_DIM = '\x1b[2m'
+const ESC_COLOR_OFF = '\x1b[39m'
+const ESC_DIM_OFF = '\x1b[22m'
+
+// Summaries are chat prose, so they arrive carrying `**bold**`, `` `code` ``,
+// and the odd `*italic*`. Rendered as SGR rather than stripped to punctuation.
+// Code spans are dim rather than reverse-video: the table already spends
+// reverse video on the highlighted row, and a second reverse span inside it
+// inverts back to normal and reads as a rendering fault. Single-asterisk
+// italics use SGR 3, which a minority of terminals ignore — but the failure
+// mode there is unstyled text, not visible punctuation, so it is still an
+// improvement on the literal asterisks it replaces.
+const MD_BOLD_ON = '\x1b[1m'
+const MD_BOLD_OFF = '\x1b[22m'
+const MD_ITALIC_ON = '\x1b[3m'
+const MD_ITALIC_OFF = '\x1b[23m'
+const MD_CODE_ON = ESC_DIM
+const MD_CODE_OFF = ESC_DIM_OFF
+
+// Set once at startup rather than read per cell: --once must stay byte-stable
+// for the smoke test, and the exported render seam is uncoloured for the same
+// reason arming the summarizer is a live-mode act.
+let colorEnabled = false
 
 const KEY_CTRL_C = 0x03
 const KEY_ESC = 0x1b
@@ -951,10 +987,14 @@ function scanTail(fd, size, want) {
   const start = size - length
   const buf = Buffer.allocUnsafe(length)
   const read = fs.readSync(fd, buf, 0, length, start)
-  const lines = buf.toString('utf8', 0, read).split('\n')
-  // A tail that starts mid-file starts mid-line; the last line may be
-  // half-written. Both are dropped rather than parsed.
-  if (start > 0) lines.shift()
+  // The boundary is found in bytes, not in the decoded string, for the reason
+  // scanDelta does the same: `start` is an arbitrary byte offset that can land
+  // mid-character, and decoding the whole buffer first turns that character
+  // into a replacement one — which then survives into the summary, since the
+  // damage is already in the string by the time the partial line is dropped.
+  const from = start > 0 ? buf.indexOf(0x0a, 0) + 1 : 0
+  if (start > 0 && from === 0) return ''
+  const lines = buf.toString('utf8', from, read).split('\n')
   for (let i = lines.length - 1; i >= 0; i--) {
     const text = assistantTextOf(lines[i])
     if (text) return text
@@ -990,8 +1030,31 @@ function stripControls(text) {
     .trim()
 }
 
+// Markdown is rendered after stripControls, never before: that pass deletes ESC
+// bytes, so escapes written first would be stripped right back out. Truncation
+// to SUMMARY_MAX_CHARS then runs against the styled string, which is why
+// truncate counts display width rather than code points.
 function sanitize(text) {
-  return truncate(stripControls(text), SUMMARY_MAX_CHARS)
+  return truncate(renderMarkdown(stripControls(text)), SUMMARY_MAX_CHARS)
+}
+
+// `**bold**`, `` `code` ``, `*italic*`. Fenced/indented blocks and links are
+// deliberately not handled — stripControls has already collapsed the text to a
+// single line, where those shapes no longer exist as such.
+//
+// One pass, ordered: the bold pattern is tried before the italic one so `**x**`
+// cannot be read as an empty italic wrapping `*x*`. Under NO_COLOR or a pipe
+// the markers are removed rather than left as literal punctuation — the point
+// is to stop showing them, and a plain terminal still gets the prose.
+const MD_RE = /`([^`\n]+)`|\*\*(\S(?:[^*\n]*\S)?)\*\*|\*(\S(?:[^*\n]*\S)?)\*/g
+
+function renderMarkdown(text) {
+  if (!text || (!text.includes('*') && !text.includes('`'))) return text
+  return text.replace(MD_RE, (match, code, bold, italic) => {
+    if (code !== undefined) return colorEnabled ? MD_CODE_ON + code + MD_CODE_OFF : code
+    if (bold !== undefined) return colorEnabled ? MD_BOLD_ON + bold + MD_BOLD_OFF : bold
+    return colorEnabled ? MD_ITALIC_ON + italic + MD_ITALIC_OFF : italic
+  })
 }
 
 // --- Sort and naming -----------------------------------------------------
@@ -1075,17 +1138,92 @@ function shortenDir(cwd) {
   return cwd
 }
 
-function truncate(text, width) {
-  if (width <= 0) return ''
-  const chars = Array.from(text)
-  if (chars.length <= width) return text
-  if (width === 1) return '…'
-  return chars.slice(0, width - 1).join('') + '…'
+const SGR_RE = /\x1b\[[0-9;]*m/g
+const SGR_SPLIT_RE = /(\x1b\[[0-9;]*m)/
+const SGR_ONE_RE = /^\x1b\[[0-9;]*m$/
+// Opener -> its own closer, so truncateStyled can shut exactly what markdown
+// rendering opened without a blanket reset cancelling buildFrame's reverse video.
+// Openers are tracked, not closers: SGR 22 ends bold *and* dim, so a closer
+// alone cannot say which of the two it shut, and reopening across a wrap needs
+// to know exactly that.
+const SGR_CLOSERS = new Map([
+  [MD_BOLD_ON, MD_BOLD_OFF],
+  [MD_ITALIC_ON, MD_ITALIC_OFF],
+  [MD_CODE_ON, MD_CODE_OFF],
+])
+
+
+// `open` is a stack of the openers still in effect. A closer pops the opener it
+// shuts, matched by that opener's own closer rather than by identity.
+function applyStyleToken(open, token) {
+  if (SGR_CLOSERS.has(token)) { open.push(token); return }
+  for (let i = open.length - 1; i >= 0; i--) {
+    if (SGR_CLOSERS.get(open[i]) === token) { open.splice(i, 1); return }
+  }
 }
 
+function closersFor(open) {
+  let out = ''
+  for (let i = open.length - 1; i >= 0; i--) out += SGR_CLOSERS.get(open[i])
+  return out
+}
+
+function displayWidth(text) {
+  return Array.from(text.replace(SGR_RE, '')).length
+}
+
+function truncate(text, width) {
+  if (width <= 0) return ''
+  if (!SGR_RE.test(text)) {
+    SGR_RE.lastIndex = 0
+    const chars = Array.from(text)
+    if (chars.length <= width) return text
+    if (width === 1) return '…'
+    return chars.slice(0, width - 1).join('') + '…'
+  }
+  SGR_RE.lastIndex = 0
+  return truncateStyled(text, width)
+}
+
+// The styled path counts columns, not code points: markdown rendering puts
+// zero-width escapes inside the text, and a cut between an opening and a
+// closing one would bleed bold into the rest of the frame — so whatever is
+// still open at the cut is closed on the way out.
+function truncateStyled(text, width) {
+  if (displayWidth(text) <= width) return text
+  const budget = width === 1 ? 1 : width - 1
+  let out = ''
+  let shown = 0
+  const open = []
+  for (const token of text.split(SGR_SPLIT_RE)) {
+    if (token === '') continue
+    if (SGR_ONE_RE.test(token)) {
+      applyStyleToken(open, token)
+      out += token
+      continue
+    }
+    for (const ch of token) {
+      if (shown === budget) break
+      out += ch
+      shown++
+    }
+    if (shown === budget) break
+  }
+  const closes = closersFor(open)
+  return width === 1 ? closes + '…' : out + closes + '…'
+}
+
+
 function pad(text, width) {
-  const len = Array.from(text).length
+  const len = displayWidth(text)
   return len >= width ? text : text + ' '.repeat(width - len)
+}
+
+// The mirror of pad, for the two numeric columns. `13s` and `1h04` only line up
+// on their units when the short one is the padded one.
+function padLeft(text, width) {
+  const len = displayWidth(text)
+  return len >= width ? text : ' '.repeat(width - len) + text
 }
 
 function layout(rows, width) {
@@ -1115,35 +1253,66 @@ function layout(rows, width) {
   return { stateWidth, nameWidth, showSkill: false, dirWidth, showDir: dirWidth >= DIR_MIN, showSummary: false, summaryWidth: 0 }
 }
 
-function renderLine(cells, cols, width) {
+// `right` is a parallel array of booleans, one per column; absent means every
+// column is left-aligned, which is what every caller but buildTable wants.
+function renderLine(cells, cols, width, right) {
   const parts = []
   for (let i = 0; i < cells.length; i++) {
-    parts.push(i === cells.length - 1 ? truncate(cells[i], cols[i]) : pad(truncate(cells[i], cols[i]), cols[i]))
+    const cell = truncate(cells[i], cols[i])
+    const last = i === cells.length - 1
+    parts.push(right && right[i] ? padLeft(cell, cols[i]) : last ? cell : pad(cell, cols[i]))
   }
   return truncate(parts.join(' '.repeat(COLUMN_GAP)).replace(/\s+$/, ''), width)
+}
+
+// Applied to an already-padded string, never before: truncate and pad count
+// code points, and an escape is code points that occupy no columns, so
+// colouring first would leave every column short by the escape's length.
+function colorize(padded, on, off) {
+  return colorEnabled ? on + padded + off : padded
+}
+
+function colorState(padded, stateCell) {
+  if (stateCell === WAITING_LABEL) return colorize(padded, ESC_AMBER, ESC_COLOR_OFF)
+  if (stateCell === 'busy') return colorize(padded, ESC_GREEN, ESC_COLOR_OFF)
+  if (stateCell === VM_STALE_LABEL) return colorize(padded, ESC_DIM, ESC_DIM_OFF)
+  return padded
 }
 
 function buildTable(rows, width, expanded, now) {
   const cols = layout(rows, width)
   const widths = [cols.stateWidth, AGE_WIDTH, cols.nameWidth]
   const headers = ['STATE', 'AGE', 'NAME']
+  // AGE and AGENTS are numerics: right-aligned so `13s` and `1h04` line up on
+  // their units. The header travels with the column so the label sits over its
+  // own values rather than over the padding beside them.
+  const right = [false, true, false]
   if (cols.showSkill) {
     widths.push(SKILL_WIDTH)
     headers.push('SKILL')
+    right.push(false)
     widths.push(AGENTS_WIDTH)
     headers.push('AGENTS')
+    right.push(true)
   }
   if (cols.showDir) {
     widths.push(cols.dirWidth)
     headers.push('DIR')
+    right.push(false)
   }
   if (cols.showSummary) {
     widths.push(cols.summaryWidth)
     headers.push('SUMMARY')
+    right.push(false)
   }
 
-  const lines = [renderLine(headers, widths, width), '']
+  const lines = [colorize(renderLine(headers, widths, width, right), ESC_DIM, ESC_DIM_OFF), '']
   const rowLineIndex = []
+  // Summed off the widths array rather than re-derived from cols: the columns
+  // before AGENTS are optional and sized per frame, and two expressions for the
+  // same offset is exactly how they drift apart.
+  const agentsIdx = 4
+  const agentsAt = widths.slice(0, agentsIdx).reduce((n, c) => n + c + COLUMN_GAP, 0)
   for (const row of rows) {
     const cells = [row.stateCell, row.ageCell, row.nameCell]
     if (cols.showSkill) {
@@ -1154,11 +1323,32 @@ function buildTable(rows, width, expanded, now) {
     const [head, overflow] = cols.showSummary ? splitSummary(row.summary, cols.summaryWidth) : ['', '']
     if (cols.showSummary) cells.push(head)
     rowLineIndex.push(lines.length)
-    lines.push(renderLine(cells, widths, width))
-    if (overflow) lines.push(renderLine(cells.map(() => '').fill(overflow, cells.length - 1), widths, width))
+    // Rightmost span first: recolorSpan counts code points, and an escape
+    // inserted on the left would shift every offset to its right.
+    let line = renderLine(cells, widths, width, right)
+    if (cols.showSkill && row.agentsCell === '-') {
+      line = recolorSpan(line, agentsAt, AGENTS_WIDTH, (padded) => colorize(padded, ESC_DIM, ESC_DIM_OFF))
+    }
+    line = recolorSpan(line, 0, cols.stateWidth, (padded) => colorState(padded, row.stateCell))
+    lines.push(line)
+    // Fixed two lines per row, always. A row whose height tracked its summary
+    // length reflowed every row below it the moment a Haiku reply landed, which
+    // read as the whole table jumping. The filler is bare '' rather than padded
+    // cells because renderLine right-trims an empty cell array to exactly that.
+    lines.push(overflow ? renderLine(cells.map(() => '').fill(overflow, cells.length - 1), widths, width, right) : '')
     if (row.id === expanded) lines.push(...agentLines(row, width, now))
   }
   return { lines, rowLineIndex }
+}
+
+// Re-wraps one column of an already-rendered line. The span is in code points
+// and the line carries no escapes yet, so the slice is exact; a line the frame
+// width cut short of the span is left alone rather than half-coloured.
+function recolorSpan(line, start, span, wrap) {
+  if (!colorEnabled) return line
+  const chars = Array.from(line)
+  if (chars.length < start + span) return line
+  return chars.slice(0, start).join('') + wrap(chars.slice(start, start + span).join('')) + chars.slice(start + span).join('')
 }
 
 // Two lines, no more: the second holds what did not fit and is itself clipped
@@ -1166,11 +1356,52 @@ function buildTable(rows, width, expanded, now) {
 // cut reads as corruption rather than as a wrap; a token longer than the column
 // has no space to break at and is cut hard.
 function splitSummary(summary, summaryWidth) {
-  const chars = Array.from(summary)
-  if (chars.length <= summaryWidth) return [summary, '']
-  const space = chars.lastIndexOf(' ', summaryWidth)
-  const cut = space > 0 ? space : summaryWidth
-  return [chars.slice(0, cut).join(''), chars.slice(space > 0 ? cut + 1 : cut).join('').trim()]
+  if (displayWidth(summary) <= summaryWidth) return [summary, '']
+  if (!summary.includes('\x1b')) {
+    const chars = Array.from(summary)
+    const space = chars.lastIndexOf(' ', summaryWidth)
+    const cut = space > 0 ? space : summaryWidth
+    return [chars.slice(0, cut).join(''), chars.slice(space > 0 ? cut + 1 : cut).join('').trim()]
+  }
+  return splitStyled(summary, summaryWidth)
+}
+
+// The styled split walks columns rather than code points, and carries whatever
+// SGR is still open across the break: the head closes it so nothing bleeds into
+// the gutter, and the overflow reopens it so a bolded phrase that straddles the
+// wrap stays bold on both lines.
+function splitStyled(summary, summaryWidth) {
+  const open = []
+  let head = ''
+  let shown = 0
+  let cutAt = -1
+  let cutOpen = null
+  let cutShown = 0
+  let rest = ''
+  for (const token of summary.split(SGR_SPLIT_RE)) {
+    if (token === '') continue
+    if (rest !== '') { rest += token; continue }
+    if (SGR_ONE_RE.test(token)) {
+      applyStyleToken(open, token)
+      head += token
+      continue
+    }
+    for (const ch of token) {
+      if (shown === summaryWidth) { rest += ch; continue }
+      if (ch === ' ') { cutAt = head.length; cutOpen = open.slice(); cutShown = shown }
+      head += ch
+      shown++
+      if (shown === summaryWidth) rest = ''
+    }
+  }
+  // A break at the last space that fits, exactly as the plain path does; a
+  // token wider than the column has no space to break at and is cut hard.
+  if (cutAt > 0 && cutShown > 0) {
+    rest = summary.slice(cutAt + 1)
+    head = head.slice(0, cutAt)
+    return [head + closersFor(cutOpen), (cutOpen.join('') + rest).trim()]
+  }
+  return [head + closersFor(open), (open.join('') + rest).trim()]
 }
 
 // No status word and no glyph distinction: every line here is running by
@@ -1180,7 +1411,8 @@ function agentLines(row, width, now) {
     .map((agent) => {
       const age = agent.dispatchedAt ? formatAge(Math.max(0, now - agent.dispatchedAt)) : '-'
       const cells = [pad(truncate(age, AGENT_AGE_WIDTH), AGENT_AGE_WIDTH), pad(truncate(shortAgentType(agent.type), AGENT_TYPE_WIDTH), AGENT_TYPE_WIDTH), agent.description]
-      return truncate(`${AGENT_INDENT}${AGENT_GLYPH} ${cells.join(' ')}`.replace(/\s+$/, ''), width)
+      const line = truncate(`${AGENT_INDENT}${AGENT_GLYPH} ${cells.join(' ')}`.replace(/\s+$/, ''), width)
+      return recolorSpan(line, AGENT_INDENT.length, AGENT_GLYPH.length, (glyph) => colorize(glyph, ESC_DIM, ESC_DIM_OFF))
     })
 }
 
@@ -1223,12 +1455,53 @@ function stamp(now) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
-function buildFrame(state, width, now) {
-  const lines = frameLines(state, width, now).map((line) => truncate(line, width))
+function buildFrame(state, width, now, rows) {
+  // truncate counts code points, and a coloured table line carries escapes that
+  // occupy none — so the belt-and-braces pass here skips any line already
+  // within the width once its escapes are discounted, rather than clipping it
+  // by their length.
+  const lines = clampFrame(state, frameLines(state, width, now).map((line) => (displayWidth(line) <= width ? line : truncate(line, width))), rows)
   // Applied after truncation so the escape bytes are never counted as columns.
   const row = highlightLineIndex(state)
   if (row !== -1 && lines[row] !== undefined) lines[row] = ESC_REVERSE_ON + lines[row] + ESC_REVERSE_OFF
   return lines
+}
+
+// Fixed two-line rows doubled the frame's height, and a frame taller than the
+// pane scrolls inside the alt screen — losing the header first, which reads as
+// the table jumping. So the table is cut from the bottom, where the rows are
+// least urgent (they are sorted by tab order, and the sort puts nothing
+// important last), and the header and the whole footer are kept.
+//
+// The count of what was dropped is part of the frame rather than silent: a
+// table that quietly shows six of ten sessions is worse than one that says so.
+function clampFrame(state, lines, rows) {
+  if (!Number.isInteger(rows) || rows <= 0 || lines.length <= rows) return lines
+  const end = state.tableEnd
+  // Nothing to take from: no table in this frame, or the footer alone already
+  // overflows. Either way the clamp has no safe cut and the scroll is the
+  // lesser evil — cutting the footer would hide the poll state.
+  if (!Number.isInteger(end) || end <= 0) return lines
+  const footer = lines.slice(end)
+  // One line of the budget goes to the "+N more" notice, which only exists
+  // because rows are being dropped.
+  const room = rows - footer.length - 1
+  // Rows are dropped as a suffix, so the cut is the first row whose own lines
+  // do not fit whole — a half-rendered row is worse than one fewer row.
+  let kept = 0
+  while (kept < state.rowLineIndex.length) {
+    const to = kept + 1 < state.rowLineIndex.length ? state.rowLineIndex[kept + 1] : end
+    if (to > room) break
+    kept++
+  }
+  const dropped = state.rowLineIndex.length - kept
+  if (dropped === 0) return lines
+  const cut = kept > 0 ? (kept < state.rowLineIndex.length ? state.rowLineIndex[kept] : end) : state.rowLineIndex[0]
+  const notice = `… +${dropped} more session${dropped === 1 ? '' : 's'}`
+  // Highlight offsets index the frame array, and a dropped row's stale offset
+  // would put the reverse video on the notice or the footer.
+  state.rowLineIndex = state.rowLineIndex.slice(0, kept)
+  return lines.slice(0, cut).concat([colorize(notice, ESC_DIM, ESC_DIM_OFF)], footer)
 }
 
 // Read from the map buildTable just wrote rather than computed: an expanded
@@ -1250,6 +1523,7 @@ function noTableYet(state) {
 
 function frameLines(state, width, now) {
   const lines = []
+  state.tableEnd = -1
   if (noTableYet(state)) {
     lines.push(ERROR_BODIES[state.error] || `registry error: ${state.error}`)
     lines.push('')
@@ -1268,6 +1542,9 @@ function frameLines(state, width, now) {
     // expanded roster has pushed the rows below it down.
     state.rowLineIndex = table.rowLineIndex
     lines.push(...table.lines)
+    // Where the table stops and the footer begins, which is the only cut point
+    // clampFrame is allowed to take rows from.
+    state.tableEnd = lines.length
   }
   lines.push('')
 
@@ -1372,6 +1649,7 @@ function newState() {
     highlight: { id: null, index: -1 },
     expanded: null,
     rowLineIndex: [],
+    tableEnd: -1,
     renameBuffer: '',
     renameTarget: null,
     transient: null,
@@ -2256,6 +2534,7 @@ function runOnce(opts) {
 function runLive(opts) {
   const state = newState()
   state.interactive = true
+  colorEnabled = !process.env.NO_COLOR && Boolean(process.stdout.isTTY)
   registerRestore()
   armSummarizer(state)
   if (opts.listen !== null) startListener(state, opts.listen)
@@ -2297,7 +2576,9 @@ function shouldBell(transitions, opts) {
 function paint(state) {
   if (restored) return
   const width = process.stdout.columns || DEFAULT_WIDTH
-  const lines = buildFrame(state, width, Date.now())
+  // Undefined off a TTY, which is the no-clamp case: nothing is scrolling a
+  // piped frame, so there is no height to fit it to.
+  const lines = buildFrame(state, width, Date.now(), process.stdout.rows)
   write(ESC_CURSOR_HOME + lines.join(ESC_CLEAR_EOL + '\n') + ESC_CLEAR_EOL + ESC_CLEAR_EOS)
 }
 
