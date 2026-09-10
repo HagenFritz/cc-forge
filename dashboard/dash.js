@@ -13,6 +13,11 @@
 // devbox hook events and puts them in the same table; `--listen <port>` moves
 // that port and `--no-listen` turns it off.
 //
+// In live mode each session's turn tail is sent to Anthropic's API and
+// summarized by Haiku, using the operator's own key from ANTHROPIC_API_KEY or
+// the repo-root .env; with no key, or on any failure, SUMMARY shows the raw
+// tail and the footer says summaries are off. `--once` never calls out.
+//
 // Zero dependencies, Node >= 22, stdlib only. Run by hand:
 //   node dashboard/dash.js
 //
@@ -27,6 +32,7 @@ const { execFile, execFileSync } = require('child_process')
 const crypto = require('crypto')
 const fs = require('fs')
 const http = require('http')
+const https = require('https')
 const path = require('path')
 const os = require('os')
 
@@ -41,17 +47,74 @@ const PROJECTS_DIR = process.env.DASH_PROJECTS_DIR || path.join(os.homedir(), '.
 const TAIL_BYTES = 256 * 1024
 const TAIL_RETRY_BYTES = 1024 * 1024
 const SUMMARY_MAX_CHARS = 400
+// A delta read is bounded so a session that appended megabytes between two
+// ticks still costs one sized allocation; the remainder is caught up next tick.
+const SCAN_CHUNK_MAX_BYTES = 8 * 1024 * 1024
+// Only these substrings can make a line matter, and every candidate line costs
+// a JSON.parse — on a 50 MB transcript this is 1,489 lines of 8,156. tool_use_id
+// is much the widest of them (every tool call carries one), but a dispatch's own
+// tool_result is the only completion signal a foreground agent ever emits.
+const SCAN_MARKERS = ['<command-name>', '"Task"', '"Agent"', 'task-notification', '"tool_use_id"']
+
+const ENV_PATH = path.join(__dirname, '..', '.env')
+const ENV_MAX_BYTES = 8 * 1024
+const HAIKU_HOST = 'api.anthropic.com'
+const HAIKU_PATH = '/v1/messages'
+const HAIKU_MODEL = 'claude-haiku-4-5-20251001'
+const HAIKU_VERSION = '2023-06-01'
+const HAIKU_MAX_TOKENS = 64
+// Enough of the turn to say what it was about; the whole 400-char SUMMARY_MAX
+// tail would still be a small prompt, but the cost is per turn per session.
+const HAIKU_INPUT_MAX_CHARS = 2000
+const HAIKU_TIMEOUT_MS = 8000
+const HAIKU_RESPONSE_MAX_BYTES = 64 * 1024
+// The two style instructions are what feed the SUMMARY column's token styling:
+// the model marks its own emphasis, which is more reliable than inferring it,
+// and both markers are ones renderMarkdown already renders. Kept to one clause
+// each — this prompt is billed on every turn of every session.
+const HAIKU_PROMPT = 'Below is the last assistant message from a coding session. In at most two sentences, say what the session is doing. Wrap the thing being worked on in **bold** and any file, function, or flag in backticks. Reply with the summary only.'
+const HAIKU_UNAVAILABLE_NOTE = 'summaries unavailable — showing raw transcript text'
+// The key is read once at startup, so adding one to .env now takes a restart to
+// pick up. Saying so is the whole fix: the note is how the operator finds out
+// the key is missing, and without this they add it and watch nothing happen.
+const HAIKU_NO_KEY_NOTE = 'summaries unavailable — set ANTHROPIC_API_KEY (or .env) and restart'
+// A runaway ceiling across every session, not a throttle: the per-session
+// pending flag already bounds a healthy session to one call per tick, and
+// measured peak is about half this. What it stops is the case nothing else
+// does — a loop, or a transcript rewritten in place — billing unbounded.
+const HAIKU_MAX_CALLS_PER_MIN = 60
+const HAIKU_RATE_WINDOW_MS = 60_000
+const HAIKU_RATE_NOTE = 'summaries paused — call ceiling hit; resumes within a minute'
 
 const DEFAULT_WIDTH = 80
 const STATE_WIDTH = 8
 const STATE_CAP = 16
-const AGE_WIDTH = 6
+// Five, not six: formatAge maxes at `1h04` (four), and the extra column is
+// breathing room before the next gutter rather than slack inside the cell.
+const AGE_WIDTH = 5
 const NAME_CAP = 24
 const NAME_MIN = 8
 const DIR_CAP = 30
 const DIR_MIN = 8
+// 14, not 20: at 20 the width below which SUMMARY drops rises to 128 columns,
+// past two of the panes this runs in. Only the longest skill names truncate.
+const SKILL_WIDTH = 14
+const AGENTS_WIDTH = 6
 const SUMMARY_MIN = 10
-const COLUMN_GAP = 4
+// Two, not four: at four the columns sat 10-24 display columns apart and the
+// table read as scattered islands rather than one grid. The reclaimed width
+// goes to SUMMARY, which is the only column that grows to fill.
+const COLUMN_GAP = 2
+
+// The expanded agent roster. Indented under its session rather than aligned to
+// the table's columns: these lines answer a different question than the row
+// does, and the indent is what says so.
+const AGENT_INDENT = '  '
+const AGENT_GLYPH = '●'
+// Five, not four: `1h00` is the longest age formatAge produces under a day and
+// fills four exactly, leaving no gap before the type.
+const AGENT_AGE_WIDTH = 5
+const AGENT_TYPE_WIDTH = 26
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const PID_RE = /^[0-9]{1,10}$/
@@ -122,14 +185,63 @@ const ESC_TITLE_RESET = '\x1b]0;\x07'
 const ESC_REVERSE_ON = '\x1b[7m'
 const ESC_REVERSE_OFF = '\x1b[27m'
 
+// Colour is additive only: every cell it touches already reads correctly in
+// plain text (`waiting!` keeps its trailing marker), so a NO_COLOR terminal,
+// a pipe, or --once loses emphasis and nothing else. SGR 39/22 rather than 0
+// so a reset inside a highlighted line does not also cancel the reverse video
+// buildFrame wraps around it.
+const ESC_AMBER = '\x1b[33m'
+const ESC_GREEN = '\x1b[32m'
+const ESC_RED = '\x1b[31m'
+const ESC_DIM = '\x1b[2m'
+const ESC_COLOR_OFF = '\x1b[39m'
+const ESC_DIM_OFF = '\x1b[22m'
+
+// Summaries are chat prose, so they arrive carrying `**bold**`, `` `code` ``,
+// and the odd `*italic*`. Rendered as SGR rather than stripped to punctuation.
+// Code spans are dim rather than reverse-video: the table already spends
+// reverse video on the highlighted row, and a second reverse span inside it
+// inverts back to normal and reads as a rendering fault. Single-asterisk
+// italics use SGR 3, which a minority of terminals ignore — but the failure
+// mode there is unstyled text, not visible punctuation, so it is still an
+// improvement on the literal asterisks it replaces.
+const MD_BOLD_ON = '\x1b[1m'
+const MD_BOLD_OFF = '\x1b[22m'
+const MD_ITALIC_ON = '\x1b[3m'
+const MD_ITALIC_OFF = '\x1b[23m'
+const MD_CODE_ON = ESC_DIM
+const MD_CODE_OFF = ESC_DIM_OFF
+
+// Typed tokens inside the SUMMARY prose. A path is context the eye skips over
+// until it needs it, so it recedes; a count is the number the summary exists to
+// report, so it advances. PR/issue refs take the amber the waiting marker
+// already owns — the palette has three colours, green and red are spent on
+// outcomes, and amber is the only one left that is not the dim used for chrome.
+const TOK_PATH_ON = ESC_DIM
+const TOK_PATH_OFF = ESC_DIM_OFF
+const TOK_REF_ON = ESC_AMBER
+const TOK_REF_OFF = ESC_COLOR_OFF
+const TOK_NUM_ON = MD_BOLD_ON
+const TOK_NUM_OFF = MD_BOLD_OFF
+const TOK_GOOD_ON = ESC_GREEN
+const TOK_GOOD_OFF = ESC_COLOR_OFF
+const TOK_BAD_ON = ESC_RED
+const TOK_BAD_OFF = ESC_COLOR_OFF
+
+// Set once at startup rather than read per cell: --once must stay byte-stable
+// for the smoke test, and the exported render seam is uncoloured for the same
+// reason arming the summarizer is a live-mode act.
+let colorEnabled = false
+
 const KEY_CTRL_C = 0x03
 const KEY_ESC = 0x1b
 const KEY_ENTER = 0x0d
 const KEY_ENTER_LF = 0x0a
-const KEY_J = 0x6a
-const KEY_K = 0x6b
 const KEY_Q = 0x71
 const KEY_R = 0x72
+// Shares the value of PRINTABLE_MIN by coincidence, not by meaning: this is the
+// expand toggle, that one is the low edge of the rename-buffer's character set.
+const KEY_SPACE = 0x20
 const KEY_CTRL_U = 0x15
 const KEY_BACKSPACE = 0x7f
 const KEY_BACKSPACE_BS = 0x08
@@ -157,7 +269,7 @@ const TTY_PATH_RE = /^\/dev\/tty[a-z0-9]+$/
 // TTY_PATH_RE does not admit.
 const TMUX_CLIENT_TTY_RE = /^\/dev\/(pts\/\d{1,5}|tty[A-Za-z0-9]{1,16})$/
 
-const HELP_NORMAL = 'j: up  k: down  enter: focus  r: rename tab  q: quit'
+const HELP_NORMAL = '↑/↓: move  space: agents  enter: focus  r: rename tab  q: quit'
 const HELP_RENAME = 'enter: confirm  esc: cancel  ^U: clear'
 const RENAME_PROMPT = 'Tab name: '
 
@@ -403,12 +515,56 @@ function ageMsFor(row, observed, now) {
 // directory, so the exact .jsonl path is opened and the folder never listed.
 // Every failure — missing file, permissions, drift in the line format — is a
 // blank summary; a row never turns into an error.
+//
+// That text is also what gets summarized: each turn's tail is sent to Haiku and
+// the reply replaces it in the cell once it lands. The raw tail is what shows
+// until then, and what shows again if the call fails, so the column degrades to
+// its pre-summary behavior rather than to a blank.
+//
+// The cache is never evicted: one entry per distinct transcript for the process
+// lifetime, now holding a Map, a Set, and an in-flight request flag. A dashboard
+// left up for days across many sessions is the growth case, and it is small
+// enough to leave alone rather than bound.
 
 const summaryCache = new Map()
 
 function transcriptPath(row) {
   if (!UUID_RE.test(row.id) || !row.cwd) return null
   return path.join(PROJECTS_DIR, row.cwd.replace(/[^a-zA-Z0-9]/g, '-'), `${row.id}.jsonl`)
+}
+
+function newCacheEntry() {
+  return {
+    size: 0,
+    mtimeMs: 0,
+    text: '',
+    lastSkill: '',
+    // Keyed by tool_use id so a completion can clear the exact dispatch it
+    // names; the count is the size of what is left.
+    running: new Map(),
+    // Completions can be scanned before the dispatch they name is — never in one
+    // pass, but a chunk boundary splits them — so an unmatched id is held here
+    // rather than dropped, or the dispatch would stay running forever.
+    orphanDone: new Set(),
+    scannedTo: 0,
+    // The model's summary of the current turn, and whether a call for it is in
+    // flight. Both are dropped with the entry when a transcript is rotated.
+    haiku: '',
+    pending: false,
+  }
+}
+
+function cacheEntryFor(file, st) {
+  const cached = summaryCache.get(file)
+  // A file that shrank or moved backward in time was rotated or replaced, so
+  // the bytes behind scannedTo are not the ones that were scanned. Measured
+  // against the size last recorded rather than the parse cursor: an append
+  // wider than one chunk leaves the cursor behind, and a replacement landing in
+  // that gap would otherwise read as ordinary growth.
+  if (cached && st.size >= cached.size && st.mtimeMs >= cached.mtimeMs) return cached
+  const entry = newCacheEntry()
+  summaryCache.set(file, entry)
+  return entry
 }
 
 function summaryFor(row) {
@@ -420,14 +576,414 @@ function summaryFor(row) {
   try {
     const st = fs.lstatSync(file)
     if (st.isSymbolicLink() || !st.isFile()) return ''
-    const cached = summaryCache.get(file)
-    if (cached && cached.size === st.size && cached.mtimeMs === st.mtimeMs) return cached.text
-    const text = sanitize(readLastAssistantText(file, st.size))
-    summaryCache.set(file, { size: st.size, mtimeMs: st.mtimeMs, text })
-    return text
+    const entry = cacheEntryFor(file, st)
+    if (entry.size === st.size && entry.mtimeMs === st.mtimeMs) return entry.haiku || entry.text
+    scanDelta(file, entry, st.size)
+    entry.text = sanitize(readLastAssistantText(file, st.size))
+    entry.size = st.size
+    entry.mtimeMs = st.mtimeMs
+    // A new turn invalidates the old summary, so the raw tail shows again until
+    // this turn's reply lands rather than the previous turn's summary lingering.
+    entry.haiku = ''
+    requestSummary(entry)
+    return entry.text
   } catch (e) {
     return ''
   }
+}
+
+// --- Summarizer ------------------------------------------------------------
+//
+// The only outbound call this program makes. Live mode arms it once at startup
+// and every turn of every local session sends that turn's tail to Haiku; the
+// reply lands asynchronously and swaps into the cell on a later frame. Nothing
+// in the paint path awaits, so a slow or hung API cannot cost a frame — only
+// the summary, which falls back to the raw tail it was going to replace.
+//
+// `--once` never arms it: the one-shot frame must be byte-stable and must not
+// depend on the network. The exported render seam is unarmed for the same
+// reason — arming is a live-mode act, not a render-path one.
+//
+// The key is never rendered, never logged, and never carried in a footer or an
+// error: a caught `https` error can hold the request options, headers included,
+// so every failure here collapses to one fixed note.
+
+let summarizer = null
+// Timestamps of the calls inside the rolling window, oldest first.
+const haikuCalls = []
+
+// Drops what has aged out, then answers whether one more call fits. Called on
+// the paint path, so it stays a shift over a list bounded by the ceiling.
+function haikuRateAllows(now) {
+  while (haikuCalls.length > 0 && now - haikuCalls[0] >= HAIKU_RATE_WINDOW_MS) haikuCalls.shift()
+  return haikuCalls.length < HAIKU_MAX_CALLS_PER_MIN
+}
+
+// Spend, where the poll clock already is. Silent until a call has been made, so
+// a dashboard with no key never shows a counter for a thing it is not doing,
+// and marked at the ceiling because a paused summarizer looks identical to an
+// idle one otherwise.
+function haikuRateCell(now) {
+  if (summarizer === null) return ''
+  while (haikuCalls.length > 0 && now - haikuCalls[0] >= HAIKU_RATE_WINDOW_MS) haikuCalls.shift()
+  if (haikuCalls.length === 0) return ''
+  const capped = haikuCalls.length >= HAIKU_MAX_CALLS_PER_MIN ? ' capped' : ''
+  return `  ·  ${haikuCalls.length}/${HAIKU_MAX_CALLS_PER_MIN} summaries/min${capped}`
+}
+
+// Line-wise, for one key, with readToken's posture: lstat before any open so a
+// symlink is refused rather than followed, a bounded single read rather than
+// readFileSync, and a loose mode warned about rather than refused — the file is
+// the operator's own and refusing it would just turn summaries off silently.
+function readEnvKey(state) {
+  let st
+  try {
+    st = fs.lstatSync(ENV_PATH)
+  } catch (e) {
+    return null
+  }
+  if (st.isSymbolicLink() || !st.isFile() || st.size > ENV_MAX_BYTES) return null
+  // Its own field, and a standing one like tokenWarning: a loose mode stays
+  // true until the operator chmods it, so nothing ever clears this.
+  if ((st.mode & 0o077) !== 0) {
+    state.envNote = `${stripControls(ENV_PATH)} is readable beyond this user — chmod 600 it`
+  }
+  let raw
+  try {
+    let fd
+    try {
+      fd = fs.openSync(ENV_PATH, fs.constants.O_RDONLY | O_NOFOLLOW)
+      const buf = Buffer.alloc(ENV_MAX_BYTES)
+      const n = fs.readSync(fd, buf, 0, ENV_MAX_BYTES, 0)
+      raw = buf.slice(0, n).toString('utf8')
+    } finally {
+      if (fd !== undefined) fs.closeSync(fd)
+    }
+  } catch (e) {
+    return null
+  }
+  for (const line of raw.split(/\r?\n/)) {
+    const match = /^\s*(?:export\s+)?ANTHROPIC_API_KEY\s*=\s*(.*)$/.exec(line)
+    if (!match) continue
+    const value = match[1].trim().replace(/^(['"])(.*)\1$/, '$2')
+    if (value) return value
+  }
+  return null
+}
+
+function armSummarizer(state) {
+  const key = process.env.ANTHROPIC_API_KEY || readEnvKey(state)
+  if (!key) {
+    state.summaryNote = HAIKU_NO_KEY_NOTE
+    return
+  }
+  summarizer = { key, state }
+}
+
+// Fire-and-forget: the caller is mid-frame and never sees the outcome. One call
+// per turn is the `pending` flag plus summaryFor only reaching here when the
+// size or mtime moved; `pending` is cleared on every exit path, since a stuck
+// one would silence that session for the life of the process.
+function requestSummary(entry) {
+  if (summarizer === null || entry.pending || !entry.text) return
+  const now = Date.now()
+  if (!haikuRateAllows(now)) {
+    summarizer.state.summaryNote = HAIKU_RATE_NOTE
+    return
+  }
+  haikuCalls.push(now)
+  entry.pending = true
+  // The turn this request describes. A reply that lands after the transcript
+  // moved on is answering a question no longer on screen, so it is dropped
+  // rather than rendered over the newer turn's tail.
+  const issuedFor = entry.mtimeMs
+  const body = JSON.stringify({
+    model: HAIKU_MODEL,
+    max_tokens: HAIKU_MAX_TOKENS,
+    messages: [{ role: 'user', content: `${HAIKU_PROMPT}\n\n${entry.text.slice(0, HAIKU_INPUT_MAX_CHARS)}` }],
+  })
+  const options = {
+    host: HAIKU_HOST,
+    path: HAIKU_PATH,
+    method: 'POST',
+    headers: {
+      'x-api-key': summarizer.key,
+      'anthropic-version': HAIKU_VERSION,
+      'content-type': 'application/json',
+      'content-length': Buffer.byteLength(body),
+    },
+    timeout: HAIKU_TIMEOUT_MS,
+  }
+  let req
+  const fail = () => {
+    if (!entry.pending) return
+    entry.pending = false
+    if (summarizer !== null) summarizer.state.summaryNote = HAIKU_UNAVAILABLE_NOTE
+    if (req) req.destroy()
+  }
+  try {
+    req = https.request(options, (res) => {
+      const chunks = []
+      let size = 0
+      res.on('data', (chunk) => {
+        size += chunk.length
+        if (size > HAIKU_RESPONSE_MAX_BYTES) {
+          fail()
+          res.destroy()
+          return
+        }
+        chunks.push(chunk)
+      })
+      res.on('end', () => {
+        if (!entry.pending) return
+        entry.pending = false
+        const text = res.statusCode === 200 ? summaryFromResponse(Buffer.concat(chunks).toString('utf8')) : ''
+        if (text) {
+          // A reply for a turn the transcript has moved past is dropped rather
+          // than rendered over the newer tail — but the call itself worked, so
+          // it still clears the note.
+          //
+          // Through the same sanitize the raw tail takes: the wrap in buildTable
+          // splits on spaces, so an embedded newline would break it.
+          if (entry.mtimeMs === issuedFor) entry.haiku = sanitize(text)
+          // A transient failure must not leave the note up for the process
+          // lifetime — one success proves summaries are working again.
+          if (summarizer !== null) summarizer.state.summaryNote = null
+        } else if (summarizer !== null) summarizer.state.summaryNote = HAIKU_UNAVAILABLE_NOTE
+      })
+      res.on('error', fail)
+    })
+    req.on('timeout', fail)
+    req.on('error', fail)
+    req.end(body)
+  } catch (e) {
+    fail()
+  }
+}
+
+function summaryFromResponse(raw) {
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || !Array.isArray(parsed.content)) return ''
+    return parsed.content
+      .filter((block) => block && block.type === 'text' && typeof block.text === 'string')
+      .map((block) => block.text)
+      .join(' ')
+      .trim()
+  } catch (e) {
+    return ''
+  }
+}
+
+// --- Skill -----------------------------------------------------------------
+//
+// The last slash command a session ran, which persists until the next one: the
+// transcript carries no end-of-skill signal, so "still in it" and "finished it"
+// are indistinguishable and the last one is the better guess. Built-ins say
+// nothing about the work and are dropped.
+
+const SKILL_BLOCKLIST = new Set([
+  'model',
+  'compact',
+  'mcp',
+  'plugin',
+  'reload-plugins',
+  'clear',
+  'help',
+  'config',
+  'artifacts',
+  'tasks',
+  'workflows',
+])
+
+// The one place that knows how to reach a row's scan state. A VM row short-
+// circuits here rather than in each caller, before any path is built: its cwd
+// would otherwise mangle into a real local transcript path.
+function cacheEntryOf(row) {
+  if (row.remote) return null
+  const file = transcriptPath(row)
+  return file === null ? null : summaryCache.get(file)
+}
+
+function skillFor(row) {
+  const entry = cacheEntryOf(row)
+  if (!entry || !entry.lastSkill) return ''
+  // Stripped before the lookup, not after: the blocklist holds bare names, so
+  // testing a still-namespaced one misses and displays the name it should hide.
+  const name = entry.lastSkill.replace(/^\//, '').replace(/^forge:/, '')
+  if (SKILL_BLOCKLIST.has(name)) return ''
+  return truncate(name, SKILL_WIDTH)
+}
+
+// --- Agents ----------------------------------------------------------------
+//
+// How many subagents the session has dispatched and not yet seen finish. The
+// scan pairs each dispatch with the completion naming its tool_use id, so the
+// count is the size of what is left unpaired and cannot go negative.
+
+function agentsFor(row) {
+  const entry = cacheEntryOf(row)
+  if (!entry || entry.running.size === 0) return '-'
+  return String(entry.running.size)
+}
+
+// The same Map the count comes from, as a list. Only running agents exist to
+// list: applyToolResults deletes a dispatch the moment its result lands, so a
+// finished agent leaves no record to render.
+function agentRosterFor(row) {
+  const entry = cacheEntryOf(row)
+  return entry ? Array.from(entry.running.values()) : []
+}
+
+// `forge:review:correctness-auditor` is 33 characters of which 13 say nothing
+// about which agent it is.
+function shortAgentType(type) {
+  return type.replace(/^forge:[^:]*:/, '')
+}
+
+// --- Incremental scan ------------------------------------------------------
+//
+// SKILL and AGENTS are whole-history questions — the last `<command-name>` sits
+// anywhere and dispatches pair with completions across the whole file — so the
+// backward tail summaryFor uses cannot answer them. Re-reading the file every
+// tick can: ~130 ms on the largest real transcript (50 MB), and the size+mtime
+// cache key does not absorb it because an actively-appending session invalidates
+// it every tick, which is exactly when these columns matter. So only the bytes
+// appended since the last tick are read, which measures under a millisecond.
+//
+// A session already running when the dashboard starts is scanned from its
+// current end, so dispatches made before that are never seen. That is one-time
+// per session, not per tick, and is documented rather than engineered around.
+
+function scanDelta(file, entry, size) {
+  if (size <= entry.scannedTo) return
+  const start = entry.scannedTo
+  const length = Math.min(size - start, SCAN_CHUNK_MAX_BYTES)
+  let fd
+  let buf
+  let read
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | O_NOFOLLOW)
+    const st = fs.fstatSync(fd)
+    if (!st.isFile()) return
+    buf = Buffer.allocUnsafe(length)
+    read = fs.readSync(fd, buf, 0, length, start)
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd)
+  }
+  // The boundary is found in bytes, not in the decoded string: a chunk can end
+  // mid-character, and decoding that would substitute a replacement character
+  // whose byte length is not the one that was read.
+  const end = buf.lastIndexOf(0x0a, read - 1)
+  if (end === -1) {
+    // A partial line still being written is caught up next tick. A whole chunk
+    // with no newline in it is a single line wider than the cap, and waiting for
+    // one would re-read the same bytes forever: skip it and resync on the next
+    // newline, losing that line rather than the rest of the session.
+    if (read >= SCAN_CHUNK_MAX_BYTES) entry.scannedTo = start + read
+    return
+  }
+  for (const line of buf.toString('utf8', 0, end).split('\n')) applyScanLine(entry, line)
+  // Only after every line parsed, so a throw mid-chunk leaves scannedTo where it
+  // was and the same bytes are rescanned rather than silently skipped.
+  entry.scannedTo = start + end + 1
+}
+
+function applyScanLine(entry, line) {
+  if (!line || line[0] !== '{') return
+  if (!SCAN_MARKERS.some((marker) => line.includes(marker))) return
+  let record
+  try {
+    record = JSON.parse(line)
+  } catch (e) {
+    return
+  }
+  if (!record || record.isSidechain === true) return
+  if (record.type === 'assistant') return applyDispatches(entry, record)
+  if (record.type === 'user') return applyUserScanLine(entry, record)
+  if (record.type === 'attachment') return applyCompletion(entry, queuedCommandTextOf(record))
+}
+
+function applyDispatches(entry, record) {
+  const content = record.message && record.message.content
+  if (!Array.isArray(content)) return
+  for (const block of content) {
+    if (!block || block.type !== 'tool_use') continue
+    if (block.name !== 'Task' && block.name !== 'Agent') continue
+    if (typeof block.id !== 'string') continue
+    if (entry.orphanDone.delete(block.id)) continue
+    const input = block.input && typeof block.input === 'object' ? block.input : {}
+    entry.running.set(block.id, {
+      // Sanitized and capped here rather than at render, the same boundary
+      // validateRows guards: an agent's description is whatever the dispatching
+      // session typed, and the roster prints it verbatim once expanded.
+      type: typeof input.subagent_type === 'string' ? stripControls(input.subagent_type.slice(0, PAYLOAD_STRING_MAX)) : 'general-purpose',
+      description: typeof input.description === 'string' ? stripControls(input.description.slice(0, PAYLOAD_STRING_MAX)) : '',
+      dispatchedAt: Date.parse(record.timestamp) || 0,
+    })
+  }
+}
+
+function applyUserScanLine(entry, record) {
+  applyToolResults(entry, record)
+  const text = userTextOf(record)
+  if (!text) return
+  const command = /<command-name>([^<]*)<\/command-name>/.exec(text)
+  // Sanitized at the parse boundary, the way validateRows treats a VM payload:
+  // a transcript carries whatever an agent read, and the cell is drawn every tick.
+  if (command) entry.lastSkill = stripControls(command[1]).trim()
+  applyCompletion(entry, text)
+}
+
+// The dispatch's own tool_result, which every agent produces whether it ran in
+// the foreground or the background. Notifications only cover the background
+// case, so pairing on them alone left every foreground agent running forever.
+function applyToolResults(entry, record) {
+  const content = record.message && record.message.content
+  if (!Array.isArray(content)) return
+  for (const block of content) {
+    if (!block || block.type !== 'tool_result') continue
+    if (typeof block.tool_use_id !== 'string') continue
+    // Only ids that are actually dispatches: every tool call produces a
+    // tool_result, and feeding the rest to orphanDone would grow it without
+    // bound and let a stale id cancel a later dispatch that reuses it.
+    entry.running.delete(block.tool_use_id)
+  }
+}
+
+// A completion pairs off its dispatch, or is remembered as an orphan when the
+// dispatch predates the scan window. Kept apart from the `<command-name>` match
+// above because the two read different text: a notification also arrives on an
+// attachment record, which carries no command a session actually ran.
+function applyCompletion(entry, text) {
+  if (!text) return
+  if (!text.includes('<task-notification>') || !text.includes('<status>completed</status>')) return
+  const id = /<tool-use-id>([^<]*)<\/tool-use-id>/.exec(text)
+  if (!id) return
+  if (!entry.running.delete(id[1])) entry.orphanDone.add(id[1])
+}
+
+// The shape a completion takes when it lands while the session is mid-turn: the
+// notification is queued as a pending prompt rather than delivered as a user
+// message, and only this record type survives in the transcript. The narrow
+// type check matters — a prompt_snapshot attachment quotes whole notifications
+// inside its systemPrompt, and reading those would pair off live dispatches.
+function queuedCommandTextOf(record) {
+  const attachment = record.attachment
+  if (!attachment || attachment.type !== 'queued_command') return ''
+  return typeof attachment.prompt === 'string' ? attachment.prompt : ''
+}
+
+function userTextOf(record) {
+  const content = record.message && record.message.content
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  const parts = []
+  for (const block of content) {
+    if (typeof block === 'string') parts.push(block)
+    else if (block && block.type === 'text' && typeof block.text === 'string') parts.push(block.text)
+  }
+  return parts.join('\n')
 }
 
 function readLastAssistantText(file, size) {
@@ -452,10 +1008,14 @@ function scanTail(fd, size, want) {
   const start = size - length
   const buf = Buffer.allocUnsafe(length)
   const read = fs.readSync(fd, buf, 0, length, start)
-  const lines = buf.toString('utf8', 0, read).split('\n')
-  // A tail that starts mid-file starts mid-line; the last line may be
-  // half-written. Both are dropped rather than parsed.
-  if (start > 0) lines.shift()
+  // The boundary is found in bytes, not in the decoded string, for the reason
+  // scanDelta does the same: `start` is an arbitrary byte offset that can land
+  // mid-character, and decoding the whole buffer first turns that character
+  // into a replacement one — which then survives into the summary, since the
+  // damage is already in the string by the time the partial line is dropped.
+  const from = start > 0 ? buf.indexOf(0x0a, 0) + 1 : 0
+  if (start > 0 && from === 0) return ''
+  const lines = buf.toString('utf8', from, read).split('\n')
   for (let i = lines.length - 1; i >= 0; i--) {
     const text = assistantTextOf(lines[i])
     if (text) return text
@@ -491,8 +1051,77 @@ function stripControls(text) {
     .trim()
 }
 
+// Markdown is rendered after stripControls, never before: that pass deletes ESC
+// bytes, so escapes written first would be stripped right back out. Truncation
+// to SUMMARY_MAX_CHARS then runs against the styled string, which is why
+// truncate counts display width rather than code points.
+//
+// Pass order is markdown, then paths, then quantities, then outcome words, and
+// it is the one thing here that is not arbitrary. The model's own markers are
+// the most explicit signal in the text, so they claim their spans first; a path
+// claims next because `error-handler.js` is one filename rather than a filename
+// with a red word in it, and the same for `2.3s` versus a bare `3`. Every pass
+// after the first skips text already inside an escape, so a span is styled once
+// and the ordering above is what decides by whom.
 function sanitize(text) {
-  return truncate(stripControls(text), SUMMARY_MAX_CHARS)
+  return truncate(styleTokens(renderMarkdown(stripControls(text))), SUMMARY_MAX_CHARS)
+}
+
+// `**bold**`, `` `code` ``, `*italic*`. Fenced/indented blocks and links are
+// deliberately not handled — stripControls has already collapsed the text to a
+// single line, where those shapes no longer exist as such.
+//
+// One pass, ordered: the bold pattern is tried before the italic one so `**x**`
+// cannot be read as an empty italic wrapping `*x*`. Under NO_COLOR or a pipe
+// the markers are removed rather than left as literal punctuation — the point
+// is to stop showing them, and a plain terminal still gets the prose.
+const MD_RE = /`([^`\n]+)`|\*\*(\S(?:[^*\n]*\S)?)\*\*|\*(\S(?:[^*\n]*\S)?)\*/g
+
+function renderMarkdown(text) {
+  if (!text || (!text.includes('*') && !text.includes('`'))) return text
+  return text.replace(MD_RE, (match, code, bold, italic) => {
+    if (code !== undefined) return colorEnabled ? MD_CODE_ON + code + MD_CODE_OFF : code
+    if (bold !== undefined) return colorEnabled ? MD_BOLD_ON + bold + MD_BOLD_OFF : bold
+    return colorEnabled ? MD_ITALIC_ON + italic + MD_ITALIC_OFF : italic
+  })
+}
+
+// A path needs a separator or a known extension to count, so a bare word never
+// becomes one; `docs/reviews/foo.md` and `dash.js:1092` both qualify, and the
+// optional `:line` is part of the same token so the number inside it is not
+// read as a quantity later. Trailing sentence punctuation is left outside.
+const TOK_PATH_RE = /(?:[\w.@~-]+\/)+[\w@-]+(?:\.[\w@-]+)*(?::\d+)?|[\w@-]+\.(?:js|cjs|mjs|ts|tsx|jsx|json|md|py|sh|yml|yaml|toml|html|css|txt|lock)(?::\d+)?/g
+const TOK_REF_RE = /#\d+/g
+// The unit is required: a bare number is as often an ordinal as a measurement,
+// and `2` bolded mid-sentence reads as a typo. Only the number takes the bold —
+// the unit is the label, and bolding both makes the phrase shout.
+const TOK_NUM_RE = /\b(\d+(?:\.\d+)?)(%|s\b|ms\b|m\b|h\b|x\b| ?[KMGT]?B\b|(?= (?:findings?|files?|rows?|tests?|errors?|issues?|commits?|lines?|sessions?|agents?|units?|PRs?|seconds?|minutes?|hours?)\b))/g
+const TOK_GOOD_RE = /\b(?:green|passed|complete|completed|done|fixed|verified|success|succeeded|merged)\b/gi
+const TOK_BAD_RE = /\b(?:failed|failing|error|errors|broken|blocked|wrong|bug|bugs|red|crash|crashed)\b/gi
+
+// Splits on SGR so a pass only ever rewrites the runs that carry no styling
+// yet, which is what makes "first pass wins" hold without tracking offsets.
+// The escapes themselves pass through untouched, so display width is unchanged
+// and every opener the passes add is one truncateStyled already knows how to
+// close.
+function styleUnstyled(text, re, wrap) {
+  if (!colorEnabled) return text
+  const open = []
+  const out = text.split(SGR_SPLIT_RE).map((token) => {
+    if (token === '') return token
+    if (SGR_ONE_RE.test(token)) { applyStyleToken(open, token); return token }
+    return open.length > 0 ? token : token.replace(re, wrap)
+  })
+  return out.join('')
+}
+
+function styleTokens(text) {
+  if (!colorEnabled || !text) return text
+  let out = styleUnstyled(text, TOK_PATH_RE, (m) => TOK_PATH_ON + m + TOK_PATH_OFF)
+  out = styleUnstyled(out, TOK_REF_RE, (m) => TOK_REF_ON + m + TOK_REF_OFF)
+  out = styleUnstyled(out, TOK_NUM_RE, (m, num, unit) => TOK_NUM_ON + num + TOK_NUM_OFF + unit)
+  out = styleUnstyled(out, TOK_GOOD_RE, (m) => TOK_GOOD_ON + m + TOK_GOOD_OFF)
+  return styleUnstyled(out, TOK_BAD_RE, (m) => TOK_BAD_ON + m + TOK_BAD_OFF)
 }
 
 // --- Sort and naming -----------------------------------------------------
@@ -556,7 +1185,9 @@ function resolveNames(rows) {
 // --- Layout --------------------------------------------------------------
 //
 // Fixed budgets for state, age, name, and dir; the summary absorbs whatever
-// remains and is the first column dropped when there is not enough, then dir.
+// remains. When there is not enough, skill and agents drop together first, then
+// summary, then dir: a narrow pane should shed what was just added rather than
+// the summary that has always been there.
 
 function formatAge(ms) {
   const secs = Math.floor(ms / 1000)
@@ -574,17 +1205,97 @@ function shortenDir(cwd) {
   return cwd
 }
 
-function truncate(text, width) {
-  if (width <= 0) return ''
-  const chars = Array.from(text)
-  if (chars.length <= width) return text
-  if (width === 1) return '…'
-  return chars.slice(0, width - 1).join('') + '…'
+const SGR_RE = /\x1b\[[0-9;]*m/g
+const SGR_SPLIT_RE = /(\x1b\[[0-9;]*m)/
+const SGR_ONE_RE = /^\x1b\[[0-9;]*m$/
+// Opener -> its own closer, so truncateStyled can shut exactly what markdown
+// rendering opened without a blanket reset cancelling buildFrame's reverse video.
+// Openers are tracked, not closers: SGR 22 ends bold *and* dim, so a closer
+// alone cannot say which of the two it shut, and reopening across a wrap needs
+// to know exactly that.
+// Keyed by opener string, so the typed-token openers that reuse a markdown or
+// state colour (dim, bold) collapse onto the same entry rather than adding one.
+const SGR_CLOSERS = new Map([
+  [MD_BOLD_ON, MD_BOLD_OFF],
+  [MD_ITALIC_ON, MD_ITALIC_OFF],
+  [MD_CODE_ON, MD_CODE_OFF],
+  [TOK_REF_ON, TOK_REF_OFF],
+  [TOK_GOOD_ON, TOK_GOOD_OFF],
+  [TOK_BAD_ON, TOK_BAD_OFF],
+])
+
+
+// `open` is a stack of the openers still in effect. A closer pops the opener it
+// shuts, matched by that opener's own closer rather than by identity.
+function applyStyleToken(open, token) {
+  if (SGR_CLOSERS.has(token)) { open.push(token); return }
+  for (let i = open.length - 1; i >= 0; i--) {
+    if (SGR_CLOSERS.get(open[i]) === token) { open.splice(i, 1); return }
+  }
 }
 
+function closersFor(open) {
+  let out = ''
+  for (let i = open.length - 1; i >= 0; i--) out += SGR_CLOSERS.get(open[i])
+  return out
+}
+
+function displayWidth(text) {
+  return Array.from(text.replace(SGR_RE, '')).length
+}
+
+function truncate(text, width) {
+  if (width <= 0) return ''
+  if (!SGR_RE.test(text)) {
+    SGR_RE.lastIndex = 0
+    const chars = Array.from(text)
+    if (chars.length <= width) return text
+    if (width === 1) return '…'
+    return chars.slice(0, width - 1).join('') + '…'
+  }
+  SGR_RE.lastIndex = 0
+  return truncateStyled(text, width)
+}
+
+// The styled path counts columns, not code points: markdown rendering puts
+// zero-width escapes inside the text, and a cut between an opening and a
+// closing one would bleed bold into the rest of the frame — so whatever is
+// still open at the cut is closed on the way out.
+function truncateStyled(text, width) {
+  if (displayWidth(text) <= width) return text
+  const budget = width === 1 ? 1 : width - 1
+  let out = ''
+  let shown = 0
+  const open = []
+  for (const token of text.split(SGR_SPLIT_RE)) {
+    if (token === '') continue
+    if (SGR_ONE_RE.test(token)) {
+      applyStyleToken(open, token)
+      out += token
+      continue
+    }
+    for (const ch of token) {
+      if (shown === budget) break
+      out += ch
+      shown++
+    }
+    if (shown === budget) break
+  }
+  const closes = closersFor(open)
+  return width === 1 ? closes + '…' : out + closes + '…'
+}
+
+
 function pad(text, width) {
-  const len = Array.from(text).length
+  const len = displayWidth(text)
   return len >= width ? text : text + ' '.repeat(width - len)
+}
+
+// The mirror of pad, for the two numeric columns. `13s` and `1h04` only line up
+// on their units when the short one is the padded one.
+function padLeft(text, width) {
+  const len = displayWidth(text)
+  return len >= width ? text : ' '.repeat(width - len) + text
 }
 
 function layout(rows, width) {
@@ -597,48 +1308,184 @@ function layout(rows, width) {
 
   const beforeName = stateWidth + COLUMN_GAP + AGE_WIDTH + COLUMN_GAP
   const nameWidth = Math.max(NAME_MIN, Math.min(wantName, width - beforeName))
-  const fixed = beforeName + nameWidth
-  const afterDir = width - fixed - COLUMN_GAP - wantDir
-  const showSummary = afterDir - COLUMN_GAP >= SUMMARY_MIN
-  if (showSummary) {
-    return { stateWidth, nameWidth, dirWidth: wantDir, showDir: true, showSummary: true, summaryWidth: afterDir - COLUMN_GAP }
+  const base = beforeName + nameWidth
+
+  // Skill and agents drop together, before summary: a narrow pane should shed
+  // the newer columns rather than the one that has always been there.
+  for (const showSkill of [true, false]) {
+    const fixed = base + (showSkill ? COLUMN_GAP + SKILL_WIDTH + COLUMN_GAP + AGENTS_WIDTH : 0)
+    const afterDir = width - fixed - COLUMN_GAP - wantDir
+    if (afterDir - COLUMN_GAP < SUMMARY_MIN) continue
+    return { stateWidth, nameWidth, showSkill, dirWidth: wantDir, showDir: true, showSummary: true, summaryWidth: afterDir - COLUMN_GAP }
   }
 
-  // Summary goes first; dir then shrinks into whatever is left and is dropped
-  // only when there is no room for a usable stub of it.
-  const dirWidth = Math.min(wantDir, width - fixed - COLUMN_GAP)
-  return { stateWidth, nameWidth, dirWidth, showDir: dirWidth >= DIR_MIN, showSummary: false, summaryWidth: 0 }
+  // Then summary; dir shrinks into whatever is left and is dropped only when
+  // there is no room for a usable stub of it.
+  const dirWidth = Math.min(wantDir, width - base - COLUMN_GAP)
+  return { stateWidth, nameWidth, showSkill: false, dirWidth, showDir: dirWidth >= DIR_MIN, showSummary: false, summaryWidth: 0 }
 }
 
-function renderLine(cells, cols, width) {
+// `right` is a parallel array of booleans, one per column; absent means every
+// column is left-aligned, which is what every caller but buildTable wants.
+function renderLine(cells, cols, width, right) {
   const parts = []
   for (let i = 0; i < cells.length; i++) {
-    parts.push(i === cells.length - 1 ? truncate(cells[i], cols[i]) : pad(truncate(cells[i], cols[i]), cols[i]))
+    const cell = truncate(cells[i], cols[i])
+    const last = i === cells.length - 1
+    parts.push(right && right[i] ? padLeft(cell, cols[i]) : last ? cell : pad(cell, cols[i]))
   }
   return truncate(parts.join(' '.repeat(COLUMN_GAP)).replace(/\s+$/, ''), width)
 }
 
-function buildTable(rows, width) {
+// Applied to an already-padded string, never before: truncate and pad count
+// code points, and an escape is code points that occupy no columns, so
+// colouring first would leave every column short by the escape's length.
+function colorize(padded, on, off) {
+  return colorEnabled ? on + padded + off : padded
+}
+
+function colorState(padded, stateCell) {
+  if (stateCell === WAITING_LABEL) return colorize(padded, ESC_AMBER, ESC_COLOR_OFF)
+  if (stateCell === 'busy') return colorize(padded, ESC_GREEN, ESC_COLOR_OFF)
+  if (stateCell === VM_STALE_LABEL) return colorize(padded, ESC_DIM, ESC_DIM_OFF)
+  return padded
+}
+
+function buildTable(rows, width, expanded, now) {
   const cols = layout(rows, width)
   const widths = [cols.stateWidth, AGE_WIDTH, cols.nameWidth]
   const headers = ['STATE', 'AGE', 'NAME']
+  // AGE and AGENTS are numerics: right-aligned so `13s` and `1h04` line up on
+  // their units. The header travels with the column so the label sits over its
+  // own values rather than over the padding beside them.
+  const right = [false, true, false]
+  if (cols.showSkill) {
+    widths.push(SKILL_WIDTH)
+    headers.push('SKILL')
+    right.push(false)
+    widths.push(AGENTS_WIDTH)
+    headers.push('AGENTS')
+    right.push(true)
+  }
   if (cols.showDir) {
     widths.push(cols.dirWidth)
     headers.push('DIR')
+    right.push(false)
   }
   if (cols.showSummary) {
     widths.push(cols.summaryWidth)
     headers.push('SUMMARY')
+    right.push(false)
   }
 
-  const lines = [renderLine(headers, widths, width), '']
+  const lines = [colorize(renderLine(headers, widths, width, right), ESC_DIM, ESC_DIM_OFF), '']
+  const rowLineIndex = []
+  // Summed off the widths array rather than re-derived from cols: the columns
+  // before AGENTS are optional and sized per frame, and two expressions for the
+  // same offset is exactly how they drift apart.
+  const agentsIdx = 4
+  const agentsAt = widths.slice(0, agentsIdx).reduce((n, c) => n + c + COLUMN_GAP, 0)
   for (const row of rows) {
     const cells = [row.stateCell, row.ageCell, row.nameCell]
+    if (cols.showSkill) {
+      cells.push(row.skillCell)
+      cells.push(row.agentsCell)
+    }
     if (cols.showDir) cells.push(row.dirCell)
-    if (cols.showSummary) cells.push(row.summary)
-    lines.push(renderLine(cells, widths, width))
+    const [head, overflow] = cols.showSummary ? splitSummary(row.summary, cols.summaryWidth) : ['', '']
+    if (cols.showSummary) cells.push(head)
+    rowLineIndex.push(lines.length)
+    // Rightmost span first: recolorSpan counts code points, and an escape
+    // inserted on the left would shift every offset to its right.
+    let line = renderLine(cells, widths, width, right)
+    if (cols.showSkill && row.agentsCell === '-') {
+      line = recolorSpan(line, agentsAt, AGENTS_WIDTH, (padded) => colorize(padded, ESC_DIM, ESC_DIM_OFF))
+    }
+    line = recolorSpan(line, 0, cols.stateWidth, (padded) => colorState(padded, row.stateCell))
+    lines.push(line)
+    // Fixed two lines per row, always. A row whose height tracked its summary
+    // length reflowed every row below it the moment a Haiku reply landed, which
+    // read as the whole table jumping. The filler is bare '' rather than padded
+    // cells because renderLine right-trims an empty cell array to exactly that.
+    lines.push(overflow ? renderLine(cells.map(() => '').fill(overflow, cells.length - 1), widths, width, right) : '')
+    if (row.id === expanded) lines.push(...agentLines(row, width, now))
   }
-  return lines
+  return { lines, rowLineIndex }
+}
+
+// Re-wraps one column of an already-rendered line. The span is in code points
+// and the line carries no escapes yet, so the slice is exact; a line the frame
+// width cut short of the span is left alone rather than half-coloured.
+function recolorSpan(line, start, span, wrap) {
+  if (!colorEnabled) return line
+  const chars = Array.from(line)
+  if (chars.length < start + span) return line
+  return chars.slice(0, start).join('') + wrap(chars.slice(start, start + span).join('')) + chars.slice(start + span).join('')
+}
+
+// Two lines, no more: the second holds what did not fit and is itself clipped
+// by the column. The break prefers the last space that fits, since a mid-word
+// cut reads as corruption rather than as a wrap; a token longer than the column
+// has no space to break at and is cut hard.
+function splitSummary(summary, summaryWidth) {
+  if (displayWidth(summary) <= summaryWidth) return [summary, '']
+  if (!summary.includes('\x1b')) {
+    const chars = Array.from(summary)
+    const space = chars.lastIndexOf(' ', summaryWidth)
+    const cut = space > 0 ? space : summaryWidth
+    return [chars.slice(0, cut).join(''), chars.slice(space > 0 ? cut + 1 : cut).join('').trim()]
+  }
+  return splitStyled(summary, summaryWidth)
+}
+
+// The styled split walks columns rather than code points, and carries whatever
+// SGR is still open across the break: the head closes it so nothing bleeds into
+// the gutter, and the overflow reopens it so a bolded phrase that straddles the
+// wrap stays bold on both lines.
+function splitStyled(summary, summaryWidth) {
+  const open = []
+  let head = ''
+  let shown = 0
+  let cutAt = -1
+  let cutOpen = null
+  let cutShown = 0
+  let rest = ''
+  for (const token of summary.split(SGR_SPLIT_RE)) {
+    if (token === '') continue
+    if (rest !== '') { rest += token; continue }
+    if (SGR_ONE_RE.test(token)) {
+      applyStyleToken(open, token)
+      head += token
+      continue
+    }
+    for (const ch of token) {
+      if (shown === summaryWidth) { rest += ch; continue }
+      if (ch === ' ') { cutAt = head.length; cutOpen = open.slice(); cutShown = shown }
+      head += ch
+      shown++
+      if (shown === summaryWidth) rest = ''
+    }
+  }
+  // A break at the last space that fits, exactly as the plain path does; a
+  // token wider than the column has no space to break at and is cut hard.
+  if (cutAt > 0 && cutShown > 0) {
+    rest = summary.slice(cutAt + 1)
+    head = head.slice(0, cutAt)
+    return [head + closersFor(cutOpen), (cutOpen.join('') + rest).trim()]
+  }
+  return [head + closersFor(open), (open.join('') + rest).trim()]
+}
+
+// No status word and no glyph distinction: every line here is running by
+// construction, so a state column would repeat itself down the whole roster.
+function agentLines(row, width, now) {
+  return agentRosterFor(row)
+    .map((agent) => {
+      const age = agent.dispatchedAt ? formatAge(Math.max(0, now - agent.dispatchedAt)) : '-'
+      const cells = [pad(truncate(age, AGENT_AGE_WIDTH), AGENT_AGE_WIDTH), pad(truncate(shortAgentType(agent.type), AGENT_TYPE_WIDTH), AGENT_TYPE_WIDTH), agent.description]
+      const line = truncate(`${AGENT_INDENT}${AGENT_GLYPH} ${cells.join(' ')}`.replace(/\s+$/, ''), width)
+      return recolorSpan(line, AGENT_INDENT.length, AGENT_GLYPH.length, (glyph) => colorize(glyph, ESC_DIM, ESC_DIM_OFF))
+    })
 }
 
 // --- Frame ---------------------------------------------------------------
@@ -665,7 +1512,11 @@ function decorateRows(rows, observed, now) {
     row.ageCell = formatAge(ageMsFor(row, observed, now))
     row.nameCell = row.label + nameMarker(row)
     row.dirCell = row.remote ? row.cwd : shortenDir(row.cwd)
+    // summaryFor is what advances the scan, so the skill it read is only
+    // current once that has run.
     row.summary = row.remote ? '' : summaryFor(row)
+    row.skillCell = skillFor(row)
+    row.agentsCell = agentsFor(row)
   }
   return rows
 }
@@ -676,20 +1527,64 @@ function stamp(now) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
-function buildFrame(state, width, now) {
-  const lines = frameLines(state, width, now).map((line) => truncate(line, width))
+function buildFrame(state, width, now, rows) {
+  // truncate counts code points, and a coloured table line carries escapes that
+  // occupy none — so the belt-and-braces pass here skips any line already
+  // within the width once its escapes are discounted, rather than clipping it
+  // by their length.
+  const lines = clampFrame(state, frameLines(state, width, now).map((line) => (displayWidth(line) <= width ? line : truncate(line, width))), rows)
   // Applied after truncation so the escape bytes are never counted as columns.
   const row = highlightLineIndex(state)
   if (row !== -1 && lines[row] !== undefined) lines[row] = ESC_REVERSE_ON + lines[row] + ESC_REVERSE_OFF
   return lines
 }
 
-// The table occupies the top of the frame with a header line and a blank line
-// under it, so a row's frame line is its highlight index plus two.
+// Fixed two-line rows doubled the frame's height, and a frame taller than the
+// pane scrolls inside the alt screen — losing the header first, which reads as
+// the table jumping. So the table is cut from the bottom, where the rows are
+// least urgent (they are sorted by tab order, and the sort puts nothing
+// important last), and the header and the whole footer are kept.
+//
+// The count of what was dropped is part of the frame rather than silent: a
+// table that quietly shows six of ten sessions is worse than one that says so.
+function clampFrame(state, lines, rows) {
+  if (!Number.isInteger(rows) || rows <= 0 || lines.length <= rows) return lines
+  const end = state.tableEnd
+  // Nothing to take from: no table in this frame, or the footer alone already
+  // overflows. Either way the clamp has no safe cut and the scroll is the
+  // lesser evil — cutting the footer would hide the poll state.
+  if (!Number.isInteger(end) || end <= 0) return lines
+  const footer = lines.slice(end)
+  // One line of the budget goes to the "+N more" notice, which only exists
+  // because rows are being dropped.
+  const room = rows - footer.length - 1
+  // Rows are dropped as a suffix, so the cut is the first row whose own lines
+  // do not fit whole — a half-rendered row is worse than one fewer row.
+  let kept = 0
+  while (kept < state.rowLineIndex.length) {
+    const to = kept + 1 < state.rowLineIndex.length ? state.rowLineIndex[kept + 1] : end
+    if (to > room) break
+    kept++
+  }
+  const dropped = state.rowLineIndex.length - kept
+  if (dropped === 0) return lines
+  const cut = kept > 0 ? (kept < state.rowLineIndex.length ? state.rowLineIndex[kept] : end) : state.rowLineIndex[0]
+  const notice = `… +${dropped} more session${dropped === 1 ? '' : 's'}`
+  // Highlight offsets index the frame array, and a dropped row's stale offset
+  // would put the reverse video on the notice or the footer.
+  state.rowLineIndex = state.rowLineIndex.slice(0, kept)
+  return lines.slice(0, cut).concat([colorize(notice, ESC_DIM, ESC_DIM_OFF)], footer)
+}
+
+// Read from the map buildTable just wrote rather than computed: an expanded
+// roster inserts lines mid-table, so a row's frame line is no longer its index
+// plus the two-line preamble.
 function highlightLineIndex(state) {
   if (noTableYet(state) || state.lastRows.length === 0) return -1
   const index = state.highlight.index
-  return index >= 0 && index < state.lastRows.length ? index + 2 : -1
+  if (index < 0 || index >= state.lastRows.length) return -1
+  const line = state.rowLineIndex[index]
+  return line === undefined ? -1 : line
 }
 
 // A never-good local poll is only a bare error body while there is nothing
@@ -700,6 +1595,7 @@ function noTableYet(state) {
 
 function frameLines(state, width, now) {
   const lines = []
+  state.tableEnd = -1
   if (noTableYet(state)) {
     lines.push(ERROR_BODIES[state.error] || `registry error: ${state.error}`)
     lines.push('')
@@ -713,7 +1609,14 @@ function frameLines(state, width, now) {
   if (state.lastRows.length === 0) {
     lines.push('No Claude Code sessions running. Start one with `claude` in any directory.')
   } else {
-    lines.push(...buildTable(state.lastRows, width))
+    const table = buildTable(state.lastRows, width, state.expanded, now)
+    // Where each row landed, which is no longer a function of its index once an
+    // expanded roster has pushed the rows below it down.
+    state.rowLineIndex = table.rowLineIndex
+    lines.push(...table.lines)
+    // Where the table stops and the footer begins, which is the only cut point
+    // clampFrame is allowed to take rows from.
+    state.tableEnd = lines.length
   }
   lines.push('')
 
@@ -728,7 +1631,7 @@ function frameLines(state, width, now) {
     const age = formatAge(Math.max(0, now - state.lastGoodAt))
     lines.push(`polled ${stamp(now)}  ·  ${ERROR_BODIES[state.error] || state.error} (last good poll ${age} ago)`)
   } else {
-    lines.push(`polled ${stamp(now)}  ·  ${state.lastRows.length} session${state.lastRows.length === 1 ? '' : 's'}`)
+    lines.push(`polled ${stamp(now)}  ·  ${state.lastRows.length} session${state.lastRows.length === 1 ? '' : 's'}${haikuRateCell(now)}`)
   }
   lines.push(...vmFooterLines(state))
   if (state.transient) lines.push(state.transient)
@@ -809,10 +1712,16 @@ function newState() {
     vmAuthRejects: 0,
     vmDropped: 0,
     listenError: null,
-    listenNote: null,
+    tokenNote: null,
+    tokenWarning: null,
+    summaryNote: null,
+    envNote: null,
     mode: 'normal',
     interactive: false,
     highlight: { id: null, index: -1 },
+    expanded: null,
+    rowLineIndex: [],
+    tableEnd: -1,
     renameBuffer: '',
     renameTarget: null,
     transient: null,
@@ -852,7 +1761,7 @@ function readToken(state) {
   }
   if (st.isSymbolicLink() || !st.isFile() || st.size > TOKEN_MAX_BYTES) return TOKEN_REFUSED
   if ((st.mode & 0o077) !== 0) {
-    state.listenNote = `${stripControls(TOKEN_PATH)} is readable beyond this user — chmod 600 it`
+    state.tokenWarning = `${stripControls(TOKEN_PATH)} is readable beyond this user — chmod 600 it`
   }
   let raw
   try {
@@ -915,7 +1824,7 @@ function resolveToken(state) {
   } catch (e) {
     token = null
   }
-  if (token !== null) state.listenNote = `new token at ${stripControls(TOKEN_PATH)} — copy it to the VM as 0600 for VM rows to appear`
+  if (token !== null) state.tokenNote = `new token at ${stripControls(TOKEN_PATH)} — copy it to the VM as 0600 for VM rows to appear`
   return token
 }
 
@@ -951,6 +1860,9 @@ function handleVmRequest(state, req, res) {
     state.vmAuthRejects += 1
     return rejectVm(res, 401)
   }
+  // Before every other rejection: a malformed body from a correctly-tokened VM
+  // still proves the operator finished the copy the note asks for.
+  state.tokenNote = null
   const type = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase()
   if (type !== 'application/json') return rejectVm(res, 415)
   if (req.headers.origin !== undefined) return rejectVm(res, 403)
@@ -1083,11 +1995,16 @@ function oldestKey(map, at) {
 function vmFooterLines(state) {
   const lines = []
   if (state.listenError) lines.push(state.listenError)
-  if (state.listenNote) lines.push(state.listenNote)
+  if (state.tokenNote) lines.push(state.tokenNote)
+  if (state.tokenWarning) lines.push(state.tokenWarning)
   if (state.vmAuthRejects > 0) {
     lines.push(`${state.vmAuthRejects} VM request${state.vmAuthRejects === 1 ? '' : 's'} rejected — the VM's token copy may be stale`)
   }
   if (state.vmDropped > 0) lines.push(`${state.vmDropped} VM event${state.vmDropped === 1 ? '' : 's'} dropped`)
+  if (state.envNote) lines.push(state.envNote)
+  // One fixed line for every summarizer failure — no key, no message, no
+  // options object, all three of which a caught https error can carry.
+  if (state.summaryNote) lines.push(state.summaryNote)
   return lines
 }
 
@@ -1097,6 +2014,16 @@ function vmFooterLines(state) {
 // statuses change, so the index is derived from the id after every tick. A
 // vanished session hands the selection to whatever row now sits nearest its
 // old position rather than dropping it.
+
+// An expansion outlives neither its session nor its roster. Rows come and go
+// every poll, so a dead id left set would re-expand a session that reused it,
+// and a roster that drained to nothing would hold open an empty expansion that
+// Space's no-op-at-zero rule never gets the chance to close.
+function reconcileExpanded(state) {
+  if (state.expanded === null) return
+  const row = state.lastRows.find((r) => r.id === state.expanded)
+  if (!row || agentRosterFor(row).length === 0) state.expanded = null
+}
 
 function reconcileHighlight(state) {
   const rows = state.lastRows
@@ -1679,7 +2606,9 @@ function runOnce(opts) {
 function runLive(opts) {
   const state = newState()
   state.interactive = true
+  colorEnabled = !process.env.NO_COLOR && Boolean(process.stdout.isTTY)
   registerRestore()
+  armSummarizer(state)
   if (opts.listen !== null) startListener(state, opts.listen)
   entered = true
   write(ESC_ALT_ENTER + ESC_CURSOR_HIDE + ESC_TITLE_SET)
@@ -1697,6 +2626,7 @@ function runLive(opts) {
       state.poll = state.poll === 'never-good' ? 'never-good' : 'stale'
     }
     reconcileHighlight(state)
+    reconcileExpanded(state)
     // One bell per tick, not one per transition: three sessions all going
     // waiting at once is one event to the person hearing it.
     if (shouldBell(transitions, opts)) write(BELL)
@@ -1718,7 +2648,9 @@ function shouldBell(transitions, opts) {
 function paint(state) {
   if (restored) return
   const width = process.stdout.columns || DEFAULT_WIDTH
-  const lines = buildFrame(state, width, Date.now())
+  // Undefined off a TTY, which is the no-clamp case: nothing is scrolling a
+  // piped frame, so there is no height to fit it to.
+  const lines = buildFrame(state, width, Date.now(), process.stdout.rows)
   write(ESC_CURSOR_HOME + lines.join(ESC_CLEAR_EOL + '\n') + ESC_CLEAR_EOL + ESC_CLEAR_EOS)
 }
 
@@ -1829,15 +2761,38 @@ function handleKey(state, key) {
     if (state.highlight.index >= 0) enterRename(state)
     return
   }
-  // j up, k down — the reverse of vi, less, git, and tmux, deliberately: this
-  // is a single-user tool and the binding that matches the owner's hands wins.
-  if (code === KEY_J || key === SEQ_UP) {
+  // Below the rename dispatch above, so a space typed into a tab name stays a
+  // literal character and can never toggle an expansion.
+  if (code === KEY_SPACE) {
+    toggleExpanded(state)
+    paint(state)
+    return
+  }
+  // Arrows only. j/k were bound here in the reverse of vi, less, git, and tmux
+  // — the binding that matched the owner's hands — and were then more
+  // distracting than either direction was useful.
+  if (key === SEQ_UP) {
     moveHighlight(state, -1)
     paint(state)
-  } else if (code === KEY_K || key === SEQ_DOWN) {
+  } else if (key === SEQ_DOWN) {
     moveHighlight(state, 1)
     paint(state)
   }
+}
+
+// One session expanded at a time: two open rosters push the rows under them far
+// enough down that the table stops reading as a list. A row with nothing running
+// has nothing to show, so the key does nothing there rather than collapsing what
+// is already open.
+function toggleExpanded(state) {
+  const row = state.lastRows[state.highlight.index]
+  if (!row) return
+  if (state.expanded === row.id) {
+    state.expanded = null
+    return
+  }
+  if (agentRosterFor(row).length === 0) return
+  state.expanded = row.id
 }
 
 // --- Entry ---------------------------------------------------------------
@@ -1872,7 +2827,22 @@ if (require.main === module) main()
 // ageOutVmRows and renderRows to reach the rendered cells, and tab-order
 // sorting, whose two query outputs cannot be produced off a Mac: the parsers
 // take that output as text, sortRows takes the resulting map, and handleKey with
-// moveHighlight covers the j/k swap without a pty.
+// moveHighlight, buildTable's row-to-line map, and reconcileExpanded covers
+// movement and expansion without a pty.
+//
+// scanDelta and newCacheEntry are the seam for the counting logic, which is the
+// one part of this file whose wrong answer is silent: a miscount renders as a
+// plausible number and has shipped that way once already. scanDelta takes the
+// entry it mutates, so a caller supplies its own and drives the reducers under
+// it — dispatch pairing, orphan reclamation, the chunk boundary — against a
+// written transcript, with no cache and no projects tree involved.
+//
+// Not exported, deliberately: skillFor and agentsFor. Both take a row rather
+// than a cache entry, rebuilding a path against PROJECTS_DIR and reading the
+// module-private summaryCache, so reaching either means laying down real
+// transcript files under a simulated tree — a fixture seam, not the
+// pure-function one they resemble. They are inspection-only, alongside
+// refreshTabOrder.
 module.exports = {
   validateVmRow,
   applyVmEvent,
@@ -1893,4 +2863,8 @@ module.exports = {
   tabIndexOf,
   handleKey,
   moveHighlight,
+  buildTable,
+  reconcileExpanded,
+  scanDelta,
+  newCacheEntry,
 }
