@@ -185,7 +185,7 @@ Host ro-devbox
   ControlPersist 10m
   ServerAliveInterval 30
   ServerAliveCountMax 3
-  ExitOnForwardFailure yes
+  ExitOnForwardFailure no
 ```
 
 The config is the only place that covers `devbox ssh`, `devbox <name>`,
@@ -200,8 +200,37 @@ because of `ControlPath`: `ControlMaster auto` with no socket path is a no-op,
 and a second concurrent `devbox` invocation then hard-fails on the VM-side port
 bind under `ExitOnForwardFailure`. `ServerAliveInterval 30` /
 `ServerAliveCountMax 3` tear a dead master down instead of leaving it to be
-reused (see *Known limitations*). `ExitOnForwardFailure yes` turns a silent
-half-connection into a loud ssh error. The forward reaches the
+reused (see *Known limitations*).
+
+`ExitOnForwardFailure` is **`no`**, and that one word is what keeps the forward
+from ever taking devbox down with it. Two things are true of a remote forward
+through a shared master, both measured on this setup rather than read about: a
+multiplexed client re-requests the config's `RemoteForward` through whatever
+master it joins, and a forward that request establishes **persists in the
+master after the client exits**. So when the port is already held on the VM —
+by a zombie an earlier laptop sleep left behind, or by a second live connection
+that bound it first — the master connects anyway, and every later call
+re-requests the forward until one succeeds, at which point the master holds it.
+Self-healing, with no extra round trip. Longer sessions print
+`Warning: remote port forwarding failed for listen port 45800` while it is held;
+a quick command can exit before the reply lands, so the reliable signal is the
+dashboard itself, where the VM rows go `stale`.
+
+At `yes` the same bind failure is fatal: every `devbox` command dies on it, and
+a master that did connect without the forward wedges every call multiplexed
+through it, since each one re-requests and fails. That was the failure this
+section used to document a workaround for. Nothing in `scripts/devbox` has to
+know any of this.
+
+How long the port stays held is the VM's call, not the Mac's: its `sshd` runs
+`ClientAliveInterval 30` / `ClientAliveCountMax 3` (set by hand in
+`/etc/ssh/sshd_config` on the VM — the ai-agents provisioning does not touch
+sshd, so a rebuilt VM reverts to the image's 120), so a zombie from a dropped
+connection is reaped within about 90 seconds and the next `devbox` call takes
+the forward. A live second connection holds it until that session ends, which is
+correct — it is forwarding.
+
+The forward reaches the
 VM's loopback only, which assumes `GatewayPorts` stays `no` on the devbox (it is
 unset today); at `yes` the listener would be reachable from the whole VPC. Check
 it with `ssh ro-devbox 'sshd -T | grep -i gatewayports'`. Writing `127.0.0.1:`
@@ -284,7 +313,7 @@ The bell rings once per tick when a session newly enters `waiting`.
 - A tab opened, closed, or dragged is reflected one poll (two seconds) later, since the tab query runs off the tick.
 - Tab order is iTerm-only. In any other terminal the query returns nothing and the table sorts by urgency, silently — the same degradation focus and rename already have.
 - A VM session that starts while the dashboard is down is invisible until its next event; there is no heartbeat and the dashboard never polls the VM. An idle VM session goes `stale` after 10 minutes for the same reason, which says only that nothing has been heard — not that the session is gone.
-- After a laptop sleep or a network drop the persisted ssh master can be half-dead, so `devbox` invocations hang or fail to bind the reverse forward. Recovery is `ssh -O exit ro-devbox`, then reconnect; the `ServerAlive*` keepalives detect it within about 90 s.
+- After a laptop sleep or a network drop the persisted ssh master can be half-dead, so `devbox` invocations hang. Recovery is `ssh -O exit ro-devbox`, then reconnect; the `ServerAlive*` keepalives detect it within about 90 s. A *failure to bind* the reverse forward is a different case and needs nothing: under `ExitOnForwardFailure no` the connection proceeds and the forward is retaken automatically once the port frees (see *Wiring the devbox*).
 - VM rows have no SUMMARY, no SKILL, and `-` AGENTS. The emitter carries a state and a tmux session name only — reading a VM transcript would mean an ssh round trip per row per tick.
 - SKILL has no end signal, so the last command a session ran stays in the cell after it finishes. There is nothing in the transcript that says a skill ended, and showing the last one is a better guess than blanking on a heuristic.
 - **Cold start:** a session already running when the dashboard starts is scanned from its current end, so agents dispatched before that are never counted and its AGENTS cell can read low or `-` while work is genuinely in flight. Once-per-session, not per tick, and it corrects itself as new dispatches land. Documented rather than engineered around — the alternative is the ~130 ms full read this design exists to avoid.
