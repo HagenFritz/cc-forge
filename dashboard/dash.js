@@ -158,6 +158,30 @@ const VM_STALE_LABEL = 'stale'
 const VM_SEQ_MAX = 2 ** 32
 const VM_MAX_CONNECTIONS = 32
 
+// The emitter is an event stream, and a session that never emits — started
+// before its hooks loaded, or before the dashboard was up — is a session the
+// stream never mentions. So the devbox is also asked directly, over ssh, for
+// the same `claude agents --json` the local table is built from, plus the
+// tmux pane map that gives each session the name Enter switches to. One
+// round trip every VM_POLL_INTERVAL_MS, the first one immediately at startup.
+const VM_POLL_INTERVAL_MS = 10000
+const VM_POLL_TIMEOUT_MS = 12000
+const VM_POLL_MAX_BYTES = 1024 * 1024
+// A polled row has heard no event: -1 sits below every real seq so the first
+// emitter event for that session is never dropped as a replay.
+const VM_POLL_SEQ = -1
+const VM_POLL_FAILURES_MAX = 3
+const VM_POLL_TMUX_MARK = '---TMUX---'
+const VM_POLL_PS_MARK = '---PS---'
+// `bash -lc` because a non-interactive ssh shell has no ~/.local/bin on PATH
+// and so no `claude`. The two markers split the one reply into its three parts.
+// ssh joins its argv with spaces into one remote command line, so this is
+// handed over as a single pre-quoted argument: split across argv, `-lc` would
+// take only `claude` and the rest would run in the outer shell. Double quotes
+// inside because the whole thing is single-quoted, and the format must be
+// quoted at all: bare, its leading `#` starts a shell comment.
+const VM_POLL_REMOTE = `claude agents --json; echo ${VM_POLL_TMUX_MARK}; tmux list-panes -a -F "#{session_name} #{pane_tty}" 2>/dev/null; echo ${VM_POLL_PS_MARK}; ps -eo pid=,tty=`
+
 const STATUS_RANK = { waiting: 0, idle: 1, busy: 2 }
 const UNKNOWN_STATUS_RANK = 3
 // One ASCII byte, no colour needed — fits STATE_WIDTH (8 chars).
@@ -182,14 +206,22 @@ const ESC_CLEAR_EOS = '\x1b[J'
 const ESC_TITLE_SET = `\x1b]0;${TAB_TITLE}\x07`
 const ESC_TITLE_RESET = '\x1b]0;\x07'
 
-const ESC_REVERSE_ON = '\x1b[7m'
-const ESC_REVERSE_OFF = '\x1b[27m'
+// The selection marker, in a gutter every line carries. Reverse video used to
+// carry it and could not: a row is two frame lines, so inverting the one the
+// highlight indexes lit up the top half of the selection and left the summary
+// continuation below it plain. Widening the invert to both lines would have
+// fought the per-column colour underneath it instead — STATE is already green,
+// amber, or dim inside that same span, and inverting a coloured cell reads as a
+// rendering fault rather than as a selection. An arrow in a gutter is outside
+// every column, so it marks the row without touching what the row is painted.
+const SELECT_MARKER = '> '
+const SELECT_BLANK = '  '
+const GUTTER_WIDTH = SELECT_MARKER.length
 
 // Colour is additive only: every cell it touches already reads correctly in
 // plain text (`waiting!` keeps its trailing marker), so a NO_COLOR terminal,
 // a pipe, or --once loses emphasis and nothing else. SGR 39/22 rather than 0
-// so a reset inside a highlighted line does not also cancel the reverse video
-// buildFrame wraps around it.
+// so a reset inside a cell does not cancel styling the line opened earlier.
 const ESC_AMBER = '\x1b[33m'
 const ESC_GREEN = '\x1b[32m'
 const ESC_RED = '\x1b[31m'
@@ -199,12 +231,11 @@ const ESC_DIM_OFF = '\x1b[22m'
 
 // Summaries are chat prose, so they arrive carrying `**bold**`, `` `code` ``,
 // and the odd `*italic*`. Rendered as SGR rather than stripped to punctuation.
-// Code spans are dim rather than reverse-video: the table already spends
-// reverse video on the highlighted row, and a second reverse span inside it
-// inverts back to normal and reads as a rendering fault. Single-asterisk
-// italics use SGR 3, which a minority of terminals ignore — but the failure
-// mode there is unstyled text, not visible punctuation, so it is still an
-// improvement on the literal asterisks it replaces.
+// Code spans are dim rather than reverse-video, which inverts back to normal
+// against anything already inverted and reads as a rendering fault.
+// Single-asterisk italics use SGR 3, which a minority of terminals ignore —
+// but the failure mode there is unstyled text, not visible punctuation, so it
+// is still an improvement on the literal asterisks it replaces.
 const MD_BOLD_ON = '\x1b[1m'
 const MD_BOLD_OFF = '\x1b[22m'
 const MD_ITALIC_ON = '\x1b[3m'
@@ -471,6 +502,70 @@ function readStatusUpdatedAt(pid) {
     return isEpochMs(parsed.statusUpdatedAt) ? parsed.statusUpdatedAt : null
   } catch (e) {
     return null
+  }
+}
+
+// --- Session rename ------------------------------------------------------
+//
+// The NAME column renders whatever `claude agents --json` reports, and that
+// comes from ~/.claude/sessions/<pid>.json — so renaming the iTerm tab alone
+// could never move it, which is exactly how this read as doing nothing.
+//
+// There is no supported way in: `rename_session` exists as a verb, but on the
+// SDK control channel, which only exists when Claude Code is driven by a parent
+// process. An ordinary terminal session exposes no such channel, and the peer
+// socket at /tmp/cc-socks/<pid>.sock carries messaging only. So this writes the
+// registry file, matching what Claude Code's own handler writes: the name plus
+// `nameSource: "user"`, which is the field that stops the name being re-derived.
+//
+// Deliberately never creates or repairs the file. Every guard failure leaves it
+// untouched and reports, because this is another program's private state: the
+// worst case is a name that reverts, never a registry this corrupts.
+function renameSession(pid, name) {
+  if (pid === null || !PID_RE.test(String(pid))) return 'no pid for that row'
+  const file = path.join(SESSIONS_DIR, `${pid}.json`)
+  try {
+    const st = fs.lstatSync(file)
+    if (st.isSymbolicLink() || !st.isFile()) return 'session registry file is not a regular file'
+    if (st.size > SESSION_FILE_MAX_BYTES) return 'session registry file is too large to rewrite'
+    let fd
+    let raw
+    try {
+      fd = fs.openSync(file, fs.constants.O_RDONLY | O_NOFOLLOW)
+      raw = fs.readFileSync(fd, 'utf8')
+    } finally {
+      if (fd !== undefined) fs.closeSync(fd)
+    }
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return 'session registry file is not an object'
+    // The two fields the rename rewrites must already be there. A file without
+    // them is a schema this was not written against — a version bump, or not a
+    // session file at all — and guessing at it is how private state gets mangled.
+    if (typeof parsed.name !== 'string' || typeof parsed.nameSource !== 'string') {
+      return 'session registry has no name field — Claude Code may have changed it'
+    }
+    parsed.name = name
+    parsed.nameSource = 'user'
+    parsed.nameSince = Date.now()
+    // temp+rename so a crash mid-write cannot leave a half-written registry
+    // file behind: the session process reads this on its own schedule.
+    const temp = path.join(SESSIONS_DIR, `.dash-rename.${process.pid}.${Date.now()}`)
+    try {
+      let wfd
+      try {
+        wfd = fs.openSync(temp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | O_NOFOLLOW, st.mode & 0o777)
+        fs.writeSync(wfd, JSON.stringify(parsed))
+      } finally {
+        if (wfd !== undefined) fs.closeSync(wfd)
+      }
+      fs.renameSync(temp, file)
+    } catch (e) {
+      try { fs.unlinkSync(temp) } catch (e2) { /* never created */ }
+      throw e
+    }
+    return null
+  } catch (e) {
+    return 'could not write the session registry file'
   }
 }
 
@@ -1351,7 +1446,10 @@ function colorState(padded, stateCell) {
   return padded
 }
 
-function buildTable(rows, width, expanded, now) {
+function buildTable(rows, frameWidth, expanded, now) {
+  // Every line this builds is prefixed with the selection gutter, so the columns
+  // are laid out against what is left rather than against the whole frame.
+  const width = Math.max(1, frameWidth - GUTTER_WIDTH)
   const cols = layout(rows, width)
   const widths = [cols.stateWidth, AGE_WIDTH, cols.nameWidth]
   const headers = ['STATE', 'AGE', 'NAME']
@@ -1378,7 +1476,7 @@ function buildTable(rows, width, expanded, now) {
     right.push(false)
   }
 
-  const lines = [colorize(renderLine(headers, widths, width, right), ESC_DIM, ESC_DIM_OFF), '']
+  const lines = [SELECT_BLANK + colorize(renderLine(headers, widths, width, right), ESC_DIM, ESC_DIM_OFF), '']
   const rowLineIndex = []
   // Summed off the widths array rather than re-derived from cols: the columns
   // before AGENTS are optional and sized per frame, and two expressions for the
@@ -1402,12 +1500,14 @@ function buildTable(rows, width, expanded, now) {
       line = recolorSpan(line, agentsAt, AGENTS_WIDTH, (padded) => colorize(padded, ESC_DIM, ESC_DIM_OFF))
     }
     line = recolorSpan(line, 0, cols.stateWidth, (padded) => colorState(padded, row.stateCell))
-    lines.push(line)
+    // The gutter goes on after recolorSpan, never before: those offsets are
+    // column-relative and a two-character prefix would shift every one of them.
+    lines.push(SELECT_BLANK + line)
     // Fixed two lines per row, always. A row whose height tracked its summary
     // length reflowed every row below it the moment a Haiku reply landed, which
     // read as the whole table jumping. The filler is bare '' rather than padded
     // cells because renderLine right-trims an empty cell array to exactly that.
-    lines.push(overflow ? renderLine(cells.map(() => '').fill(overflow, cells.length - 1), widths, width, right) : '')
+    lines.push(overflow ? SELECT_BLANK + renderLine(cells.map(() => '').fill(overflow, cells.length - 1), widths, width, right) : '')
     if (row.id === expanded) lines.push(...agentLines(row, width, now))
   }
   return { lines, rowLineIndex }
@@ -1484,7 +1584,9 @@ function agentLines(row, width, now) {
       const age = agent.dispatchedAt ? formatAge(Math.max(0, now - agent.dispatchedAt)) : '-'
       const cells = [pad(truncate(age, AGENT_AGE_WIDTH), AGENT_AGE_WIDTH), pad(truncate(shortAgentType(agent.type), AGENT_TYPE_WIDTH), AGENT_TYPE_WIDTH), agent.description]
       const line = truncate(`${AGENT_INDENT}${AGENT_GLYPH} ${cells.join(' ')}`.replace(/\s+$/, ''), width)
-      return recolorSpan(line, AGENT_INDENT.length, AGENT_GLYPH.length, (glyph) => colorize(glyph, ESC_DIM, ESC_DIM_OFF))
+      // Gutter last, for the same reason as a row line: the glyph span is
+      // measured from the indent, not from the left edge of the frame.
+      return SELECT_BLANK + recolorSpan(line, AGENT_INDENT.length, AGENT_GLYPH.length, (glyph) => colorize(glyph, ESC_DIM, ESC_DIM_OFF))
     })
 }
 
@@ -1533,9 +1635,12 @@ function buildFrame(state, width, now, rows) {
   // within the width once its escapes are discounted, rather than clipping it
   // by their length.
   const lines = clampFrame(state, frameLines(state, width, now).map((line) => (displayWidth(line) <= width ? line : truncate(line, width))), rows)
-  // Applied after truncation so the escape bytes are never counted as columns.
+  // The marker overwrites the blank gutter buildTable already reserved, so the
+  // line keeps its width and every column below stays aligned with its header.
   const row = highlightLineIndex(state)
-  if (row !== -1 && lines[row] !== undefined) lines[row] = ESC_REVERSE_ON + lines[row] + ESC_REVERSE_OFF
+  if (row !== -1 && typeof lines[row] === 'string' && lines[row].startsWith(SELECT_BLANK)) {
+    lines[row] = SELECT_MARKER + lines[row].slice(SELECT_BLANK.length)
+  }
   return lines
 }
 
@@ -1569,7 +1674,7 @@ function clampFrame(state, lines, rows) {
   const dropped = state.rowLineIndex.length - kept
   if (dropped === 0) return lines
   const cut = kept > 0 ? (kept < state.rowLineIndex.length ? state.rowLineIndex[kept] : end) : state.rowLineIndex[0]
-  const notice = `… +${dropped} more session${dropped === 1 ? '' : 's'}`
+  const notice = `${SELECT_BLANK}… +${dropped} more session${dropped === 1 ? '' : 's'}`
   // Highlight offsets index the frame array, and a dropped row's stale offset
   // would put the reverse video on the notice or the footer.
   state.rowLineIndex = state.rowLineIndex.slice(0, kept)
@@ -1711,6 +1816,7 @@ function newState() {
     vmToken: null,
     vmAuthRejects: 0,
     vmDropped: 0,
+    vmPollNote: null,
     listenError: null,
     tokenNote: null,
     tokenWarning: null,
@@ -1988,6 +2094,128 @@ function oldestKey(map, at) {
   return key
 }
 
+// --- VM poll -------------------------------------------------------------
+//
+// The reply is three sections: the registry JSON, then `<session> <tty>` per
+// tmux pane, then `<pid> <tty>` per process. A session's tmux name is the pane
+// whose tty its pid sits on — the same tty join the local tab order uses. A
+// reply missing either marker, or whose JSON is not an array, is a failed poll
+// and touches nothing; a session with no pane simply has no tmux name.
+
+// The devbox is Linux, where a terminal is `pts/1`, and normalizeTty's pattern
+// is the Mac's `ttys010` — so the join here uses the tmux-client pattern, which
+// already admits both shapes because it was written for the same devbox.
+function vmTty(raw) {
+  const name = String(raw || '').trim()
+  if (!name || name === '??') return null
+  const full = name.startsWith('/dev/') ? name : `/dev/${name}`
+  return TMUX_CLIENT_TTY_RE.test(full) ? full : null
+}
+
+function parseVmPoll(out) {
+  const text = String(out)
+  const tmuxAt = text.indexOf(VM_POLL_TMUX_MARK)
+  const psAt = text.indexOf(VM_POLL_PS_MARK)
+  if (tmuxAt < 0 || psAt < 0 || psAt < tmuxAt) return null
+  let rows
+  try {
+    rows = JSON.parse(text.slice(0, tmuxAt))
+  } catch (e) {
+    return null
+  }
+  if (!Array.isArray(rows)) return null
+  const sessionByTty = new Map()
+  for (const line of text.slice(tmuxAt + VM_POLL_TMUX_MARK.length, psAt).split('\n')) {
+    const parts = line.trim().split(/\s+/)
+    if (parts.length !== 2) continue
+    const tty = vmTty(parts[1])
+    if (tty !== null && !sessionByTty.has(tty)) sessionByTty.set(tty, parts[0])
+  }
+  const ttyByPid = new Map()
+  for (const line of text.slice(psAt + VM_POLL_PS_MARK.length).split('\n')) {
+    const parts = line.trim().split(/\s+/)
+    if (parts.length !== 2) continue
+    const pid = Number.parseInt(parts[0], 10)
+    const tty = vmTty(parts[1])
+    if (Number.isInteger(pid) && pid > 0 && tty !== null) ttyByPid.set(pid, tty)
+  }
+  for (const raw of rows) {
+    if (!raw || typeof raw !== 'object') continue
+    const tty = ttyByPid.get(raw.pid)
+    raw.tmuxSession = tty === undefined ? null : (sessionByTty.get(tty) || null)
+  }
+  return validateRows(rows, { remote: true })
+}
+
+// The listing is authoritative for which sessions exist; the emitter stays
+// authoritative for status only inside its own sticky window, because a
+// `waiting` reaches the stream a beat before the registry file catches up.
+// A row the listing no longer names is dropped once it has been quiet for that
+// same window, so a session mid-registration is not removed by the poll that
+// raced its first event.
+function applyVmPoll(state, rows, now) {
+  const seen = new Set()
+  for (const row of rows) {
+    seen.add(row.id)
+    const endedUntil = state.vmEnded.get(row.id)
+    if (endedUntil !== undefined && endedUntil > now) continue
+    const prior = state.vmRows.get(row.id)
+    if (prior !== undefined && !prior.polled && now - prior.receivedAt <= VM_END_STICKY_MS) {
+      if (prior.tmuxSession === null) prior.tmuxSession = row.tmuxSession
+      continue
+    }
+    if (prior === undefined && state.vmRows.size >= VM_ROWS_MAX) continue
+    row.seq = prior === undefined ? VM_POLL_SEQ : prior.seq
+    row.polled = true
+    row.receivedAt = now
+    state.vmRows.set(row.id, row)
+  }
+  for (const [id, held] of state.vmRows) {
+    if (!seen.has(id) && now - held.receivedAt > VM_END_STICKY_MS) state.vmRows.delete(id)
+  }
+}
+
+// ConnectTimeout is longer here than on the focus path: when no devbox
+// connection exists yet this poll is the one that establishes the ssh master
+// through the IAP tunnel, and two seconds is not enough for that.
+const VM_POLL_SSH_ARGS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8']
+
+function vmPollArgs() {
+  return VM_POLL_SSH_ARGS.concat([VM_HOST, `bash -lc '${VM_POLL_REMOTE}'`])
+}
+
+let vmPollPending = false
+let vmPollFailures = 0
+
+// Held rows outlive a failed poll — they age out on their own schedule — and
+// the footer only speaks after a run of failures, so one slow tunnel is not a
+// warning. A reply that does not parse is its own note: that is a changed
+// `claude agents --json` shape, not a network problem, and it needs a person.
+function refreshVmRows(state) {
+  if (vmPollPending) return
+  vmPollPending = true
+  try {
+    execFile('ssh', vmPollArgs(), { timeout: VM_POLL_TIMEOUT_MS, maxBuffer: VM_POLL_MAX_BYTES, encoding: 'utf8' }, (err, out) => {
+      vmPollPending = false
+      if (err) {
+        vmPollFailures += 1
+        if (vmPollFailures >= VM_POLL_FAILURES_MAX) state.vmPollNote = `${VM_HOST} unreachable — VM rows are from the last successful poll`
+        return
+      }
+      vmPollFailures = 0
+      const rows = parseVmPoll(out)
+      if (rows === null) {
+        state.vmPollNote = `${VM_HOST} poll returned an unexpected shape — VM rows are from the last successful poll`
+        return
+      }
+      state.vmPollNote = null
+      applyVmPoll(state, rows, Date.now())
+    })
+  } catch (e) {
+    vmPollPending = false
+  }
+}
+
 // A rotated token is otherwise total, silent VM-row loss: the emitter exits 0
 // and says nothing, so the Mac would just show an empty table. One line each,
 // not one joined line — every frame line is truncated to the terminal width,
@@ -2001,6 +2229,7 @@ function vmFooterLines(state) {
     lines.push(`${state.vmAuthRejects} VM request${state.vmAuthRejects === 1 ? '' : 's'} rejected — the VM's token copy may be stale`)
   }
   if (state.vmDropped > 0) lines.push(`${state.vmDropped} VM event${state.vmDropped === 1 ? '' : 's'} dropped`)
+  if (state.vmPollNote) lines.push(state.vmPollNote)
   if (state.envNote) lines.push(state.envNote)
   // One fixed line for every summarizer failure — no key, no message, no
   // options object, all three of which a caught https error can carry.
@@ -2313,12 +2542,38 @@ function tmuxSwitchArgs(clientTty, tmuxSession) {
   return SSH_ARGS.concat([VM_HOST, 'tmux', 'switch-client', '-c', clientTty, '-t', tmuxSession])
 }
 
+// The tty is the first token whether or not `-F` was honoured: the devbox
+// prints the default `/dev/pts/0: tasks [298x76 ...]` line despite the format
+// flag, and matching the whole line against a bare tty found no client at all.
 function firstTmuxClient(out) {
   for (const line of String(out).split('\n')) {
-    const tty = line.trim()
+    const tty = line.trim().split(/[\s:]/)[0]
     if (TMUX_CLIENT_TTY_RE.test(tty)) return tty
   }
   return null
+}
+
+// The devbox tab is found the way local rows are: by the tty of the `ssh
+// ro-devbox` process, which carries the host in its argv no matter what title
+// tmux or a prompt has painted on the tab. The title match stays as the
+// fallback for an ssh this cannot see. `<pid> <tty> <argv>` per line; the first
+// argv token has to be ssh itself and the host a whole token after it.
+function parseSshTty(out) {
+  for (const line of String(out).split('\n')) {
+    const parts = line.trim().split(/\s+/)
+    if (parts.length < 3 || parts[1] === '??') continue
+    const [command, ...args] = parts.slice(2)
+    if (path.basename(command) !== 'ssh' || !args.includes(VM_HOST)) continue
+    const tty = normalizeTty(parts[1])
+    if (tty !== null) return tty
+  }
+  return null
+}
+
+function withVmTty(next) {
+  execFile('ps', ['-Ao', 'pid=,tty=,command='], { timeout: FOCUS_TIMEOUT_MS, encoding: 'utf8' }, (err, out) => {
+    next(err ? null : parseSshTty(out))
+  })
 }
 
 // The tty reaches the script through a closed pattern, but a tab name is
@@ -2414,7 +2669,7 @@ function focusVmRow(state, row) {
   // same reason the pid-reuse window is.
   const tmuxSession = row.tmuxSession
   const report = focusReporter(state)
-  runSessionScript(report, vmFocusScript(), 'focus', `no iTerm tab is running ssh ${VM_HOST}.`, () => {
+  withVmTty((tty) => runSessionScript(report, tty === null ? vmFocusScript() : focusScript(tty), 'focus', `no iTerm tab is running ssh ${VM_HOST}.`, () => {
     if (tmuxSession === null) {
       report(`focused the ${VM_HOST} tab — tmux session not detected.`)
       return
@@ -2429,7 +2684,7 @@ function focusVmRow(state, row) {
         report(err ? `focused the ${VM_HOST} tab, but tmux could not switch to ${tmuxSession}.` : null)
       }))
     }))
-  })
+  }))
 }
 
 // --- Rename mode ---------------------------------------------------------
@@ -2463,12 +2718,20 @@ function commitRename(state) {
   const row = state.lastRows.find((r) => r.id === state.renameTarget)
   exitRename(state)
   if (!name || !row) return
-  if (row.remote) return setTransient(state, 'rename is local-only — VM tab names come from the devbox session')
+  if (row.remote) return setTransient(state, 'rename is local-only — VM names come from the devbox session')
+  // The session rename is the one that moves the NAME column, so it runs first
+  // and independently: iTerm being unreachable must not cost the rename the
+  // user can actually see in the table. The tab title is the cosmetic half.
+  const failed = renameSession(row.pid, name)
+  if (failed !== null) return setTransient(state, `could not rename the session — ${failed}`)
+  // Optimistic, so the new name is on screen this frame rather than after the
+  // next poll re-reads the registry; that read is what makes it durable.
+  row.name = name
   withRowTty(state, row, (tty) => {
-    runSessionScript((message) => setTransient(state, message), renameScript(tty, name), 'rename', `no iTerm tab is attached to ${tty}.`, (actual) => {
+    runSessionScript((message) => setTransient(state, message), renameScript(tty, name), 'rename', `renamed the session — no iTerm tab is attached to ${tty}.`, (actual) => {
       // A profile title format decorates the applied name, which otherwise
       // reads as the rename having done nothing at all.
-      setTransient(state, actual === name ? null : `renamed — this profile's title format shows it as "${stripControls(actual)}"`)
+      setTransient(state, actual === name ? null : `renamed — this profile's title format shows the tab as "${stripControls(actual)}"`)
     })
   })
 }
@@ -2609,7 +2872,18 @@ function runLive(opts) {
   colorEnabled = !process.env.NO_COLOR && Boolean(process.stdout.isTTY)
   registerRestore()
   armSummarizer(state)
-  if (opts.listen !== null) startListener(state, opts.listen)
+  if (opts.listen !== null) {
+    startListener(state, opts.listen)
+    // Same gate as the listener: --no-listen means there is no devbox to ask.
+    // Its own timer rather than every Nth tick, so a slow tunnel never holds
+    // the two-second paint loop, and the first poll goes out before the first
+    // frame so a session already running on the VM is in it.
+    const pollVm = () => {
+      refreshVmRows(state)
+      setTimeout(pollVm, VM_POLL_INTERVAL_MS)
+    }
+    pollVm()
+  }
   entered = true
   write(ESC_ALT_ENTER + ESC_CURSOR_HIDE + ESC_TITLE_SET)
   listenForKeys(state)
@@ -2830,6 +3104,12 @@ if (require.main === module) main()
 // moveHighlight, buildTable's row-to-line map, and reconcileExpanded covers
 // movement and expansion without a pty.
 //
+// renameSession is on the list for a different reason than the rest: it is the
+// only function here that writes a file another program owns, and every one of
+// its guards is a refusal to write. A probe can hand it a crafted registry file
+// and check that each malformed shape is left untouched, which is the behaviour
+// that matters and the one no amount of live use demonstrates.
+//
 // scanDelta and newCacheEntry are the seam for the counting logic, which is the
 // one part of this file whose wrong answer is silent: a miscount renders as a
 // plausible number and has shipped that way once already. scanDelta takes the
@@ -2850,7 +3130,11 @@ module.exports = {
   startListener,
   focusScript,
   renameScript,
+  renameSession,
   vmFocusScript,
+  parseVmPoll,
+  applyVmPoll,
+  parseSshTty,
   tmuxListClientsArgs,
   tmuxSwitchArgs,
   focusHighlighted,
