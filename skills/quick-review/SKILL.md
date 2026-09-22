@@ -18,7 +18,7 @@ allowed-tools: Bash, Read, Write, Grep, Glob, Task
 
 <command_purpose> Review a small diff with a fixed, small agent roster and produce a review document format-identical to `/deep-review`'s. </command_purpose>
 
-`/quick-review` is the lite sibling of `/deep-review`. It obeys the same shared spec, dispatches the same synthesizer, and writes the same document — the only thing it trades away is depth: a fixed roster of two-or-three agents, no ultra-thinking, no conditional agents, no testing offer. Reach for it when the diff is small enough that the full fleet is overkill.
+`/quick-review` is the lite sibling of `/deep-review`. It obeys the same shared spec, dispatches the same synthesizer, and writes the same document — the only thing it trades away is depth: a fixed roster of two-or-three agents, no ultra-thinking, no conditional agents. Reach for it when the diff is small enough that the full fleet is overkill.
 
 The review **document** format is non-negotiable and identical to `/deep-review`'s, because `/review-walk`, `/review-sweep`, and `/review-push` anchor on its structure.
 
