@@ -6,5 +6,6 @@ docs/handoff/
 .windsurf/
 .devin/
 docs/reviews/
+docs/tests/
 .env
 .env.local

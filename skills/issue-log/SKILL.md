@@ -55,6 +55,7 @@ Optional keys:
 | `slices` | number | PR slice count in a `grind-started` event |
 | `merged` | number | PRs merged in a completed `/grind` run |
 | `tracking` | string | `owner/repo#N` of a tracking issue this event created |
+| `scope` | string | The mode a `tests-run` event covered: `auto`, `browser`, or `manual`. Written by `/test-plan-run` only; grind's test phase omits it. |
 
 **Versioning:** additive-only within v1 — new optional keys, new event names, and new skills never bump the version. A **v2** is required only when an existing key's meaning or read type changes (e.g. `tracking` string → array). Readers skip unknown versions with a warning.
 
@@ -75,12 +76,15 @@ Optional keys:
 | quick-review | `review-written` | ⚡ | Same shape as deep-review's row: severity counts + the findings table from the terminal summary |
 | review-walk | `review-walk-complete` | 🚶 | Summary line + every walked issue as "what — status: why"; tracking refs for deferred items filed as issues; terms added to the glossary |
 | review-sweep | `sweep-complete` | 🧹 | Counts implemented / skipped / surfaced (marker keys); doc path; surfaced findings listed as "id: title — reason" in the body |
+| test-plan | `test-plan-written` | 🧪 | Doc path, case counts by mode, dropped count (with over-cap split), lenses that contributed |
+| test-plan-run | `tests-run` | 🧾 | Doc path, scope (`scope` in the marker), result counts, receipts line, discarded tests |
 | side-quest | `side-quest-filed` | 🧭 | What was found, tracking-issue link (`tracking`, `followup:true`) |
 | ship | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
 | land | `pr-merged` | ✅ | 2-3 sentence summary of what landed + follow-ups (`pr`) |
 | grind | `grind-started` | ⚙️ | Plan path, start time, session resume command, slice count (`slices`), one line per slice |
 | grind | `unit-complete` | 🔨 | Same shape as work's row: **Did** (always), **Solved** (only when a problem was solved) |
 | grind | `unit-blocked` | ⚠️ | **Blocked:** reason; optional `blocked_by` |
+| grind | `tests-run` | 🧪 | Same shape as test-plan-run's row, minus `scope` (grind's phase runs `auto` only) |
 | grind | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
 | grind | `pr-reviewed` | 🔍 | Severity counts from the review fleet (`pr`), one-line verdict; names any roster agent that did not complete |
 | grind | `pr-merged` | ✅ | Slice name + 1-2 sentences on what landed (`pr`) |
@@ -97,7 +101,7 @@ names through the skill renames precisely so history stays readable.
 
 Event names are these exact strings. New events join this table before any skill emits them.
 
-Document-producing skills (brainstorm, blueprint, blueprint-deepen, deep-review, side-quest, review-sweep) start the human body with a `**Doc:**` field holding the repo-relative doc path, and carry the same path in the marker's `paths`.
+Document-producing skills (brainstorm, blueprint, blueprint-deepen, deep-review, side-quest, review-sweep, test-plan) start the human body with a `**Doc:**` field holding the repo-relative doc path, and carry the same path in the marker's `paths`.
 
 Grind's `unit-complete`/`unit-blocked` stamps are posted by its build subagent mid-build (grind blocks on that agent, so only the agent can stamp in real time). The subagent authenticates as the same `gh` login, so the reader contract's author check is unaffected; grind embeds the filled templates and encoding rules in the agent's brief rather than assuming it reads this spec.
 
