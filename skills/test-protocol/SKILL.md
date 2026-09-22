@@ -84,7 +84,7 @@ test roster and it lives here, so grind can cite it rather than re-enumerate it.
 
 | Agent | Tools | Role |
 |---|---|---|
-| `forge:test:spec-lens` | none | proposes black-box behavior cases from the intent alone |
+| `forge:test:spec-lens` | none (via `disallowedTools`) | proposes black-box behavior cases from the intent alone |
 | `forge:test:blast-radius-lens` | full | proposes regression cases for adjacent behavior |
 | `forge:test:surface-lens` | `Read, Glob, Grep, Bash` | proposes browser and manual cases from changed UI paths |
 | `forge:test:test-synthesizer` | `Read, Write, Glob, Grep` | de-dupes, tags, applies the keep and drop rules, caps, writes the document |
