@@ -24,12 +24,11 @@ This command takes a work document (plan, specification, or todo file) and execu
 
    - Read the work document completely
    - Treat the plan as a decision artifact, not an execution script
-   - If the plan includes sections such as `Implementation Units`, `Work Breakdown`, `Requirements Trace`, `Files`, `Test Scenarios`, or `Verification`, use those as the primary source material for execution
-   - Check for `Execution note` on each implementation unit — these carry the plan's execution posture signal for that unit (for example, test-first or characterization-first). Note them when creating tasks.
+   - If the plan includes sections such as `Implementation Units`, `Work Breakdown`, `Requirements Trace`, `Files`, or `Verification`, use those as the primary source material for execution
+   - Check for `Execution note` on each implementation unit — it carries a per-unit execution signal such as `Execution target: external-delegate`. Note them when creating tasks.
    - Check for a `Deferred to Implementation` or `Implementation-Time Unknowns` section — these are questions the planner intentionally left for you to resolve during execution. Note them before starting so they inform your approach rather than surprising you mid-task
    - Check for a `Scope Boundaries` section — these are explicit non-goals. Refer back to them if implementation starts pulling you toward adjacent work
    - Review any references or links provided in the plan
-   - If the user explicitly asks for TDD, test-first, or characterization-first execution in this session, honor that request even if the plan has no `Execution note`
    - If anything is unclear or ambiguous, ask clarifying questions now
    - Get user approval to proceed
    - **Do not skip this** - better to ask questions now than build the wrong thing
@@ -51,14 +50,14 @@ This command takes a work document (plan, specification, or todo file) and execu
 
 3. **Create Todo List**
    - Use your available task tracking tool (e.g., TodoWrite, task lists) to break the plan into actionable tasks
-   - Derive tasks from the plan's implementation units, dependencies, files, test targets, and verification criteria
+   - Derive tasks from the plan's implementation units, dependencies, files, and verification criteria
    - Carry each unit's `Execution note` into the task when present
    - For each unit, read the `Patterns to follow` field before implementing — these point to specific files or conventions to mirror
    - Use each unit's `Verification` field as the primary "done" signal for that task
-   - Do not expect the plan to contain implementation code, micro-step TDD instructions, or exact shell commands
+   - Do not expect the plan to contain implementation code or exact shell commands
    - Include dependencies between tasks
    - Prioritize based on what needs to be done first
-   - Include testing and quality check tasks
+   - Include quality check tasks
    - Keep tasks specific and completable
 
 4. **The Dispatch Contract**
@@ -67,7 +66,7 @@ This command takes a work document (plan, specification, or todo file) and execu
 
    **The orchestrator** (this session) briefs workers, reviews their diffs, commits, stamps, updates plan checkboxes, and maintains the digest. It **never writes code** — no exceptions: a typo or drive-by fix spotted while reviewing a diff rides the next worker's brief as an addendum, or gets a micro-dispatch of its own when no units remain. One absolute rule is followable; "except trivial" invites drift.
 
-   **The worker** — `Agent` with `model: "opus"` and `subagent_type: "general-purpose"` — implements exactly one unit in the shared working tree, writes and runs tests, runs the System-Wide Test Check (see Phase 2), and returns its report. Workers never touch git and never post stamps.
+   **The worker** — `Agent` with `model: "opus"` and `subagent_type: "general-purpose"` — implements exactly one unit in the shared working tree, runs the System-Wide Check (see Phase 2), and returns its report. It writes no tests — tests come later, from `/test-plan`. Workers never touch git and never post stamps.
 
    **Strictly serial:** one worker at a time. Dispatch is asynchronous, so serialization is the orchestrator's job: wait for the worker's completion notification and finish reviewing its diff before dispatching the next unit. Commit-per-unit in a shared tree makes concurrent workers a race; unit N+1's brief needs unit N's digest anyway.
 
@@ -93,13 +92,13 @@ This command takes a work document (plan, specification, or todo file) and execu
 
    **The worker brief** must contain, and nothing may be left implicit:
    - The absolute plan file path, for full context.
-   - The unit's verbatim fields: Goal, Requirements, Files, Approach, Execution note, Patterns to follow, Test scenarios, Verification.
+   - The unit's verbatim fields: Goal, Requirements, Files, Approach, Execution note, Patterns to follow, Verification.
+   - The instruction to ignore any `Test scenarios` field left by an older plan; this run writes no tests.
    - Any resolved `Deferred to Implementation` questions bearing on this unit, plus the plan's `Scope Boundaries` as explicit non-goals.
-   - The repo's test command, and the instruction to leave the suite green.
-   - The instruction to follow the repo's `CLAUDE.md` conventions and honor the unit's `Execution note` (test-first: failing test before implementation, verify it fails, don't over-implement; characterization-first: capture existing behavior before changing it; skip the discipline for trivial renames, pure config, pure styling).
-   - The instruction to run the System-Wide Test Check (below) before returning.
+   - The instruction to follow the repo's `CLAUDE.md` conventions and honor the unit's `Execution note` when it carries `Execution target: external-delegate`.
+   - The instruction to run the System-Wide Check (below) before returning.
    - **The digest** — the orchestrator's accumulated notes from every prior unit, verbatim.
-   - **The return contract:** what changed per file, test results, any deviation from the unit's Approach with its reason, discoveries bearing on later units, or — if the unit cannot be completed — a blocked report saying exactly what gates it.
+   - **The return contract:** what changed per file, any deviation from the unit's Approach with its reason, discoveries bearing on later units, or — if the unit cannot be completed — a blocked report saying exactly what gates it.
 
    **The orchestrator's review** is conformance-level: the diff does what the unit's Goal and Verification say, stays inside the unit's Files and the plan's Scope Boundaries, and matches repo conventions. Deviations the worker justified are accepted or sent back with a follow-up dispatch; unjustified drift is a re-dispatch with a corrected brief. Never fix it by hand.
 
@@ -107,13 +106,13 @@ This command takes a work document (plan, specification, or todo file) and execu
 
    **Blocked units:** the worker reports; the orchestrator posts the `unit-blocked` stamp (below) and decides — continue with later units that don't depend on it, or stop and surface it.
 
-   **System-Wide Test Check** — run by the **worker** before it returns (the brief points here). Pause and ask:
+   **System-Wide Check** — run by the **worker** before it returns (the brief points here). Pause and ask:
 
    | Question | What to do |
    |----------|------------|
    | **What fires when this runs?** Callbacks, middleware, observers, event handlers — trace two levels out from your change. | Read the actual code (not docs) for callbacks on models you touch, middleware in the request chain, `after_*` hooks. |
-   | **Do my tests exercise the real chain?** If every dependency is mocked, the test proves your logic works *in isolation* — it says nothing about the interaction. | Write at least one integration test that uses real objects through the full callback/middleware chain. No mocks for the layers that interact. |
-   | **Can failure leave orphaned state?** If your code persists state (DB row, cache, file) before calling an external service, what happens when the service fails? Does retry create duplicates? | Trace the failure path with real objects. If state is created before the risky call, test that failure cleans up or that retry is idempotent. |
+   | **Does the real chain hold together?** Reason through the full callback/middleware chain with real objects, not the layers you would have mocked — the interaction is where the breakage lives. | Read the chain end to end and report any layer whose behavior your change depends on but does not control. |
+   | **Can failure leave orphaned state?** If your code persists state (DB row, cache, file) before calling an external service, what happens when the service fails? Does retry create duplicates? | Trace the failure path. If state is created before the risky call, confirm failure cleans up or retry is idempotent, and report what you found. |
    | **What other interfaces expose this?** Mixins, DSLs, alternative entry points (Agent vs Chat vs ChatMethods). | Grep for the method/behavior in related classes. If parity is needed, add it now — not as a follow-up. |
    | **Do error strategies align across layers?** Retry middleware + application fallback + framework error handling — do they conflict or create double execution? | List the specific error classes at each layer. Verify your rescue list matches what the lower layer actually raises. |
 
@@ -159,7 +158,7 @@ This command takes a work document (plan, specification, or todo file) and execu
    | Commit when... | Don't commit when... |
    |----------------|---------------------|
    | Logical unit complete (model, service, component) | Small part of a larger unit |
-   | Tests pass + meaningful progress | Tests failing |
+   | Meaningful progress, tree builds | Tree left broken mid-change |
    | About to switch contexts (backend → frontend) | Purely scaffolding with no behavior |
    | About to attempt risky/uncertain changes | Would need a "WIP" commit message |
 
@@ -169,13 +168,10 @@ This command takes a work document (plan, specification, or todo file) and execu
 
    **Commit workflow:**
    ```bash
-   # 1. Verify tests pass (use project's test command)
-   # Examples: bin/rails test, npm test, pytest, go test, etc.
-
-   # 2. Stage only files related to this logical unit (not `git add .`)
+   # 1. Stage only files related to this logical unit (not `git add .`)
    git add <files related to this logical unit>
 
-   # 3. Commit with conventional message using HEREDOC
+   # 2. Commit with conventional message using HEREDOC
    git commit -m "$(cat <<'EOF'
    <type>(scope): description of this unit
 
@@ -196,13 +192,11 @@ This command takes a work document (plan, specification, or todo file) and execu
    - Follow project coding standards (see CLAUDE.md)
    - When in doubt, grep for similar implementations
 
-4. **Write Tests, Don't Run Them**
+4. **Write No Tests, Run No Tests**
 
-   - **Never run the test suite during the dispatch loop** — not per unit, not per "significant
-     change", not a narrowed subset. The suite runs exactly once, in Phase 3, before submitting.
-     Per-unit runs bog the loop down for feedback the Phase 3 run gives anyway.
-   - Add new tests for new functionality as each unit lands; they are part of the unit's diff.
-   - **Unit tests with mocks prove logic in isolation. Integration tests with real objects prove the layers work together.** If your change touches callbacks, middleware, or error handling — you need both.
+   - `/work` writes zero tests and runs no suite. Tests are written afterward by `/test-plan` and `/test-plan-run`, and the suite runs once in CI off `/ship`'s push.
+   - Each unit leaves the working tree buildable and lint-clean. That is the bar the worker owns.
+   - A change that breaks an existing test is caught in CI after ship, not here.
 
 5. **Simplify as You Go**
 
@@ -225,12 +219,11 @@ This command takes a work document (plan, specification, or todo file) and execu
    Always run before submitting:
 
    ```bash
-   # Run full test suite (use project's test command)
-   # Examples: bin/rails test, npm test, pytest, go test, etc.
-
    # Run linting (per CLAUDE.md)
    # Use linting-agent before pushing to origin
    ```
+
+   Do not run the test suite here. It runs once, in CI, off `/ship`'s push.
 
 2. **Consider Reviewer Agents** (Optional)
 
@@ -240,7 +233,6 @@ This command takes a work document (plan, specification, or todo file) and execu
 
 3. **Final Validation**
    - All tasks marked completed
-   - All tests pass
    - Linting passes
    - Code follows existing patterns
    - No console errors or warnings
@@ -260,15 +252,14 @@ This command takes a work document (plan, specification, or todo file) and execu
 
    Run `git diff --stat` (against the branch point or last commit before `/work` started) and present a summary table. Resolve each file's absolute path with `git rev-parse --show-toplevel` + the relative path, and show that absolute path as the visible cell text — the terminal renders only the visible text of a markdown link, so a relative path there is neither clickable nor resolvable in the user's editor:
 
-   | File | +/- | Unit | Tests | Summary |
-   |------|-----|------|-------|---------|
-   | `/absolute/path/to/repo/path/to/file.ts` | +45 / -12 | Auth middleware | pass | Added token refresh logic |
+   | File | +/- | Unit | Summary |
+   |------|-----|------|---------|
+   | `/absolute/path/to/repo/path/to/file.ts` | +45 / -12 | Auth middleware | Added token refresh logic |
 
    **Column definitions:**
    - **File** — the full absolute filesystem path, shown verbatim in backticks. Never a repo-relative path, and never a markdown link whose visible text is relative
    - **+/-** — insertions and deletions for that file
    - **Unit** — which plan implementation unit the change maps to (or "—" if not from a plan)
-   - **Tests** — pass / fail / no tests (whether tests covering this file were run and their result)
    - **Summary** — one-line description of what changed in that file
 
    After the table, show the total: `N files changed, X insertions(+), Y deletions(-)`.
@@ -276,8 +267,10 @@ This command takes a work document (plan, specification, or todo file) and execu
    If any follow-up work was discovered during execution, list it under a **Follow-ups** heading.
 
 3. **Suggest Next Steps**
-   - Run `/ship` to commit, push, and open a PR
-   - Run `/deep-review` if the change is large or risky
+   - Run [`/test-plan`](../test-plan/SKILL.md) to generate the test plan for this change
+   - Run [`/test-plan-run`](../test-plan-run/SKILL.md) to write and verify its tests
+   - Run `/ship` to commit, push, and open a PR — the suite runs in CI off that push
+   - Review after ship: `/quick-review`, or `/deep-review` if the change is large or risky
 
 ---
 
@@ -322,16 +315,16 @@ Most plans should use subagent dispatch from standard mode. Agent teams consume 
 - Load those references and follow them
 - Don't reinvent - match what exists
 
-### Tests Ship With the Unit, and Run Once
+### Tests Come After the Code
 
-- Every unit lands with the tests its change needs
-- The suite runs once, in Phase 3, not during the loop
-- Fix failures when that run surfaces them
+- `/work` writes no tests and runs no suite
+- `/test-plan` and `/test-plan-run` write them once the units have landed
+- The suite runs once, in CI, off `/ship`'s push
 
 ### Quality is Built In
 
 - Follow existing patterns
-- Write tests for new code
+- Leave the tree buildable and lint-clean
 - Run linting before pushing
 - Use reviewer agents for complex/risky changes only
 
@@ -347,11 +340,10 @@ Before creating PR, verify:
 
 - [ ] All clarifying questions asked and answered
 - [ ] All tasks marked completed
-- [ ] Tests pass (run project's test command)
 - [ ] Linting passes (use linting-agent)
 - [ ] Code follows existing patterns
 - [ ] Commit messages follow conventional format
-- [ ] Run `/ship` to push branch and create PR
+- [ ] Run `/test-plan`, then `/test-plan-run`, then `/ship` to push branch and create PR
 
 ## When to Use Reviewer Agents
 
@@ -363,14 +355,14 @@ Before creating PR, verify:
 - Complex algorithms or business logic
 - User explicitly requests thorough review
 
-For most features: tests + linting + following patterns is sufficient.
+For most features: linting + following patterns is sufficient.
 
 ## Common Pitfalls to Avoid
 
 - **Analysis paralysis** - Don't overthink, read the plan and execute
 - **Skipping clarifying questions** - Ask now, not after building wrong thing
 - **Ignoring plan references** - The plan has links for a reason
-- **Testing at the end** - Test continuously or suffer later
+- **Writing tests here** - That is `/test-plan`'s job, after the units land
 - **Forgetting to track progress** - Update task status as you go or lose track of what's done
 - **80% done syndrome** - Finish the feature, don't move on early
 - **Over-reviewing simple changes** - Save reviewer agents for complex work
