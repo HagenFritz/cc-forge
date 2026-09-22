@@ -1,6 +1,6 @@
 ---
 name: grind
-description: "Execute an entire implementation plan autonomously as a sequence of PRs, mirroring the manual skill chain unattended: an Opus subagent builds each slice unit-by-unit (committing, pushing, and stamping the issue per unit) and opens a ship-conformant PR; the deep-review agent fleet reviews it; grind triages the findings itself, posts every verdict and outcome to the PR, dispatches a second Opus subagent for accepted fixes, and squash-merges on green CI — halting, never self-repairing, on red. A default-on lifetime timer stops the run cleanly before the VM's ~2-hour wall (--no-timer to disable), and every terminal outcome — complete, stopped, or blocked — always fires a push notification and emails when SendGrid is configured, the email always carrying the resume command. Use when the user says 'grind this plan', 'grind it out', 'run the whole plan', 'build all the PRs', or invokes /grind."
+description: "Execute an entire implementation plan autonomously as a sequence of PRs, mirroring the manual skill chain unattended: an Opus subagent builds each slice unit-by-unit (committing, pushing, and stamping the issue per unit), grind writes and runs the slice's tests through the test-protocol roster and opens the ship-conformant PR itself so CI runs once on code plus tests; the deep-review agent fleet reviews it; grind triages the findings itself, posts every verdict and outcome to the PR, dispatches a second Opus subagent for accepted fixes, and squash-merges on green CI — halting, never self-repairing, on red. A default-on lifetime timer stops the run cleanly before the VM's ~2-hour wall (--no-timer to disable), and every terminal outcome — complete, stopped, or blocked — always fires a push notification and emails when SendGrid is configured, the email always carrying the resume command. Use when the user says 'grind this plan', 'grind it out', 'run the whole plan', 'build all the PRs', or invokes /grind."
 argument-hint: "[plan file path] [--no-timer]"
 allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Agent, AskUserQuestion, PushNotification, TaskCreate, TaskUpdate, TaskList
 ---
@@ -9,13 +9,13 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Agent, AskUserQuestion, Push
 
 **Note: The current year is 2026.**
 
-`/grind` takes a plan document and drives it to fully merged `main`, one PR at a time, without stopping for approval between PRs. For each PR slice it: creates a worktree; dispatches an **Opus** subagent that implements the slice unit-by-unit — committing, **pushing**, and stamping the issue after every unit — and opens a ship-conformant PR; runs the **`/deep-review` agent fleet** over the PR and posts the review; **triages the findings itself**, records every verdict durably before acting on it, dispatches a second Opus subagent for accepted fixes and reports each finding's outcome on the PR; then squash-merges once CI is green and moves to the next slice.
+`/grind` takes a plan document and drives it to fully merged `main`, one PR at a time, without stopping for approval between PRs. For each PR slice it: creates a worktree; dispatches an **Opus** subagent that implements the slice unit-by-unit — committing, **pushing**, and stamping the issue after every unit, and writing no tests; mirrors the **test phase** inline, committing the tests it keeps; opens the ship-conformant PR itself, so exactly one CI run fires on the code and its tests together; runs the **`/deep-review` agent fleet** over the PR and posts the review; **triages the findings itself**, records every verdict durably before acting on it, dispatches a second Opus subagent for accepted fixes and reports each finding's outcome on the PR; then squash-merges once CI is green and moves to the next slice.
 
 Two run-level guards wrap the loop. A **lifetime timer** (default on) stops the run cleanly at a phase boundary before the VM's ~2-hour wall instead of letting the process be killed mid-write — the stop is a healthy, resumable state, not a failure. And every terminal outcome — **complete**, **stopped** (timer), or **blocked** (needs a human) — posts a final issue stamp and notifies on **two independent channels** — a push that always fires, plus an email when SendGrid is configured, always carrying the `claude --resume` command — so an unattended run never ends silently.
 
 The plan document is the durable state. `/grind` writes a `## PR Breakdown` table into it and updates each row as the PR advances; the review doc, worktrees, and unpushed-nothing per-unit cadence mean every checkpoint also exists on GitHub or on disk. An interrupted run — stopped, blocked, or hard-killed — is resumed by re-invoking `/grind` on the same plan.
 
-`/grind` is the autonomous sibling of `/work` → `/deep-review` → `/ship`. It does **not** call those skills (confirm-gated by design, they would deadlock an unattended run) or `/land` (click-free, but per-PR and human-invoked). It mirrors their processes instead — `/work`'s per-unit stamps and commit cadence, `/deep-review`'s roster and synthesizer, `/review-push`'s outcome reporting, `/ship`'s PR shape — so the issue thread and PR history of a grind run read identically to a manual run.
+`/grind` is the autonomous sibling of `/work` → `/deep-review` → `/ship`. It does **not** call those skills (confirm-gated by design, they would deadlock an unattended run) or `/land` (click-free, but per-PR and human-invoked). It mirrors their processes instead — `/work`'s per-unit stamps and commit cadence, `/test-plan` and `/test-plan-run auto`'s lenses, writer, and filters, `/deep-review`'s roster and synthesizer, `/review-push`'s outcome reporting, `/ship`'s PR shape — so the issue thread and PR history of a grind run read identically to a manual run.
 
 ## Autonomy Contract
 
@@ -51,7 +51,7 @@ Run these checks before touching anything. Any failure stops the run — a half-
 3. **On the default branch with a clean tree** — `git branch --show-current` is `main`/`master` and `git status --porcelain` is empty. If dirty: "Working tree is dirty. Commit or stash before grinding — /grind creates branches off a clean main." If on a feature branch: "You're on `<branch>`. /grind runs from the default branch; each PR gets its own worktree."
 4. **Read the plan completely.** Note its `Implementation Units`, `Requirements Trace`, `Scope Boundaries`, `Deferred to Implementation`, and any `Execution note` fields. These are the source material for both the breakdown and every subagent brief.
 5. **Resolve the linked issue** per [the issue-log spec](../issue-log/SKILL.md)'s issue-number resolution. Remember it as `<issue>`; it may be empty. Every stamp below skips silently when it is.
-6. **Detect the test command** for the repo (`package.json` scripts, `Makefile`, `pytest.ini`, `Cargo.toml`, etc.). It is used in exactly one place: as the merge gate for a PR that reports **no CI checks** (Phase 6). When the repo has CI, `/grind` never runs the local suite itself — though build and fix subagents still leave it green.
+6. **Detect the test command** for the repo (`package.json` scripts, `Makefile`, `pytest.ini`, `Cargo.toml`, etc.). It is used in exactly one place: as the merge gate for a PR that reports **no CI checks** (Phase 8). It is **not** given to the build subagent, which writes no tests and runs no suite. When the repo has CI, `/grind` itself never runs the local suite — CI runs once, off the push that opens the PR in Phase 5, on the code and its tests together.
 7. **Detect the email transport** and announce the result. `SENDGRID_API_KEY` set in the environment → email is **on**; unset → warn now, up front: "No SENDGRID_API_KEY — terminal outcomes will be stamped and pushed, but not emailed." Either way `PushNotification` still fires, so a terminal outcome is never silent. The detection is a preflight signal; the send itself re-checks (see Notification).
 8. **Record run metadata.** Capture the current time — it goes in the grind-started stamp's `**Started:**` line, and (unless `--no-timer`) is written to the scratchpad as the timer anchor: `date +%s > <scratchpad>/grind-start` (see The Lifetime Timer). Also capture this session's id from the session context (Claude Code exposes it as the `claude.ai/code/session_…` URL in the commit-trailer guidance); the stamp's resume command is `claude --resume <session-id>`, and the same id goes in every email's resume block — capture it now, because it cannot be recovered later in the run. The stamped time is log, not clock: gates read the anchor file and nothing else, and a resumed run writes a fresh anchor.
 
@@ -70,17 +70,18 @@ The VM's process lease is ~2 hours; the disk survives, the process does not. The
 
   That integer is `elapsed` in minutes. Use the number it printed. If the anchor file is missing or unreadable (a compaction lost the scratchpad, say), treat the timer as **expired** and go to the stop flow — never fall back to guessing.
 - **Stop threshold:** 90m elapsed. Nothing stops before it.
-- **Budget gates:** before starting each phase of each slice, read the clock, then: if `elapsed < 90`, **proceed** — no other check. If `elapsed ≥ 90`, the run may still finish work that fits: proceed only when `elapsed + budget ≤ 115`, otherwise go to the stop flow (Phase 8).
+- **Budget gates:** before starting each phase of each slice, read the clock, then: if `elapsed < 90`, **proceed** — no other check. If `elapsed ≥ 90`, the run may still finish work that fits: proceed only when `elapsed + budget ≤ 115`, otherwise go to the stop flow (Phase 10).
 
 | Phase | Budget to start |
 |-------|-----------------|
 | Build | 30m |
+| Test | 25m |
 | Review | 25m |
 | Triage + fix | 25m |
 | Merge | 25m (the CI watch alone is capped at 20m) |
 
 - Budgets bound the **gate arithmetic**, not the subagents — a dispatched agent is never clocked, interrupted, or cut off mid-phase. The gate's only question is whether there is room to begin.
-- **No gate between merge success and the end of cleanup** — that boundary is atomic (Phase 6).
+- **No gate between merge success and the end of cleanup** — that boundary is atomic (Phase 8).
 - `--no-timer` disables every gate; nothing else changes — no anchor is written and no clock is read.
 
 ### Phase 1: Break the plan into PRs
@@ -108,7 +109,7 @@ The VM's process lease is ~2 hours; the disk survives, the process does not. The
     ```markdown
     ## PR Breakdown
 
-    <!-- maintained by /grind — status values: pending | building | reviewing | addressing | merging | merged | blocked -->
+    <!-- maintained by /grind — status values: pending | building | testing | reviewing | addressing | merging | merged | blocked -->
 
     | # | Slice | Units | Branch | PR | Status | Notes |
     |---|-------|-------|--------|----|--------|-------|
@@ -141,16 +142,17 @@ The VM's process lease is ~2 hours; the disk survives, the process does not. The
 
 ### Phase 2: The per-slice loop and resume
 
-For each slice in order, run Phases 3 through 6, checking the timer's budget gate before each phase. Do not start slice N+1 until slice N is **merged**. On any halt condition, stop the whole run per Phase 7; on a failed budget gate, stop per Phase 8.
+For each slice in order, run Phases 3 through 8, checking the timer's budget gate before each phase. Do not start slice N+1 until slice N is **merged**. On any halt condition, stop the whole run per Phase 9; on a failed budget gate, stop per Phase 10.
 
 On a **resume** (a `## PR Breakdown` table already existed), reconcile each row against reality before entering the loop — never trust the table over GitHub or the disk. Read, in order, and re-enter at the deepest completed checkpoint:
 
 - **Row `merged`, or any in-flight row whose PR is `MERGED`** (`gh pr view <N> --json state,mergedAt`): confirm cleanup actually finished — worktree removed, local default branch moved forward, plan checkboxes checked, `pr-merged` stamp posted. Complete whatever is missing (a duplicate stamp is harmless — the reader dedupes), set the row `merged`, move on.
 - **Row `blocked`:** re-check only the *objective gate* that blocked it — is CI green now? is the merge conflict gone? If the gate has cleared, continue the slice from the phase that halted; if not, re-halt with the same stamp. A blocked row never silently restarts from scratch.
-- **Row `building` with no PR:** check for the worktree on disk, the remote branch, and `unit-complete` stamps on the issue (`gh api repos/{owner}/{repo}/issues/{n}/comments --paginate`) — counting only stamps whose marker `paths` includes **this plan's file path**, per the reader contract in [the issue-log spec](../issue-log/SKILL.md); a stamp from another plan or an earlier run against the same issue is not evidence about this slice. If partial build state exists, dispatch the build subagent to **continue from the first unfinished unit in the existing worktree** — never recreate the worktree, never redo stamped units. If nothing exists, build from scratch.
+- **Row `building`:** a building row never has a PR — grind opens it after the test phase, so the PR's absence distinguishes nothing and the unit stamps are the evidence. Check for the worktree on disk, the remote branch, and `unit-complete` stamps on the issue (`gh api repos/{owner}/{repo}/issues/{n}/comments --paginate`) — counting only stamps whose marker `paths` includes **this plan's file path**, per the reader contract in [the issue-log spec](../issue-log/SKILL.md); a stamp from another plan or an earlier run against the same issue is not evidence about this slice. If partial build state exists, dispatch the build subagent to **continue from the first unfinished unit in the existing worktree** — never recreate the worktree, never redo stamped units. If nothing exists, build from scratch.
+- **Row `testing`:** enter per [the spec's resume section](../test-protocol/SKILL.md#where-a-run-enters) — at the lenses when no `docs/tests/*.md` document's `target:` matches this branch, at the writer when one does. A `tests-run` stamp on the issue whose marker `paths` include this plan's file path means the phase completed and the run belongs at the PR open.
 - **Row `reviewing` or `addressing`:** walk the checkpoint ladder —
-  1. A review doc in `docs/reviews/` passes **step 26's verification for this PR** — frontmatter `target:` matches this PR/branch and `date:` is current, plus the structural greps → the review ran; **never re-dispatch the fleet** (one review pass per PR). A doc that fails any of those checks is a leftover from an earlier attempt, not this slice's review: ignore it.
-  2. **Every** `### P<X>-<N>:` heading in the doc carries a non-`open` `Status:` → triage completed. Checking that *some* finding is triaged is not enough: step 31 writes one finding at a time, so a kill mid-loop leaves a mixed doc, and treating it as complete drops every finding the loop never reached — they stay `open`, are never fixed, and never appear in step 35's comment, which is built from terminal statuses only. If any finding is still `open`, triage was interrupted: re-enter step 30 on those findings alone, skipping every finding that already carries a `**Grind:**` signature, then continue down this ladder. Once triage is complete: if **no** finding is accepted (every one `wont-fix` or `deferred`), no fix agent was ever dispatched and none is owed — mirror step 32 and go straight to Phase 6. Otherwise re-derive the fix brief from the accepted (`in-progress`) findings.
+  1. A review doc in `docs/reviews/` passes **step 35's verification for this PR** — frontmatter `target:` matches this PR/branch and `date:` is current, plus the structural greps → the review ran; **never re-dispatch the fleet** (one review pass per PR). A doc that fails any of those checks is a leftover from an earlier attempt, not this slice's review: ignore it.
+  2. **Every** `### P<X>-<N>:` heading in the doc carries a non-`open` `Status:` → triage completed. Checking that *some* finding is triaged is not enough: step 40 writes one finding at a time, so a kill mid-loop leaves a mixed doc, and treating it as complete drops every finding the loop never reached — they stay `open`, are never fixed, and never appear in step 44's comment, which is built from terminal statuses only. If any finding is still `open`, triage was interrupted: re-enter step 39 on those findings alone, skipping every finding that already carries a `**Grind:**` signature, then continue down this ladder. Once triage is complete: if **no** finding is accepted (every one `wont-fix` or `deferred`), no fix agent was ever dispatched and none is owed — mirror step 41 and go straight to Phase 8. Otherwise re-derive the fix brief from the accepted (`in-progress`) findings.
   3. The PR shows fix commits after the verdict comment (`gh pr view <N> --json commits,comments`) → fixes landed; proceed to the outcome comment / merge.
   Re-enter at the first checkpoint that is missing.
 
@@ -170,9 +172,9 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
     The brief must contain, and nothing may be left implicit:
     - The absolute worktree path, and the instruction to do **all** work there — never in the primary checkout.
     - The absolute plan file path, for full context.
-    - The verbatim text of every implementation unit in this slice: Goal, Requirements, Files, Approach, Execution note, Patterns to follow, Test scenarios, Verification.
+    - The verbatim text of every implementation unit in this slice: Goal, Requirements, Files, Approach, Execution note, Patterns to follow, Verification.
+    - The instruction to ignore any `Test scenarios` field left by an older plan; this run writes no tests.
     - Any `Deferred to Implementation` questions bearing on these units, plus the plan's `Scope Boundaries` as explicit non-goals.
-    - The repo's test command, and the instruction to leave the suite green.
     - The instruction to follow the repo's `CLAUDE.md` conventions.
     - **The per-unit cadence:** implement the slice's units in plan order. After each unit: stage only that unit's files, commit with a scoped conventional message (`/work`'s incremental-commit heuristics), **push**, and post the unit's issue stamp. The push is the point — a killed process must never cost more than the unit in flight.
     - **The embedded stamp templates**, fully filled: the `unit-complete` and `unit-blocked` blocks below with `<issue>`, the repo, and the plan path substituted, plus these three posting rules verbatim (the agent does not read the spec): write the body to a temp file and post with `gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>`; the marker line must never contain `--` — replace every occurrence in serialized titles (`---` → `- - -`); a failed or skipped stamp is one report line, never a stop. Skip all stamps when `<issue>` is empty.
@@ -194,14 +196,62 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
       **Blocked:** <one-liner: what gates the unit>
       ```
       When concrete refs gate the blocked unit, add `"blocked_by":["<owner>/<repo>#<n>"]` to its marker; drop the key otherwise (same rule as `/work`'s stamp).
-    - **The blocked-unit rule:** a unit it cannot complete stops the build — post the `unit-blocked` stamp, push what is committed, open **no PR**, and return the partial state (which units landed, what blocked, the branch name). A partial-slice PR would violate "every slice leaves `main` green."
-    - **Its deliverable:** commits on the branch, pushed per unit, with an open PR. It must not merge, must not touch `main`, must not `git add -A`, must not `--no-verify`, and must not create a worktree of its own.
-    - The PR body format from [ship's pr-template.md](../ship/pr-template.md), used **verbatim** — including the template's `Related to #<issue>` line when there's a linked issue. That line is the **only** issue reference a PR body may carry — never a GitHub closing keyword, which would auto-close the tracking issue mid-run; issue resolution rides the branch name.
-    - **Its return value:** the PR number and URL, a one-line summary, per-unit status, and any unit it could not complete with the reason.
+    - **The blocked-unit rule:** a unit it cannot complete stops the build — post the `unit-blocked` stamp, push what is committed, and return the partial state (which units landed, what blocked, the branch name). A partial-slice PR would violate "every slice leaves `main` green," and grind opens no PR for a slice that halted here.
+    - **Its deliverable:** commits on the branch, pushed per unit, and **no PR** — grind opens the PR itself after the test phase, so exactly one `pull_request` CI run fires, on the code and its tests together. It must not open or merge a PR, must not touch `main`, must not `git add -A`, must not `--no-verify`, and must not create a worktree of its own.
+    - **Its return value:** the branch name, a one-line summary, per-unit status, and any unit it could not complete with the reason.
 
-18. **Verify the subagent's claim.** Never take the return value on faith — `gh pr view <N> --json number,state,url,headRefName` in the worktree, and confirm the remote branch holds the per-unit commits (`git -C <worktree> log origin/<branch> --oneline`). If no PR exists, or its `headRefName` doesn't match the branch: if the agent reported a blocked unit, mark the row `blocked` with the reason and halt per Phase 7; otherwise the build failed regardless of what the agent reported — same halt.
+18. **Verify the subagent's claim.** Never take the return value on faith — confirm the remote branch holds the per-unit commits (`git -C <worktree> log origin/<branch> --oneline`) and that the returned per-unit statuses account for every unit in the slice. There is no PR to check yet; grind opens it in Phase 5. If the pushed commits do not cover the slice's units: if the agent reported a blocked unit, mark the row `blocked` with the reason and halt per Phase 9; otherwise the build failed regardless of what the agent reported — same halt.
 
-19. **Post the `pr-created` stamp** (grind posts this one itself, after verification):
+### Phase 4: Write the tests
+
+The build subagent wrote none. This phase mirrors `/test-plan` and `/test-plan-run auto` inline, between the last build unit and the PR open, and it is governed entirely by [the test-protocol spec](../test-protocol/SKILL.md) — the roster, what each lens may see, the keep and drop rules, the cap, the scratch contract, the count check, document verification, the assurance filters, and the receipts all live there and are **cited, never restated**. A rule that reads differently here than it does in the spec is a bug in this file.
+
+**There is no document-review step.** `/test-plan` stops so a human can read the document; an unattended run has no one to stop for, so grind produces the document and consumes it in the same phase. Because of that, it may carry the surface digest, the test conventions, and the live-service markers it derived in step 20 forward into the writer and the filters rather than re-deriving them — the tree has not moved between them.
+
+19. **Budget gate** (test, 25m), then **update the row** to `testing` in the plan doc.
+
+20. **Resolve the run's context, in the worktree.** The branch is the document's `target:` and the unsanitized slug. Resolve the intent by [the spec's spec-lens input ladder](../test-protocol/SKILL.md#spec-lens-input-ladder) over this slice's plan units — bounded to those units per [the brief-is-bounded rule](../test-protocol/SKILL.md#the-brief-is-bounded), never the whole plan. The ladder's last rung is a stop for `/test-plan`; here it is a **skip**: with nothing describing the intended behavior, note it, post no `tests-run` stamp, and go to Phase 5 — an unattended run does not halt a merged-ready slice over a missing intent source.
+
+    Then build the surface digest and discover the test conventions the way `/test-plan` builds them — [its step 3](../test-plan/SKILL.md) owns the per-language extraction and [its step 4](../test-plan/SKILL.md) owns the conventions pass (test directories, runner, live-service markers, existing test file names), with [the spec](../test-protocol/SKILL.md#the-surface-digest) owning what each file class contributes and the empty-digest case. No runner and no test directory → the synthesizer tags zero cases `auto`, so this phase writes nothing; note it and go to Phase 5.
+
+21. **Dispatch the three lenses** in one parallel batch, per [the spec's three lenses](../test-protocol/SKILL.md#the-three-lenses), from [the spec's roster](../test-protocol/SKILL.md#the-roster) — never add, substitute, or skip one, and never re-enumerate them here. The briefs are the four `Task forge:test:<agent>(...)` blocks in [`/test-plan`'s step 5](../test-plan/SKILL.md); pass exactly the values each lens's `## Inputs` section names. Never tell a lens to "read X" in place of putting X in its brief. Handle an empty or failed lens by [the spec's lens-failure posture](../test-protocol/SKILL.md#lens-failure-posture) — partial coverage proceeds and names the lens; all three empty writes no document, which is a note and a jump to Phase 5, not a halt.
+
+22. **Persist and synthesize.** Write each lens's raw output per [the spec's raw scratch contract](../test-protocol/SKILL.md#the-raw-scratch-contract) **before** dispatching, then [dispatch the synthesizer](../test-protocol/SKILL.md#dispatching-the-synthesizer) with the values its `## Inputs` section names. The worktree's `docs/` is a symlink, so `docs/tests/.raw/<slug>/` lands in the primary checkout and survives anything short of disk loss — the same property Phase 6's review scratch relies on. Run [the count check](../test-protocol/SKILL.md#the-count-check) on what comes back, then follow [the spec's verification section](../test-protocol/SKILL.md#verifying-the-document), which owns the structural and freshness checks and gates the scratch deletion on them. A failed dispatch or a failed check goes to [the spec's inline fallback](../test-protocol/SKILL.md#inline-fallback).
+
+23. **Dispatch the writer** — `forge:test:test-writer` — with exactly the five values its [`## Inputs` section](../../agents/test/test-writer.md) names: the selected `auto` cases verbatim, the surface digest, the repo's test conventions, **the test directories it may read named explicitly**, and the existing fixture names. Select the cases by [the spec's re-run semantics](../test-protocol/SKILL.md#what-a-re-run-does): a case whose `T-NNN` ID is already in a test file on disk is re-verified, never rewritten. Zero `auto` cases is success per [the spec](../test-protocol/SKILL.md#zero-cases-in-a-mode-is-success) — note it and go to step 26.
+
+24. **Run the assurance filters yourself** — [the spec's filters](../test-protocol/SKILL.md#the-assurance-filters) own the three steps, their order, the collect-failure classification and its [one fix round](../test-protocol/SKILL.md#classifying-a-collect-failure-and-the-one-fix-round), and [the live-service rule](../test-protocol/SKILL.md#live-service-tests); the rerun count and the wall clock are the optional `cc-forge.local.md` keys in [the spec's prerequisites](../test-protocol/SKILL.md#prerequisites), which state their defaults. The writer holds no `Bash` and runs nothing; grind runs every command. Only the new tests are run — never the suite.
+
+    **When a second failure deletes a test and the writer's fix round said it believes the code under test is wrong, carry that sentence verbatim** into the `tests-run` stamp and into the halt or final report. A discarded test whose author thought the code was broken is the most useful line in the run, and an unattended run that swallows it ships the bug.
+
+    Record the outcome per case in the document — a `Status:` from [the spec's five](../test-protocol/SKILL.md#the-five-status-values) and a `**Filter:**` line in [its grammar](../test-protocol/SKILL.md#the-filter-line) directly under it — and append this run's block to `## Receipts` per [the receipts](../test-protocol/SKILL.md#the-receipts). **Append only**, and never the sentence "tests pass" on its own.
+
+25. **Commit the kept tests and push.** Stage only the test files this phase kept, commit with a `test:` conventional message naming the slice, and push to the branch. Discarded tests are deleted, not committed. This is the push CI fires on once the PR opens in Phase 5 — the manual chain leaves the tests uncommitted for `/ship`, but nobody else will commit them in a grind run. Same prohibitions as everywhere: no `git add -A`, no `--no-verify`, no force-push, no push to `main`.
+
+26. **Stamp the tests on the issue**, per [the spec's `tests-run` section](../test-protocol/SKILL.md#tests-run). Grind's marker carries no `scope` key — this phase runs `auto` only, and [the issue-log spec](../issue-log/SKILL.md) records that omission. Post it inside the phase, so an interruption after the tests are pushed leaves a durable marker to resume from. On partial coverage, name the lens that was empty or failed on the `**Lenses:**` line.
+    ```markdown
+    <!-- cc-forge-log v1: {"skill":"grind","event":"tests-run","paths":["<plan file path>"]} -->
+
+    ### 🧪 /grind — tests written and run
+
+    **Doc:** `docs/tests/<filename>`
+    **Scope:** auto
+    **Result:** <n> pass / <n> fail / <n> blocked / <n> skip
+    **Receipts:** `<command>` → exit <code>, <n> passed
+    **Discarded:** <n> (<case id: filter>, …)
+    **Lenses:** <which contributed; any empty or failed>
+    ```
+    Write the body to a temp file and post with `gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>`; skip silently when `<issue>` is empty. **Every terminal outcome of this phase stamps**, including one that wrote nothing or found zero `auto` cases — except the two skips in step 20, where no run happened.
+
+    **No next-steps block.** [The spec](../test-protocol/SKILL.md#the-next-steps-block) says grind's phase appends nothing; it continues to Phase 5.
+
+### Phase 5: Open the PR
+
+Grind opens the PR itself, after the tests are committed and pushed. Opening it before them would fire `pull_request` on code alone — a CI run that predates the tests it is meant to gate, polluting the check history Phase 8's merge watch reads — and then `synchronize` again when the tests land. Opening it here means **exactly one CI run, on the code and its tests together.** Phase 8's 20-minute CI watch is deliberately unchanged: the payload grew by the tests, the cap did not, and a suite that outgrows 20 minutes is a halt worth seeing.
+
+27. **Open the PR and verify it.** Use the PR body format from [ship's pr-template.md](../ship/pr-template.md), **verbatim** — including the template's `Related to #<issue>` line when there's a linked issue. That line is the **only** issue reference a PR body may carry — never a GitHub closing keyword, which would auto-close the tracking issue mid-run; issue resolution rides the branch name. Then verify rather than trusting the create call: `gh pr view <N> --json number,state,url,headRefName`. **If no PR exists, or its `headRefName` doesn't match the branch, halt per Phase 9** with the row marked `blocked` — the open failed regardless of what the command printed.
+
+28. **Post the `pr-created` stamp** (grind posts this one itself, after verification):
     ```markdown
     <!-- cc-forge-log v1: {"skill":"grind","event":"pr-created","pr":<N>,"paths":["<plan file path>"]} -->
 
@@ -211,27 +261,27 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
     **Summary:** <one-line summary of the slice>
     ```
 
-20. **Update the row** — PR number/link, status `reviewing`.
+29. **Update the row** — PR number/link, status `reviewing`.
 
-### Phase 4: Review the PR
+### Phase 6: Review the PR
 
-21. **Budget gate** (review, 25m), then load the roster: read `cc-forge.local.md` in the project root — `review_agents` from its frontmatter, its markdown body as extra review context for every agent. No file → the default set: `forge:review:correctness-auditor`, `forge:review:reliability-engineer`, `forge:review:test-coverage-reviewer`, `forge:research:learnings-researcher`; add `forge:review:adversarial-reviewer` when the diff is ≥50 lines or touches shared state, concurrency, auth, or value-bearing operations; always add `forge:review:code-simplicity-reviewer`.
+30. **Budget gate** (review, 25m), then load the roster: read `cc-forge.local.md` in the project root — `review_agents` from its frontmatter, its markdown body as extra review context for every agent. No file → the default set: `forge:review:correctness-auditor`, `forge:review:reliability-engineer`, `forge:review:test-coverage-reviewer`, `forge:research:learnings-researcher`; add `forge:review:adversarial-reviewer` when the diff is ≥50 lines or touches shared state, concurrency, auth, or value-bearing operations; always add `forge:review:code-simplicity-reviewer`.
 
-22. **Dispatch the fleet.** Parallel by default; run serially when 6+ agents are configured (note the switch in the run log — there is no user to inform). Each agent's brief: the PR diff via `gh pr diff <N>` (the review is of the PR, not a working tree), the verbatim plan units this PR implements, the repo's `CLAUDE.md` conventions as the house bar, and the return contract — a structured findings list (severity `P1`/`P2`/`P3`, file:line, one-sentence description) plus an overall verdict; an empty list is a valid result. A roster agent that fails or returns nothing: proceed with partial coverage and name it in the `pr-reviewed` stamp — a missing lens is reportable, not fatal.
+31. **Dispatch the fleet.** Parallel by default; run serially when 6+ agents are configured (note the switch in the run log — there is no user to inform). Each agent's brief: the PR diff via `gh pr diff <N>` (the review is of the PR, not a working tree), the verbatim plan units this PR implements, the repo's `CLAUDE.md` conventions as the house bar, and the return contract — a structured findings list (severity `P1`/`P2`/`P3`, file:line, one-sentence description) plus an overall verdict; an empty list is a valid result. A roster agent that fails or returns nothing: proceed with partial coverage and name it in the `pr-reviewed` stamp — a missing lens is reportable, not fatal.
 
-23. **Persist raw findings** before synthesis: each agent's returned findings verbatim to `docs/reviews/.raw/<sanitized-slug>/<agent>.md` (slug from the branch name, the review protocol's sanitization: lowercase, non-`[a-z0-9-]` → `-`, collapse repeats). The worktree's `docs/` is a symlink, so these land in the primary checkout and survive anything short of disk loss.
+32. **Persist raw findings** before synthesis: each agent's returned findings verbatim to `docs/reviews/.raw/<sanitized-slug>/<agent>.md` (slug from the branch name, the review protocol's sanitization: lowercase, non-`[a-z0-9-]` → `-`, collapse repeats). The worktree's `docs/` is a symlink, so these land in the primary checkout and survive anything short of disk loss.
 
-24. **Dispatch `forge:review:review-synthesizer`** with every required input named in [the review-protocol spec](../review-protocol/SKILL.md#dispatching-the-synthesizer): the findings of every agent this run dispatched, PR metadata + the branch slug, the protected-artifacts paths (`docs/brainstorms/*-requirements.md`, `docs/plans/*.md`, `docs/solutions/*.md`), the **absolute path of the primary checkout's** `docs/reviews/` directory, and today's date. Pass the `cc-forge.local.md` review context too when present; that input is optional and its absence never stops the synthesizer. It writes `docs/reviews/YYYY-MM-DD-NNN-<slug>-review.md` and returns the doc path, per-tier counts, and summary rows — or a clean-review marker.
+33. **Dispatch `forge:review:review-synthesizer`** with every required input named in [the review-protocol spec](../review-protocol/SKILL.md#dispatching-the-synthesizer): the findings of every agent this run dispatched, PR metadata + the branch slug, the protected-artifacts paths (`docs/brainstorms/*-requirements.md`, `docs/plans/*.md`, `docs/solutions/*.md`), the **absolute path of the primary checkout's** `docs/reviews/` directory, and today's date. Pass the `cc-forge.local.md` review context too when present; that input is optional and its absence never stops the synthesizer. It writes `docs/reviews/YYYY-MM-DD-NNN-<slug>-review.md` and returns the doc path, per-tier counts, and summary rows — or a clean-review marker.
 
-25. **Clean review:** post a one-line PR comment ("Automated review found no issues — <n> agents, 0 findings"), post the `pr-reviewed` stamp with 0/0/0 counts, and jump to Phase 6.
+34. **Clean review:** post a one-line PR comment ("Automated review found no issues — <n> agents, 0 findings"), post the `pr-reviewed` stamp with 0/0/0 counts, and jump to Phase 8.
 
-26. **Verify the doc** rather than trusting the return: the path exists; it greps for `## Groups` and at least one `### P<X>-<N>:` with `**Status:**` below it; frontmatter `target:` matches this PR/branch and `date:` is today. On dispatch failure instead: a **model-pin rejection** (the model pinned in `review-synthesizer.md` is not allowlisted) is deterministic — never retry it; any other failure retries once. When no verified doc can be produced, degrade in order, never halting while raw findings exist on disk:
+35. **Verify the doc** rather than trusting the return: the path exists; it greps for `## Groups` and at least one `### P<X>-<N>:` with `**Status:**` below it; frontmatter `target:` matches this PR/branch and `date:` is today. On dispatch failure instead: a **model-pin rejection** (the model pinned in `review-synthesizer.md` is not allowlisted) is deterministic — never retry it; any other failure retries once. When no verified doc can be produced, degrade in order, never halting while raw findings exist on disk:
     1. **Inline synthesis:** read the raw findings from `.raw/<slug>/` and produce the review doc yourself, following the synthesizer's own rules file (`agents/review/review-synthesizer.md`, or `${CLAUDE_PLUGIN_ROOT}` copy) — then continue as verified, but flag `synthesized inline` in the stamp.
     2. **Raw fallback:** post the findings grouped by severity as the PR review comment, triage directly from the raw lists, and flag `degraded review — no doc` in the stamp.
 
-27. **Post the review to the PR** — `gh pr review <N> --comment --body-file <temp-file>`: the doc's Summary table and Groups (or the degraded content), with the review-doc path referenced for full detail. Stay under the comment cap by truncating detail, never structure. Never `--approve`, never `--request-changes` — a blocking review state from a subagent can deadlock the unattended merge, and `/grind` owns the triage.
+36. **Post the review to the PR** — `gh pr review <N> --comment --body-file <temp-file>`: the doc's Summary table and Groups (or the degraded content), with the review-doc path referenced for full detail. Stay under the comment cap by truncating detail, never structure. Never `--approve`, never `--request-changes` — a blocking review state from a subagent can deadlock the unattended merge, and `/grind` owns the triage.
 
-28. **Stamp the review on the issue:**
+37. **Stamp the review on the issue:**
     ```markdown
     <!-- cc-forge-log v1: {"skill":"grind","event":"pr-reviewed","pr":<N>,"paths":["<plan file path>"]} -->
 
@@ -242,11 +292,11 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
     **Coverage:** <"full roster" | "did not complete: <agents>" | "synthesized inline" | "degraded review — no doc">
     ```
 
-29. **Delete this slice's scratch** — `rm -rf docs/reviews/.raw/<slug>/` — only after the PR comment posted and only on the verified-doc (or inline-synthesis) path. The raw fallback keeps its scratch; it *is* the record.
+38. **Delete this slice's scratch** — `rm -rf docs/reviews/.raw/<slug>/` — only after the PR comment posted and only on the verified-doc (or inline-synthesis) path. The raw fallback keeps its scratch; it *is* the record.
 
-### Phase 5: Triage and address
+### Phase 7: Triage and address
 
-30. **Budget gate** (triage + fix, 25m), then **triage the findings yourself** — from the review doc (from the raw lists only in the degraded case). This is `/grind`'s judgment call and it does not delegate it. For each finding decide **accept**, **reject**, or **defer**:
+39. **Budget gate** (triage + fix, 25m), then **triage the findings yourself** — from the review doc (from the raw lists only in the degraded case). This is `/grind`'s judgment call and it does not delegate it. For each finding decide **accept**, **reject**, or **defer**:
 
     **Accept is the default verdict.** A finding that is real and fixable within this slice's files gets accepted, whatever its priority — the fix agent is already being dispatched, and a small P3 costs nothing extra to fold in. Reject and defer are the exceptions and each needs a stated reason.
 
@@ -258,16 +308,16 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
 
     Read the actual code before accepting or rejecting a P1. A reviewer agent working from a diff can misjudge context the surrounding file makes obvious; equally, do not reject or defer a finding merely because acting on it is inconvenient. When a verdict is genuinely borderline, accept it.
 
-31. **Record the triage durably, then announce it — both before any fix is dispatched:**
+40. **Record the triage durably, then announce it — both before any fix is dispatched:**
     - Write each verdict into the review doc as its `Status:` line, using `/review-walk`'s vocabulary: accepted → `in-progress`, rejected → `wont-fix` (with a `Skip reason:`), deferred → `deferred` (with a `Defer reason:`). Reason lines follow [`/review-walk`'s Skip reason format](../review-walk/SKILL.md), which owns the `<code> — <free text>` shape, the `Skip reason:` code list, and the neutralization rule — grind restates none of it, so a code added or renamed there applies here without a second edit. The `Defer reason:` codes are grind's own, because grind is their only writer (`/review-walk` files an issue on defer and records a `Tracking:` line instead): `bigger-than-scoped` (the real fix is larger than the finding describes), `blocked-on` (waits on another change, a migration, a release, or an external party), `needs-decision` (someone has to decide something first), `follow-up-pr` (real and wanted, but belongs in its own change). Writing the same codes the user writes is what lets a later analysis read grind's reasons and theirs on one axis.
 
-      **On a P1, grind may use only a subset of those codes** — this restriction is grind's own, not part of the shared vocabulary, because step 30 forbids exactly what most of the codes say. Rejecting a P1 admits `misread` and `by-design` only; deferring one admits `bigger-than-scoped` only. Every other reject code is a cost or scope judgment step 30 reserves for a human, and the remaining defer codes describe waiting on someone an unattended run cannot wait for — a P1 carrying either is a P1 that merged unfixed. **A P1 that fits none of the admissible codes is accepted.** P2 and P3 take the full lists. The doc is now the durable triage record — a killed process resumes from these lines without re-reviewing.
-    - **Sign every verdict.** Directly under each triaged finding's `Status:` line, before any reason line, write `**Grind:** <accepted | rejected | deferred | fixed> — <one line why>`. This is grind's counterpart to [`/review-sweep`'s `Sweep:` line](../review-sweep/SKILL.md), which owns the signature convention and why it exists. Triage writes one of the first three values; step 34 rewrites an accepted finding's line to `fixed` when the fix lands. Exactly one per finding, ever — always a rewrite, never a second line.
+      **On a P1, grind may use only a subset of those codes** — this restriction is grind's own, not part of the shared vocabulary, because step 39 forbids exactly what most of the codes say. Rejecting a P1 admits `misread` and `by-design` only; deferring one admits `bigger-than-scoped` only. Every other reject code is a cost or scope judgment step 39 reserves for a human, and the remaining defer codes describe waiting on someone an unattended run cannot wait for — a P1 carrying either is a P1 that merged unfixed. **A P1 that fits none of the admissible codes is accepted.** P2 and P3 take the full lists. The doc is now the durable triage record — a killed process resumes from these lines without re-reviewing.
+    - **Sign every verdict.** Directly under each triaged finding's `Status:` line, before any reason line, write `**Grind:** <accepted | rejected | deferred | fixed> — <one line why>`. This is grind's counterpart to [`/review-sweep`'s `Sweep:` line](../review-sweep/SKILL.md), which owns the signature convention and why it exists. Triage writes one of the first three values; step 43 rewrites an accepted finding's line to `fixed` when the fix lands. Exactly one per finding, ever — always a rewrite, never a second line.
     - Post the verdicts as a PR comment: each finding as "**P<X>-<N> <title>** — accepted / rejected: <why> / deferred: <why>". A rejection's reason should survive someone reading the PR later.
 
-32. **If nothing was accepted**, the verdict comment already records the outcome — go to Phase 6.
+41. **If nothing was accepted**, the verdict comment already records the outcome — go to Phase 8.
 
-33. **If anything was accepted**, set the row to `addressing` and **dispatch the fix subagent** — `Agent` with `model: "opus"` and `subagent_type: "general-purpose"`. Wait for its completion notification before proceeding.
+42. **If anything was accepted**, set the row to `addressing` and **dispatch the fix subagent** — `Agent` with `model: "opus"` and `subagent_type: "general-purpose"`. Wait for its completion notification before proceeding.
 
     The brief:
     - The absolute worktree path — the branch is still checked out there.
@@ -276,9 +326,9 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
     - The same prohibitions as the build agent: no merge, no `main`, no `git add -A`, no `--no-verify`, no force-push.
     - **Its return value:** what it changed per finding, and any finding it could not address with the reason.
 
-34. **Verify the fixes landed** — `git -C <worktree> log origin/<branch>..HEAD` should be empty (everything pushed) and `gh pr view <N> --json commits` should show the new commits. If the agent reported success but nothing was pushed, retry once with a brief noting exactly what was missing; if the retry also fails, mark the row `blocked` and halt. On success, flip each fixed finding's `Status:` to `done` in the review doc **and rewrite its `**Grind:**` line to `**Grind:** fixed — <one line what changed>`** in the same edit — replacing the `accepted` line, not appending to it. A `done` finding still claiming `accepted` records a verdict where it should record an outcome, and says nothing about what landed.
+43. **Verify the fixes landed** — `git -C <worktree> log origin/<branch>..HEAD` should be empty (everything pushed) and `gh pr view <N> --json commits` should show the new commits. If the agent reported success but nothing was pushed, retry once with a brief noting exactly what was missing; if the retry also fails, mark the row `blocked` and halt. On success, flip each fixed finding's `Status:` to `done` in the review doc **and rewrite its `**Grind:**` line to `**Grind:** fixed — <one line what changed>`** in the same edit — replacing the `accepted` line, not appending to it. A `done` finding still claiming `accepted` records a verdict where it should record an outcome, and says nothing about what landed.
 
-35. **Report the outcomes on the PR** — `/review-push`'s comment shape, built from the doc's `Status:` lines:
+44. **Report the outcomes on the PR** — `/review-push`'s comment shape, built from the doc's `Status:` lines:
     ```markdown
     ## Review pass — <N> fixed, <M> deferred, <K> skipped
 
@@ -293,29 +343,29 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
     ```
     Omit empty sections. Describe fixes in plain what-changed terms drawn from the fix agent's report and the diff, not the reviewer's problem statement.
 
-36. **Never file a GitHub issue for a deferred finding.** Deferred findings live in the review doc's `Status: deferred` lines and in the PR comment from step 35 — that is the whole record. Do not call `/side-quest`, do not open a tracking issue, do not create one at the end of the run. Surfacing them in the final report (step 46) is how the user learns about them and decides what to file.
+45. **Never file a GitHub issue for a deferred finding.** Deferred findings live in the review doc's `Status: deferred` lines and in the PR comment from step 44 — that is the whole record. Do not call `/side-quest`, do not open a tracking issue, do not create one at the end of the run. Surfacing them in the final report (step 55) is how the user learns about them and decides what to file.
 
-37. **Do not re-review.** One review pass per PR. Reviewing the fixes with a fresh fleet invites an unbounded loop; the final look in Phase 6 is the backstop.
+46. **Do not re-review.** One review pass per PR. Reviewing the fixes with a fresh fleet invites an unbounded loop; the final look in Phase 8 is the backstop.
 
-### Phase 6: Look, verify, merge
+### Phase 8: Look, verify, merge
 
-38. **Budget gate** (merge, 25m), then **give the PR a final look.** This is not a review — it's the check a person does before hitting merge. Read `gh pr diff <N>` end to end and confirm:
+47. **Budget gate** (merge, 25m), then **give the PR a final look.** This is not a review — it's the check a person does before hitting merge. Read `gh pr diff <N>` end to end and confirm:
     - The diff does what the slice's units said it would, and the units' Verification criteria are met.
-    - Nothing accepted in Phase 5 is still unfixed.
+    - Nothing accepted in Phase 7 is still unfixed.
     - No debugging leftovers, no commented-out blocks, no stray files, no secrets.
     - The change is confined to the slice's scope — nothing from a later slice snuck in.
 
     **If the look fails**, mark the row `blocked` with the reason and halt. Do not dispatch another fix round — two failed passes on the same PR means the slice needs a human.
 
-39. **Set the row to `merging`, then wait on CI** — `gh pr checks <N> --watch`. If `gh` lacks `--watch`, poll every 30s capped at 20 minutes, then halt if unresolved.
+48. **Set the row to `merging`, then wait on CI** — `gh pr checks <N> --watch`. If `gh` lacks `--watch`, poll every 30s capped at 20 minutes, then halt if unresolved.
     - **"No checks reported"** means the repo has no CI on this branch — the local suite becomes the gate: run the test command detected in Phase 0 in the worktree; red halts. (If Phase 0 found no test command either, note in the final report that this slice merged ungated.)
     - **When checks exist, `/grind` runs nothing locally** — the suite already ran in CI; running it twice buys nothing and, on expensive suites, costs real money.
 
-40. **Red CI halts the run.** No fix rounds, no re-pushes, and never a masked failure — deleting a failing test, loosening an assertion, adding a skip, or bumping a timeout to force green is prohibited; CI is the only automated gate protecting an unattended merge. Mark the row `blocked` with the failing check named in `Notes`, pull the failing log (`gh run view <run-id> --log-failed`) into the halt report, and halt per Phase 7.
+49. **Red CI halts the run.** No fix rounds, no re-pushes, and never a masked failure — deleting a failing test, loosening an assertion, adding a skip, or bumping a timeout to force green is prohibited; CI is the only automated gate protecting an unattended merge. Mark the row `blocked` with the failing check named in `Notes`, pull the failing log (`gh run view <run-id> --log-failed`) into the halt report, and halt per Phase 9.
 
-41. **Merge** — `gh pr merge <N> --squash --delete-branch`. **Verify it actually merged** (`gh pr view <N> --json state,mergedAt`); a failed merge (branch protection, required reviews, conflicts) is a halt, not a retry. Required-reviews protection in particular means the repo does not permit unattended merges — say that plainly rather than trying to work around it.
+50. **Merge** — `gh pr merge <N> --squash --delete-branch`. **Verify it actually merged** (`gh pr view <N> --json state,mergedAt`); a failed merge (branch protection, required reviews, conflicts) is a halt, not a retry. Required-reviews protection in particular means the repo does not permit unattended merges — say that plainly rather than trying to work around it.
 
-42. **Clean up — atomically with the merge.** No budget gate, no stop, and no interruption point between merge success and the end of this step; a resume that finds a merged PR with any of this missing completes it (Phase 2). From the primary checkout: `git worktree remove ../<repo>-worktrees/<branch-name>`, `git fetch origin <default-branch>:<default-branch>` (the fetch form — other worktrees may hold the branch), check the plan's implementation-unit checkboxes for the slice, update the row to `merged`, and stamp:
+51. **Clean up — atomically with the merge.** No budget gate, no stop, and no interruption point between merge success and the end of this step; a resume that finds a merged PR with any of this missing completes it (Phase 2). From the primary checkout: `git worktree remove ../<repo>-worktrees/<branch-name>`, `git fetch origin <default-branch>:<default-branch>` (the fetch form — other worktrees may hold the branch), check the plan's implementation-unit checkboxes for the slice, update the row to `merged`, and stamp:
     ```markdown
     <!-- cc-forge-log v1: {"skill":"grind","event":"pr-merged","pr":<N>,"paths":["<plan file path>"]} -->
 
@@ -326,15 +376,15 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
     ```
     Then move to the next slice.
 
-### Phase 7: Halting (blocked — needs a human)
+### Phase 9: Halting (blocked — needs a human)
 
-43. **Halting stops the entire run, not just the slice.** Later slices are built on the assumption that earlier ones merged; continuing past a blocked slice produces PRs that don't apply. Never skip ahead.
+52. **Halting stops the entire run, not just the slice.** Later slices are built on the assumption that earlier ones merged; continuing past a blocked slice produces PRs that don't apply. Never skip ahead.
 
     On halt:
     - Set the row to `blocked` with a one-clause reason in `Notes`.
     - Leave the PR (when one was opened) **open** and the worktree **in place** — both are the user's material for taking over.
     - Set every remaining row's `Notes` to `not started`.
-    - Stamp the issue. A build-phase halt fires **before any PR exists** (the blocked-unit rule opens none), so the stamp branches on whether there is a PR — never invent a number or url for one that was never opened:
+    - Stamp the issue. A halt in the build, test, or PR-open phase fires **before any PR exists** — grind opens the PR in Phase 5, after the tests — so the stamp branches on whether there is a PR — never invent a number or url for one that was never opened:
       ```markdown
       <!-- cc-forge-log v1: {"skill":"grind","event":"grind-blocked","pr":<N>,"paths":["<plan file path>"]} -->
 
@@ -359,9 +409,9 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
     - Send the notification (see Notification below).
     - Report to the user: what merged, what's open and where, what the failure was with the real output, and the concrete next step.
 
-    **Blocked is not stopped.** Blocked means the run cannot proceed without a human (red CI, failed look, blocked unit, failed merge). A timer stop (Phase 8) is a healthy run out of clock — resume continues it; a blocked run waits for you.
+    **Blocked is not stopped.** Blocked means the run cannot proceed without a human (red CI, failed look, blocked unit, failed merge). A timer stop (Phase 10) is a healthy run out of clock — resume continues it; a blocked run waits for you.
 
-### Phase 8: Timer stop (healthy — resume continues)
+### Phase 10: Timer stop (healthy — resume continues)
 
 44. When a budget gate fails, end the run cleanly, **durable writes first, email last**:
     1. **Plan table:** the current row keeps its in-flight status; write `stopped by timer at <phase>` into its `Notes`.
@@ -379,7 +429,7 @@ On a **resume** (a `## PR Breakdown` table already existed), reconcile each row 
     3. **Send the notification** — push always, email if configured, one attempt per channel (see Notification); never retry on a stop, the buffer is for exiting cleanly.
     4. Report the same summary to the terminal and exit.
 
-### Phase 9: Report (complete)
+### Phase 11: Report (complete)
 
 45. When every slice is merged, set the plan's frontmatter `status: active` → `status: completed`.
 
@@ -432,6 +482,7 @@ Every terminal outcome — `grind-complete`, `grind-stopped`, `grind-blocked` �
 - **The reviewer fleet posts comments, never `--approve` or `--request-changes`.** `/grind` owns the triage decision; a blocking review state from a subagent can deadlock the merge.
 - **Triage is `/grind`'s own judgment**, never delegated, and it is recorded in the review doc's `Status:` lines and on the PR **before** the fix agent is dispatched. The fix agent receives accepted findings only.
 - **One review pass per PR.** Synthesis failures degrade (inline synthesis, then raw findings) — they never halt the run while raw findings exist, and they never trigger a second fleet.
+- **The test phase cites the spec and owns the tests.** Grind's mirrored phase runs the roster, the filters, and the writer defined in [the test-protocol spec](../test-protocol/SKILL.md) and restates none of them; the build subagent never writes a test or runs the suite, and a discarded test whose writer said the code under test is wrong is carried verbatim into the stamp and the report rather than dropped.
 - **The timer is measured, never estimated.** Every gate reads the scratchpad anchor with a real `date` call and lets the shell do the arithmetic. Never judge elapsed time from how much work has happened — that guess is not an input to any gate. The anchor is per-invocation: the grind-started stamp's `**Started:**` line is log, not clock, and a resume writes a fresh anchor. A missing anchor means stop, not guess. No gate sits between merge success and the end of cleanup.
 - **No force-push, no pushes to `main`, no `--no-verify`, no `git add -A`** — for `/grind` or any subagent it dispatches.
 - **The plan doc is the state; GitHub and the review doc are the checkpoints.** Update the row at every transition; on resume, reconcile against `gh` and the disk rather than trusting the table.
