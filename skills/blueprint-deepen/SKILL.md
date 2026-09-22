@@ -39,7 +39,7 @@ Do not proceed until you have a valid plan file path.
 1. **Stress-test, do not inflate** - Deepening should increase justified confidence, not make the plan longer for its own sake.
 2. **Selective depth only** - Focus on the weakest 2-5 sections rather than enriching everything.
 3. **Prefer the simplest execution mode** - Use direct agent synthesis by default. Switch to artifact-backed research only when the selected research scope is large enough that returning all findings inline would create avoidable context pressure.
-4. **Preserve the planning boundary** - No implementation code, no git command choreography, no exact test command recipes.
+4. **Preserve the planning boundary** - No implementation code, no git command choreography.
 5. **Use artifact-contained evidence** - Work from the written plan, its `Context & Research`, `Sources & References`, and its origin document when present.
 6. **Respect product boundaries** - Do not invent new product requirements. If deepening reveals a product-level gap, surface it as an open question or route back to `brainstorm`.
 7. **Prioritize risk and cross-cutting impact** - The more dangerous or interconnected the work, the more valuable another planning pass becomes.
@@ -110,7 +110,7 @@ If the plan was written manually or uses different headings:
 Also collect:
 - Frontmatter, including existing `deepened:` date if present
 - Number of implementation units
-- Which files and test files are named
+- Which files are named
 - Which learnings, patterns, or external references are cited
 - Which sections appear omitted because they were unnecessary versus omitted because they are missing
 
@@ -178,10 +178,10 @@ Use these triggers.
 
 **Implementation Units**
 - Dependency order is unclear or likely wrong
-- File paths or test file paths are missing where they should be explicit
+- File paths are missing where they should be explicit
 - Units are too large, too vague, or broken into micro-steps
 - Approach notes are thin or do not name the pattern to follow
-- Test scenarios or verification outcomes are vague
+- Verification outcomes are vague
 
 **System-Wide Impact**
 - Affected interfaces, callbacks, middleware, entry points, or parity surfaces are missing
@@ -341,7 +341,7 @@ Allowed changes:
 - Clarify or strengthen decision rationale
 - Tighten requirements trace or origin fidelity
 - Reorder or split implementation units when sequencing is weak
-- Add missing pattern references, file/test paths, or verification outcomes
+- Add missing pattern references, file paths, or verification outcomes
 - Expand system-wide impact, risks, or rollout treatment where justified
 - Reclassify open questions between `Resolved During Planning` and `Deferred to Implementation` when evidence supports the change
 - Strengthen, replace, or add a High-Level Technical Design section when the work warrants it and the current representation is weak, uses the wrong medium, or is absent where it would help. Preserve the non-prescriptive framing
@@ -351,7 +351,7 @@ Allowed changes:
 
 Do **not**:
 - Add implementation code — no imports, exact method signatures, or framework-specific syntax. Pseudo-code sketches and DSL grammars are allowed in both the top-level High-Level Technical Design section and per-unit technical design fields
-- Add git commands, commit choreography, or exact test command recipes
+- Add git commands or commit choreography
 - Add generic `Research Insights` subsections everywhere
 - Rewrite the entire plan from scratch
 - Invent new product requirements, scope changes, or success criteria without surfacing them explicitly

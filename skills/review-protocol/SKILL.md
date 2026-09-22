@@ -259,7 +259,7 @@ verbatim:
 
 1. **Address P1 findings** — critical; must be fixed before merge.
 2. **Sweep the quick wins** — run `/review-sweep docs/reviews/[filename]` to land the quick wins unattended, then `/review-walk` the findings it surfaced.
-3. **Walk the review** — run `/review-walk docs/reviews/[filename]` to step through issues group-by-group with implement / defer / skip choices. Status updates land in the review doc, so progress is durable.
+3. **Walk the review** — run `/review-walk docs/reviews/[filename]` to step through findings one at a time in P1 → P2 → P3 order with implement / defer / won't fix choices. `Status:` is updated inline in the review doc, so progress is durable.
 4. **Push the fixes, then land** — run **`/review-push`**, which commits the applied fixes, pushes them onto the PR branch, and posts a PR comment mapping each finding to its outcome (fixed / deferred / skipped), then `/land` the PR. The review doc stays local (gitignored); the PR comment carries its context. When the machine that will land the PR is not this one (e.g. a review VM), fast-forward the worktree there (`git pull --ff-only origin <branch>`) before `/land`.
 ````
 
