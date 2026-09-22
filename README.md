@@ -1,6 +1,6 @@
 # cc-forge
 
-A personal reference collection of Claude Code skills and agents, built around a `brainstorm → blueprint → work → review → compound` loop with GitHub integration on top.
+A personal reference collection of Claude Code skills and agents, built around a `brainstorm → blueprint → work → test → ship → review → land` loop with GitHub integration on top.
 
 This is a **personal showcase**, not a package. Browse, copy the folders or ideas you want into your own `~/.claude/`, and adapt them. The workflows are tuned to one person's setup.
 
@@ -16,9 +16,9 @@ Editing a file or pulling a commit is the deploy. `SKILL.md` edits are live imme
 
 ## Skills
 
-Four reference docs sit alongside the commands and are not invocable: [`skills/issue-log/SKILL.md`](skills/issue-log/SKILL.md), the spec for the "stamp" comments workflow skills post to the linked GitHub issue so its thread becomes a work log; [`skills/glossary/SKILL.md`](skills/glossary/SKILL.md), the format of the personal glossary the learning skills write; [`skills/walk-protocol/SKILL.md`](skills/walk-protocol/SKILL.md), the rules the three walks share; and [`skills/review-protocol/SKILL.md`](skills/review-protocol/SKILL.md), the rules `/deep-review` and `/quick-review` share.
+Five reference docs sit alongside the commands and are not invocable: [`skills/issue-log/SKILL.md`](skills/issue-log/SKILL.md), the spec for the "stamp" comments workflow skills post to the linked GitHub issue so its thread becomes a work log; [`skills/glossary/SKILL.md`](skills/glossary/SKILL.md), the format of the personal glossary the learning skills write; [`skills/walk-protocol/SKILL.md`](skills/walk-protocol/SKILL.md), the rules the three walks share; [`skills/review-protocol/SKILL.md`](skills/review-protocol/SKILL.md), the rules `/deep-review` and `/quick-review` share; and [`skills/test-protocol/SKILL.md`](skills/test-protocol/SKILL.md), the rules `/test-plan`, `/test-plan-run`, and `/grind`'s test phase share.
 
-Skills are named by what they do to an artifact: producers take the name of what they write (`/brainstorm`, `/blueprint`, `/deep-review`, `/quick-review`), and skills that act on an artifact already on disk are `<artifact>-<action>` (`/review-walk`, `/review-sweep`, `/review-push`, and the two other walks).
+Skills are named by what they do to an artifact: producers take the name of what they write (`/brainstorm`, `/blueprint`, `/test-plan`, `/deep-review`, `/quick-review`), and skills that act on an artifact already on disk are `<artifact>-<action>` (`/test-plan-run`, `/review-walk`, `/review-sweep`, `/review-push`, and the two other walks).
 
 ### Core workflow
 
@@ -29,8 +29,10 @@ Skills are named by what they do to an artifact: producers take the name of what
 | `/blueprint` | Turns a description or requirements doc into an implementation plan grounded in repo patterns | Requirements are roughly defined and you need a technical approach in units |
 | `/blueprint-deepen` | Stress-tests a plan and strengthens weak sections with targeted research | A high-risk or deep plan needs more confidence |
 | `/blueprint-walk` | **Optional.** Walks a plan one unit at a time with a plain-English teach moment, then accept / modify / remove / add term / skip. `remove` tombstones without renumbering; `add term` captures to the glossary without losing your place. Writes `**Reviewed:**` inline so it's resumable | You want to understand or correct a plan before any code is written |
-| `/work` | Executes a plan unit by unit: one Opus subagent per unit, strictly serial, with the orchestrator reviewing each diff, committing, and stamping the issue | You have a plan and want it implemented |
-| `/grind` | Executes a whole plan **autonomously as a sequence of PRs**: per slice, worktree → Opus builds and opens the PR → review fleet → `/grind` triages → Opus fixes → squash-merge on green CI. Halts on red; resumable via a `## PR Breakdown` table | A plan you trust, ground to merged `main` without babysitting. Needs no required-reviews protection |
+| `/work` | Executes a plan unit by unit: one Opus subagent per unit, strictly serial, with the orchestrator reviewing each diff, committing, and stamping the issue. Writes no tests and runs no suite | You have a plan and want it implemented |
+| `/test-plan` | Proposes the test cases for the branch: three lenses in parallel — spec (no file tools), blast-radius, surface — into a synthesizer that tags each case `auto`/`browser`/`manual`, applies the keep and drop rules, caps `auto` at 15, and writes `docs/tests/*.md` with a Drop List. Stops for review; writes no test files | Work is done and you want a reviewable list of what to test |
+| `/test-plan-run` | Runs one scope of a reviewed test plan — `auto` writes the tests through an outside-observer writer that never sees the diff and runs the assurance filters (collect, pass, N reruns), `browser` drives the flows, `manual` walks the cards one at a time. Records `Status:`, a `**Filter:**` line, and a `## Receipts` block in the doc, and reports receipts rather than "tests pass". Leaves the tests uncommitted for `/ship` | `/test-plan-run [auto\|browser\|manual]`; no argument runs auto then browser |
+| `/grind` | Executes a whole plan **autonomously as a sequence of PRs**: per slice, worktree → Opus builds → `/grind` writes and runs the tests and opens the PR → review fleet → `/grind` triages → Opus fixes → squash-merge on green CI. Halts on red; resumable via a `## PR Breakdown` table | A plan you trust, ground to merged `main` without babysitting. Needs no required-reviews protection |
 | `/deep-review` | Exhaustive multi-agent code review; writes a review doc | Complex, risky, or large changes |
 | `/quick-review` | The lite sibling of `/deep-review`: a fixed roster of correctness + simplicity, plus at most one language reviewer picked by the diff's dominant extension (files changed, not lines). Same review doc, so the downstream skills consume it unchanged. Reviews what's checked out here — never creates a worktree or switches branches | A small diff where the full fleet is overkill |
 | `/review-walk` | Walks a review doc one finding at a time (P1 → P2 → P3) as compact cards with a plain-text implement / defer / wont-fix / term / explain line; updates `Status:` inline; defer files a tracking issue on the spot | You have a `docs/reviews/*.md` and want to act on it |
@@ -56,7 +58,7 @@ Skills are named by what they do to an artifact: producers take the name of what
 | `/issue-from-context` (alias `/ifc`) | Creates a GitHub issue from conversation context. `--prefix <str>` prepends a title prefix; `--who <names>` assigns teammates by first name | Something worth tracking surfaced mid-conversation |
 | `/read-issue` | Fetches an issue and presents a structured digest | You want an issue summarized in-session |
 | `/triage-issue` | Investigates whether an issue is still present, fixed, or needs digging; writes to `docs/triage/` | Verifying a report still reproduces |
-| `/ship` | Commits per file, pushes, and creates a PR | Work is done |
+| `/ship` | Commits per file (tests included), pushes — the suite runs once, in CI, off that push — and creates a PR whose pre-merge checklist holds only what CI cannot run | Work is done and tests are written |
 | `/land` | Merges an open PR with zero prompts: runs the PR's pre-merge checklist, waits on CI, squash-merges, removes the worktree, syncs `main`, stamps the issue. Red halts | A PR is ready to merge |
 
 GitHub skills shell out to `gh`; have it installed and authenticated.
@@ -73,7 +75,6 @@ GitHub skills shell out to `gh`; have it installed and authenticated.
 |---|---|---|
 | `/side-quest` | Files a `follow-up` tracking issue for out-of-scope work and stamps the originating issue | Something worth tracking but out of scope right now |
 | `/stand-up` | Summarizes the past 28h of commits, PRs, and linked issues | Daily catch-up |
-| `/test-plan` | Generates a manual test plan from the branch diff; saves a living doc to `docs/tests/` | A structured manual-testing pass |
 
 ### Response mode
 
@@ -105,17 +106,17 @@ Subagents live in `agents/`, grouped by category. Skills reference them as `forg
 
 **Feature development** (bracketed steps optional):
 ```
-/brainstorm → [/brainstorm-walk] → /blueprint → [/blueprint-deepen] → [/blueprint-walk] → /work → [/deep-review | /quick-review] → [/review-sweep] → /review-walk → /ship → /land
+/brainstorm → [/brainstorm-walk] → /blueprint → [/blueprint-deepen] → [/blueprint-walk] → /work → /test-plan → /test-plan-run → /ship → /quick-review | /deep-review → [/review-sweep] → /review-walk → /review-push → /land
 ```
 
 **Multi-feature initiative:**
 ```
-/initiative → /blueprint <workstream> → /work → /initiative <path>   # repeat per workstream
+/initiative → /blueprint <workstream> → /work → /test-plan → /test-plan-run → /initiative <path>   # repeat per workstream
 ```
 
 **Worktree-isolated** (primary checkout stays on `main`):
 ```
-/brainstorm → /blueprint → /tree <issue> → new session in the worktree → /work → [/deep-review | /quick-review] → /ship → /land
+/brainstorm → [/brainstorm-walk] → /blueprint → [/blueprint-deepen] → [/blueprint-walk] → /tree <issue> → [new session] → /work → /test-plan → /test-plan-run → /ship → /quick-review | /deep-review → [/review-sweep] → /review-walk → /review-push → /land
 ```
 
 `/tree` replaces `/branch-from-issue` when you want the branch in its own directory; `/land` removes the worktree on merge.
@@ -128,7 +129,7 @@ agents/          Subagents grouped by category (research/review/workflow/test)
 hooks/           Hook scripts + hooks.json (auto-wired when the plugin loads; currently empty)
 dashboard/       Live terminal dashboard for monitoring sessions (run as `ccdash`, not plugin-loaded)
 .claude-plugin/  Plugin manifest (makes the symlinked clone load as forge@skills-dir)
-docs/            Plans, brainstorms, reviews, initiatives generated at runtime
+docs/            Plans, brainstorms, reviews, tests, initiatives generated at runtime
 ```
 
 ## Credits
