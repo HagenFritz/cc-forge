@@ -39,6 +39,7 @@ Do NOT proceed with any commits or pushes on main/master.
      - Frontend component changes (component + styles + types) → one commit
      - Documentation updates → separate commit
      - Config/infrastructure changes → separate commit
+     - Test files written by `/test-plan-run` → grouped with the change they cover, or their own `test:` commit when they cover several
 4. **Detect changes in other repos**: If `git status` or file inspection shows changes in other repository directories (outside current repo root), note this for the PR body but do NOT commit or push those changes.
 
 ### Phase 2: Understand the full branch
@@ -103,7 +104,7 @@ Do NOT proceed with any commits or pushes on main/master.
        )"
        ```
 
-11. Output the PR URL.
+11. Output the PR URL, followed by: Next: `/quick-review` or `/deep-review`, then `/review-sweep`, `/review-walk`, `/review-push`, `/land`.
 
 12. **Post an issue-log stamp on the linked issue** (skip if `<issue-number>` from step 10a is none). Compose the body below, write it to a temp file with the Write tool, and post per [the issue-log spec](../issue-log/SKILL.md)'s posting rules:
     ```markdown
