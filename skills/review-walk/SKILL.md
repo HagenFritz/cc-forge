@@ -1,27 +1,35 @@
 ---
 name: review-walk
 description: >
-  Walk through a code-review document interactively. Reads a review file produced by
-  /deep-review, presents related issues group-by-group with a plain-English teach moment
-  per group, then steps through each member issue offering implement / defer / won't fix /
-  add term / explain more. Unfamiliar concepts go to a personal glossary without
-  interrupting the walk, and `Status:` is updated inline in the doc so progress is
-  durable and resumable. Triggers on phrases like "walk the review", "step through the
-  review", "review-walk", or passing a path to a docs/reviews/*.md file.
+  Walk through a code-review document interactively, one finding at a time in
+  P1 → P2 → P3 order. Reads a review file produced by /deep-review or /quick-review,
+  renders each finding as a compact card (category, files, confidence, one-sentence
+  problem, one-sentence fix per option), then takes implement / defer / won't fix /
+  add term / explain — or free text. Defer files a tracking issue through
+  /issue-from-context; won't fix records a coded reason. `Status:` is updated inline
+  in the doc so progress is durable and resumable. Triggers on phrases like "walk the
+  review", "step through the review", "review-walk", or passing a path to a
+  docs/reviews/*.md file.
 user-invocable: true
 argument-hint: "[path to docs/reviews/*.md]"
-allowed-tools: Bash, Read, Edit, Write, Agent
+allowed-tools: Bash, Read, Edit, Write, Agent, Skill
 ---
 
 # Review Walk
 
-Guide a human through a code-review document one **group of related issues** at a time.
-For each group, teach the underlying concept in plain English before stepping into
-specific fixes. The review document is the source of truth — `Status:` updates live
-in the doc, so walks resume cleanly across sessions.
+Step a human through a code-review document one finding at a time. The review document
+is the source of truth — `Status:` updates live in the doc, so walks resume cleanly
+across sessions.
 
-This skill **consumes** review docs produced by `/deep-review`. It does not run reviewers
-or produce new findings.
+This skill **consumes** review docs produced by `/deep-review` or `/quick-review`. It does
+not run reviewers or produce new findings. It follows
+[the walk-protocol spec](../walk-protocol/SKILL.md) for order, resume, the action
+self-loop contract, edit anchoring, and term capture; only what is specific to a review
+doc is written here.
+
+**Invoking the walk is the confirmation.** There is no "proceed?" prompt, no "ready?"
+prompt, and no per-group gate. The walk never calls `AskUserQuestion`: every question is a
+plain-text numbered list the user answers with a number.
 
 ## Step 1: Resolve the Doc Path
 
@@ -33,294 +41,268 @@ or produce new findings.
   ```
 
   The filename convention is `YYYY-MM-DD-NNN-<slug>-review.md`, so a lexicographic
-  sort picks the most recent doc deterministically (no `mtime` ambiguity if the file
-  was edited mid-walk).
+  sort picks the most recent doc deterministically.
 
 - If no review docs exist, STOP and tell the user to run `/deep-review` or `/quick-review` first.
-- Confirm the resolved path back to the user before continuing:
-  > "Walking review: `docs/reviews/<file>.md`. Proceed?"
-  Use `AskUserQuestion` with Yes / Cancel.
+- State the resolved path in one line and continue. Do not ask.
 
-## Step 2: Read the Doc and Detect Shape
+## Step 2: Read the Doc and Find the Resume Point
 
-Read the full review doc. Determine:
+Read the full review doc. Ignore the `## Groups` section entirely — the sweep and grind
+still read it; the walk does not. Walk order is `P1-* → P2-* → P3-*` in numeric order,
+always.
 
-- Whether a top-level `## Groups` section is present.
-- Whether issues carry the enriched fields (`Category:`, `Confidence:`,
-  `Confidence rationale:`, `Plain English:`).
+Parse every finding's `Status:` line:
 
-These together determine which mode to run in:
-
-| Mode | Trigger | Behavior |
-|------|---------|----------|
-| **Enriched** | `## Groups` present AND issues have enriched fields | Group-first walk with teach moments. |
-| **Fallback** | Either is missing | Issue-by-issue walk in P1 → P2 → P3 order. No teach moments. Status updates still work. |
-
-Fallback exists so the skill is useful against review docs created before the
-enrichment landed. Announce the mode briefly:
-
-> "Enriched review doc detected — running group-first walk with teach moments."
-> or
-> "Older review doc (no Groups section) — falling back to issue-by-issue walk."
-
-## Step 3: Detect Resume Point
-
-Parse every issue's `Status:` line. Decide where to start:
-
-1. If any issue is `Status: in-progress`, **resume there** (a previous walk was
-   interrupted mid-fix). Announce: "Resuming at P1-3 (last left in-progress)."
+1. If any finding is `Status: in-progress`, **resume there** — a previous walk was
+   interrupted mid-fix. Say so in one line.
 
    **An `in-progress` finding carrying a `**Sweep:**` or `**Grind:**` line was left by an
    unattended run, not by a walk** — a half-applied edit may already be in the working tree.
-   Say so before offering the action menu, show what that run claimed it was doing, and let the
-   user look at the tree first. Never write `**Applied:**` over it on a later Implement: that
-   field records what *this walk* changed, and the walk did not make those edits.
-2. Else, the entry point is the first non-terminal issue in walk order. Terminal
-   statuses are `done`, `deferred`, `wont-fix`. `open` is non-terminal.
-3. If all issues are terminal, report completion and exit:
-   > "Walkthrough already complete. All N issues are done / deferred / wont-fix."
-   Show a one-line summary of counts by terminal status.
+   Say so on the card, show what that run claimed it was doing, and let the user look at the
+   tree first. Never write `**Applied:**` over it on a later Implement: that field records
+   what *this walk* changed, and the walk did not make those edits.
+2. Else, start at the first non-terminal finding in walk order. Terminal statuses are
+   `done`, `deferred`, `wont-fix`. `open` is non-terminal.
+3. If every finding is terminal, report completion and exit:
+   > "Walk already complete. N findings — n done / n deferred / n wont-fix."
 
-## Step 4: Group Summary (Enriched Mode Only)
+Open with one line — `Walking <path>: N findings, n remaining.` — then render the first card.
 
-Before diving into issues, show the user the lay of the land:
+## Step 3: The Card
 
-- Total issues, terminal counts so far, groups remaining.
-- A short list of group names with member IDs.
+Every finding gets exactly this card.
 
-Then confirm the user is ready to begin:
+```
+### P<X>-<N>: <title>
+Category: <category>  ·  Confidence: <high | medium | low — <rationale>>
+Files:
+- <path>
+- <path>
+Sweep: <reason>            ← only when the doc carries a Sweep: or Grind: line
+Problem: <one sentence>
+Concept: <one sentence>
+Fix: <one sentence — why this fix>
 
-> "Starting with <G1 name>. Ready?"
+1. implement
+2. defer
+3. wont-fix
+4. term <x>
+5. explain
+— or just tell me
+```
 
-Use `AskUserQuestion` with Yes / Stop. **Groups are walked in doc order, always.** Do
-not offer to jump to a different group, reorder them, or take orphan issues first —
-the doc's order is the walk's order, and a group whose members are all terminal is
-passed over silently rather than offered as a choice.
+Rules per line:
 
-## Step 5: Walk the Groups
+- **Title line** — the finding's heading, verbatim. The ID appears once, here, and nowhere
+  else on the card.
+- **Category / Confidence** — copied from the doc's fields. Show the `Confidence rationale:`
+  only for `low`. Omit either field when the doc does not carry it; never fabricate one.
+- **Files** — always a hyphenated list, one path per line, even for a single file. Union of
+  the doc's `File(s):` and any other path the `Fix:` names as something to change. Tangential
+  files count; the list is every file this finding touches.
+- **Sweep / Grind** — one sentence, only when present: why the unattended run left this
+  for a human, rewritten from the doc's `Sweep:` or `Grind:` line rather than pasted.
+- **Problem** — one sentence, written from `Plain English:` and `Problem:`. The finding's
+  TLDR, aimed squarely at this code: what is wrong, where.
+- **Concept** — one sentence naming the general principle this finding is an instance of,
+  said the way you would tell a colleague what kind of problem it is without pointing at
+  the code. Name the pattern, the engineering principle, or the computer-science idea
+  behind it — "a race condition: two writers touch the same state and the last one wins",
+  "a leaky abstraction: callers have to know how the helper works to use it safely",
+  "single source of truth: the same rule is defined in two places, so they drift." The
+  Problem line is about *this* bug; the Concept line is about the *kind* of bug, and is
+  what a newer engineer learns from. Never restate the Problem line. When the finding is
+  too mundane to have a principle behind it (a typo, a stale comment), omit the line
+  rather than invent one.
+- **Fix** — one sentence when the doc describes one remedy. When `Fix:` (or `Problem:`)
+  describes more than one, number them, one sentence each, and end each with **why that fix
+  on its own terms** — a precedent in the codebase, the standard practice, the smallest
+  blast radius. No comparison between options, no pros and cons; each line justifies
+  itself in its own context.
 
-For each group with non-terminal members, in order:
+  ```
+  Fix:
+  1. <one sentence> — <why this one>
+  2. <one sentence> — <why this one>
+  ```
 
-### 5a. Present the group block
+**Every summary sentence on the card — Sweep, Problem, Concept, each Fix — follows
+[`/tldr`'s rules](../tldr/SKILL.md) with N = 1.** Short common words over long ones,
+active voice, a concrete subject: "the check runs too early" beats "there is a temporal
+ordering issue with the validation invocation." Drop hedging and background, never facts.
+Identifiers, error strings, and file paths are kept exact and never paraphrased; any other
+term is said in ordinary words. One sentence is the ceiling, not a target.
 
-Show the group's name, member IDs (with current `Status:` next to each), `Why grouped:`,
-`Suggested order:`, and `Cascade:` exactly as written in the doc.
+- **The action list** is plain text, never `AskUserQuestion`, with a blank line above it so
+  it stands apart from the card. The user answers with the number (`1`–`5`), the verb, or
+  either with a qualifier (`1 but keep the old name`, `3 2` for won't-fix reason 2,
+  `4 race condition`), or something else entirely.
 
-### 5b. Re-read cited files
+Then stop and wait for the reply.
 
-Collect the unique file paths from the `File(s):` field of each member issue. `Read`
-each one (limit to relevant excerpts when the file is large — the issue's line number
-gives the anchor). This grounds the teach moment in the current code, not in the
-reviewer's snapshot.
+## Step 4: Reading the Reply
 
-### 5c. Teach the underlying concept
+Map the reply to one action:
 
-Compose a plain-English explanation of what the group is about, framed as a teach
-moment:
+| Reply | Action |
+|-------|--------|
+| `1`, `implement`, `do it`, `fix`, or instructions describing a change | **Implement** (§5). Instructions that modify the fix are followed — the user is choosing the code, not the walk. When the card has more than one Fix option, the reply names it after the action (`1 2` = implement option 2); bare `1` → ask which, in one line of text, and wait. |
+| `2`, `defer`, `issue`, `file it`, `later` | **Defer** (§5). |
+| `3`, `wont-fix`, `won't fix`, `skip`, `no`, optionally followed by a reason number | **Won't fix** (§5). A reason given in the reply pre-answers the reason question. |
+| `4 <x>`, `term <x>`, `add term`, `what is <x>` | **Add term** (§5). Self-loop. |
+| `5`, `explain`, `why`, `more`, a question about the finding | **Explain** (§5). Self-loop. |
+| anything else | The "just tell me" path: the user is giving direction or asking something the verbs don't cover. Answer it in as few sentences as it needs and re-show the action line. Self-loop. |
 
-- Lead with the concept in non-jargon terms (e.g., "Session validation is happening
-  in two places, and they disagree on what 'valid' means.").
-- Point to one concrete example from the actual code you just read (file + line +
-  short quoted snippet if useful).
-- Keep it to 3–6 sentences. The goal is comprehension, not a lecture.
+**Every finding is presented individually and gets its own reply.** Never collapse several
+findings into one card, never offer a batch verdict, never skip a card because the answer
+looks obvious. The walk exists so each finding is looked at.
 
-Then ask:
+## Step 5: Actions
 
-> "Ready to step through the issues in this group? (implement / defer / won't fix / add term / explain more)"
-
-Use `AskUserQuestion` to confirm the user wants to enter the issue loop.
-
-### 5d. Issue loop within the group
-
-For each member issue in `Suggested order:`, in order, skipping any already-terminal:
-
-1. **Present the issue.** Show its title, `Category:`, `Status:`, `File(s):`,
-   `Plain English:`, `Problem:`, and `Fix:`. Use the doc's text verbatim. Also show
-   `Sweep:` when present — its reason is why [`/review-sweep`](../review-sweep/SKILL.md)
-   left this finding for a human.
-
-2. **Noise marker for low confidence.** If `Confidence: low`, prefix the
-   presentation with:
-
-   > **Reviewer confidence is LOW** (rationale: `<Confidence rationale>`). Likely
-   > safe to skip if it doesn't match your read of the code.
-
-   For `Confidence: medium`, show a softer note: "Reviewer confidence: medium —
-   verify before implementing." For `high`, no marker.
-
-3. **Ask the action question** via `AskUserQuestion`:
-   - **Implement** — apply the fix now.
-   - **Defer** — out of scope for this pass; capture a one-line reason.
-   - **Won't fix** — reviewer noise or disagree; close it out. Terminal: this is a
-     decision, not a deferral. The other two walks use *skip* for "no verdict yet";
-     this walk has no such action.
-   - **Add term** — capture an unfamiliar concept to the glossary. **Does not advance
-     the issue** — the menu is re-asked afterward, and `Status:` is untouched.
-   - **Explain more** — deeper teaching, then re-ask.
-
-   Ask this question for **every** issue, one at a time. Never collapse several issues
-   into one question, and never offer a batch verdict — not even when the rest of the
-   group looks alike.
-
-   `Add term` and `Explain more` are **self-loops**: handle it, then re-ask this same
-   question on the same issue. Both are repeatable any number of times on one issue.
-   That is the entire point of the side buffer — learning must not cost the review
-   thread.
-
-4. **Execute the chosen action** using the Status Update Protocol (Step 7).
-
-When the group's issues are all terminal, proceed to the next group.
-
-## Step 6: Orphan Issues
-
-After all groups are walked, sweep up any issues that were not members of any group.
-Walk these issue-by-issue in `P1-* → P2-* → P3-*` numeric order. No teach moment;
-present each issue, apply the noise marker rule, ask the 5d action question — `Add term`
-included, behaving identically here — and update status.
-
-## Step 7: Status Update Protocol
-
-The review doc is the durable progress store. Every action mutates the issue's
-`Status:` line (and sometimes appends fields) using the `Edit` tool, anchored on the
-issue's heading + status line so the edit is unambiguous.
+The review doc is the durable progress store. Every advancing action mutates the finding's
+`Status:` line with `Edit`, anchored per the **Edit anchoring rule** below.
 
 ### Implement
 
-1. **Before touching code**, set `Status: in-progress` so a crash leaves clear state:
-
-   ```
-   Edit the line:
-     **Status:** `open`
-   under heading `### P<X>-<N>:` → become:
-     **Status:** `in-progress`
-   ```
-
-2. Apply the fix described in `Fix:`. Read the file, make the edit. Follow the doc's
-   instructions; do not invent scope. If the fix is unclear, ask the user before
-   editing code.
-
-3. After the fix is in place, set `Status: done` and append an `Applied:` line directly
-   below it recording how closely the landed change followed the doc's `Fix:`:
+1. **Before touching code**, set `Status: in-progress` so a crash leaves clear state.
+2. Apply the fix. If the user picked a numbered option or gave instructions, follow those;
+   otherwise follow the doc's `Fix:`. Do not invent scope. If the fix is unclear, ask in one
+   line of text before editing.
+3. Set `Status: done` and append an `Applied:` line directly below it:
 
    ```
      **Status:** `done`
      **Applied:** <as-written | reworked | partial> — <one line: what changed, and what differed from `Fix:` if anything>
    ```
 
-   - `as-written` — the `Fix:` was applied as described.
-   - `reworked` — the problem was fixed, but by a different change than `Fix:` described.
+   - `as-written` — the `Fix:` was applied as described. Cosmetic deviation (identifier
+     names, import position, reworded comments, an equivalent expression) stays `as-written`.
+   - `reworked` — the problem was fixed by a materially different change: a different
+     function, file, or algorithm than `Fix:` named, a different remedy, a scope `Fix:` did
+     not describe, or the user's own instructions.
    - `partial` — only part of `Fix:` landed; say which part did not and why.
 
-   **Where `as-written` ends:** cosmetic deviation stays `as-written` — different identifier names,
-   a different import position, reworded comments, an equivalent expression. What makes it
-   `reworked` is a materially different change: a different function, file, or algorithm than the
-   `Fix:` named, a different remedy for the same problem, or a scope the `Fix:` did not describe.
-   Judge the change against what `Fix:` asked for, not against how tidy the diff looks.
-
    You made the edit, so you pick the code — never ask the user for it.
-
-4. Briefly confirm to the user what changed and which file(s).
+4. One line to the user: what changed, in which file(s). Then the next card.
 
 ### Defer
 
-1. Ask why with `AskUserQuestion` — one question, these options, `Other` allowed:
-   - **follow-up-pr** — real and wanted, but belongs in its own change
-   - **needs-decision** — someone has to decide something before this can be fixed
-   - **blocked-on** — waits on another change, a migration, a release, or an external party
-   - **bigger-than-scoped** — the real fix is larger than the finding describes
-2. Set `Status: deferred` and append a new line directly below the Status line, per the
-   **Reason line format** below:
+Defer means one thing: **file a tracking issue now.** Only the user can defer, and choosing
+it is the explicit instruction to create the issue — no second "file it?" prompt from the
+walk. There is no defer-reason question.
+
+1. Set `Status: in-progress` (claim).
+2. Invoke [`/issue-from-context`](../issue-from-context/SKILL.md) with the finding as the
+   framing lens: its heading, `Problem:`, `Fix:`, and `File(s):`. That skill owns the
+   title, the body, the label, and its own preview-and-confirm; the walk adds nothing to
+   the issue. If the user cancels inside `/issue-from-context`, reset `Status:` to `open`
+   and re-show the action line — a cancelled issue is not a deferral.
+3. On success, set `Status: deferred` and append the tracking line directly below it:
 
    ```
      **Status:** `deferred`
-     **Defer reason:** <code> — <free text>
+     **Tracking:** <owner>/<repo>#<n>
    ```
 
-   Anchor the edit on the existing `**Status:** \`open\`` line under the issue's
-   heading.
-
-3. Do not change any other fields. Do not modify code.
+   No `Defer reason:` line — the issue is the reason. (`/grind` still writes
+   `Defer reason:` in the shape defined under **Skip reason format**; it is unattended and files
+   nothing, so its reason is the only record. The walk's is the issue.)
+4. Do not modify code. One line to the user with the issue URL, then the next card.
 
 ### Won't fix
 
-1. Ask why with `AskUserQuestion` — one question, these options, `Other` allowed. A
-   reason is required; there is no "no reason" option:
-   - **misread** — the reviewer got the code wrong; the problem is not there
-   - **by-design** — the behavior is intentional
-   - **not-worth-it** — real, but the fix is out of proportion to the problem
-   - **accepted-risk** — real and understood; consciously carried as-is
-   - **pre-existing** — real, but not introduced by this change
-   - **tracked-elsewhere** — already covered by an issue, a plan, or an idea doc
-   - **protected-artifact** — the fix would delete or gitignore a protected file (see Rules).
-     Automatic, never offered as a choice.
-2. Set `Status: wont-fix` and append the reason directly below the Status line, per the
-   **Reason line format** below:
+Terminal: this is a decision, not a deferral. The reason code is the one piece of
+structured data the walk collects deliberately — it is what later mining of review docs
+uses to make `/review-sweep` more autonomous — so it is asked as a plain-text numbered list,
+unless the user's reply already carried the number (`3 2`, `wont-fix duplicate P2-3`):
 
-   ```
-     **Status:** `wont-fix`
-     **Skip reason:** <code> — <free text>
-   ```
+```
+Why won't-fix?
 
-3. Do not modify code.
+1. misread          5. pre-existing
+2. by-design        6. already-fixed
+3. not-worth-it     7. duplicate <P#>
+4. accepted-risk    8. tracked-elsewhere
+```
 
-### Reason line format
+Render it in a fenced block so the two columns keep their alignment.
 
-`Defer reason:` and `Skip reason:` share one shape: `<code> — <free text>`, one line, sitting
-directly under `Status:`. The code is what future analysis of review docs keys on; the free
-text is for humans.
+- **misread** — the reviewer got the code wrong; the problem is not there
+- **by-design** — the behavior is intentional
+- **not-worth-it** — real, but the fix is out of proportion to the problem
+- **accepted-risk** — real and understood; consciously carried as-is
+- **pre-existing** — real, but not introduced by this change
+- **already-fixed** — real, but no longer present: fixed by another finding's implementation, a later commit, or code that has since been removed
+- **duplicate** — the same finding as another in this doc; name it (`7 P2-3` → `duplicate — same as P2-3`)
+- **tracked-elsewhere** — already covered by an issue, a plan, or an idea doc
+- **protected-artifact** — the fix would delete or gitignore a protected file (see Rules).
+  Automatic, never offered on the line.
 
-**These code lists are the whole convention, not just this walk's.** `/review-sweep` writes
-`Skip reason:` with two of them (`misread`, `protected-artifact`) and `/grind` writes both fields
-with the full lists — one field, one vocabulary, whoever wrote it, so the codes stay countable
-across a pile of review docs. Adding or renaming a code here changes it for all three; tell the
-writers apart by the `**Sweep:**` or `**Grind:**` signature line, never by the code.
+**The answer is one of these eight, and nothing else.** A number or the full code, optionally
+followed by a note (`3 too small to matter`). A reply that starts with none of the eight
+is not a reason — re-show the list and wait; never guess a code from prose, and there is no
+`other`.
 
-- **A listed option chosen** → that code, then ` — ` and the user's own words if they added
-  any. If they added none, the line is the code alone.
-- **`Other` typed** → the user's text is kept **verbatim** after the dash, and you pick the
-  code it fits best. Choose from the list for that verdict; if nothing fits, the code is
-  `other`. Never rewrite, shorten, or "improve" what they typed — the code is your reading
-  of it, the text is theirs.
-- Never invent a reason the user did not give, and never leave the code out.
-- **Verbatim means their wording is unchanged — not that the bytes are written unaltered.**
-  The reason line sits directly beside the `Status:` line every downstream parser anchors on, so
-  before writing it: collapse the text to one line (newlines become spaces) and neutralize
-  anything that reads as document structure, exactly as
-  [the synthesizer does](../../agents/review/review-synthesizer.md) — indent a heading-shaped
-  fragment matching `^#{1,6}\s`, escape code-fence markers, and escape a bold-field-label shape
-  matching `^\*\*[A-Za-z ]+:\*\*`. Structural markup is not wording. Someone pasting a snippet
-  of the finding they are dismissing is the ordinary case, not an attack, and an unescaped
-  `**Status:**` in that snippet makes `/review-push` count an extra issue and a sweep re-run read
-  the wrong status. This applies to every free-text slot in a reason line.
+Then set `Status: wont-fix` and append the reason directly below it:
+
+```
+  **Status:** `wont-fix`
+  **Skip reason:** <code> — <free text>
+```
+
+Do not modify code. Next card.
 
 ### Add term
 
-1. Capture the term to the glossary (**Capturing a term to the glossary**, below).
-2. **Do not touch `Status:`.** No status write of any kind, and no code edit.
-3. Re-ask the 5d action question on the same issue. Repeatable.
+Follow [the walk-protocol spec](../walk-protocol/SKILL.md#capturing-a-term) exactly —
+it owns the side-buffer contract, the one-answer flow, and the delegation to `/term-add`
+in quiet mode. `Status:` and code are untouched. Re-show the action line on the same
+finding.
 
-### Explain more
+### Explain
 
-1. Provide a deeper plain-English walkthrough of the concept. Aim for the level of
-   detail that would let the user explain it to a colleague. Quote the actual code
-   you re-read in Step 5b.
-2. Re-ask the 5d action question. Do not change `Status:`.
+Read the cited files (the card's `Files:` list, anchored at the finding's line numbers)
+and answer in **at most three sentences**, under [`/tldr`'s rules](../tldr/SKILL.md) with
+N = 3: what the code does today, why that is a problem, and the Concept line expanded —
+where the principle comes from or how to spot it next time. Pick the three that matter
+most; a quoted line of code does not count against the cap. If the user asks again, answer
+the new question in three more. `Status:` untouched. Re-show the action line on the same
+finding.
 
-### Capturing a term to the glossary
+### Skip reason format
 
-Where `Add term` routes. Follow
-[the walk-protocol spec](../walk-protocol/SKILL.md#capturing-a-term) exactly — it owns
-the side-buffer contract, the one-answer flow, and the delegation to `/term-add` in
-quiet mode. Re-ask the 5d action question on the same issue afterward.
+`Skip reason:` is `<code> — <free text>`, one line, directly under `Status:`
+(`/grind`'s `Defer reason:` borrows the same shape).
+
+**These code lists are the whole convention, not just this walk's.** `/review-sweep` writes
+`Skip reason:` with two of the codes (`misread`, `protected-artifact`); `/grind` writes both
+fields with the full lists. One field, one vocabulary, whoever wrote it, so the codes stay
+countable across a pile of review docs. Adding or renaming a code here changes it for all
+three; tell the writers apart by the `**Sweep:**` or `**Grind:**` signature line, never by
+the code.
+
+- **Skip reason codes** — the won't-fix list above.
+- **Defer reason codes** — the walk writes none (it records a `Tracking:` line instead);
+  `/grind` is their only writer and [defines them](../grind/SKILL.md).
+- **The code** is the one the user's number names. Then ` — ` and the user's note, kept
+  **verbatim**, if they added one; if none, the line is the code alone. Never rewrite,
+  shorten, or "improve" what they typed, and never invent a note they did not give.
+- **Verbatim means their wording is unchanged — not that the bytes are written unaltered.**
+  The reason line sits directly beside the `Status:` line every downstream parser anchors
+  on, so before writing it: collapse the text to one line (newlines become spaces) and
+  neutralize anything that reads as document structure, exactly as
+  [the synthesizer does](../../agents/review/review-synthesizer.md) — indent a
+  heading-shaped fragment matching `^#{1,6}\s`, escape code-fence markers, and escape a
+  bold-field-label shape matching `^\*\*[A-Za-z ]+:\*\*`. An unescaped `**Status:**` in a
+  pasted snippet makes `/review-push` count an extra issue and a sweep re-run read the
+  wrong status.
 
 ### Edit anchoring rule
 
-Status edits must be unique. Anchor each `Edit` call on the **two lines together**:
-the `### P<X>-<N>:` heading line and the `**Status:**` line directly under it (with
-the blank line between them included in `old_string`). This guarantees uniqueness
-even if multiple issues happen to share a Status value.
-
-Example `old_string`:
+Status edits must be unique. Anchor each `Edit` call on the **two lines together**: the
+`### P<X>-<N>:` heading line and the `**Status:**` line directly under it (with the blank
+line between them included in `old_string`).
 
 ```
 ### P1-3: Missing CSRF check on logout
@@ -328,7 +310,7 @@ Example `old_string`:
 **Status:** `open`
 ```
 
-→ `new_string`:
+→
 
 ```
 ### P1-3: Missing CSRF check on logout
@@ -336,134 +318,26 @@ Example `old_string`:
 **Status:** `in-progress`
 ```
 
-## Step 8: Final Summary
+## Step 6: Final Summary
 
-After all issues are terminal:
+After all findings are terminal:
 
-- Show counts by terminal status: `done`, `deferred`, `wont-fix`.
-- List deferred items with their reasons (the user may want these as follow-up
-  tickets).
-- Report **terms added** — how many terms this session captured to
-  `~/.claude/glossary.md`. Unlike the status counts, this one *is* session-scoped: the
-  glossary is shared across every doc the user walks, so re-reading the review doc
-  cannot tell this walk's captures from an earlier walk's. Count Step 7's confirmation
-  lines, which name the term. A capture that reported the term was already present
-  counts too — the user looked it up, which is what the number is for. Omit the line
-  entirely when no term was captured.
-- Offer tracking issues for the deferred items (Step 8a), then stamp the walk
-  outcome (Step 8b).
-- Suggest next steps:
-  - If any `done` issues produced code changes, check whether the current branch has
-    an open PR (`gh pr view --json state,number`):
-    - **Open PR exists** (the remote-review flow — this walk ran against a shipped PR):
-      suggest **`/review-push`**, which commits the fixes, pushes them onto the PR
-      branch, and posts a PR comment mapping each finding to its outcome (fixed /
-      deferred / skipped). That skill owns the commit+push+comment; don't do it here.
-    - **No PR**: suggest `/ship`.
+- Counts by terminal status: `done`, `deferred`, `wont-fix` — one line.
+- Deferred findings with their issue URLs, one per line, derived by re-reading the doc's
+  `Tracking:` lines — never from session memory.
+- **Terms added** — how many terms this session captured to `~/.claude/glossary.md`. This
+  one *is* session-scoped: count the confirmation lines from Add term. A capture that
+  reported the term was already present counts too. Omit the line when none.
+- Stamp the walk outcome (§6a).
+- Next step, one line: if any `done` finding changed code, check for an open PR
+  (`gh pr view --json state,number`). Open PR → suggest `/review-push`. No PR → `/ship`.
 
-### 8a. Tracking Issues for Deferred Items
+### 6a. Stamp the Walk Outcome
 
-Derive the deferred list by re-reading the doc's `Status:` lines — never from
-session memory — so a walk resumed across sessions covers every deferred issue,
-not just this session's. If none are `deferred`, skip to 8b.
-
-**Filing an issue is never a side effect.** An issue is outward-facing and
-persists after this session, so it takes an explicit, informed yes — not one
-inferred from the user having deferred a finding. **Default to filing nothing.**
-If the user has not said to create issues, propose and stop; a walk that ends
-with zero issues filed is a normal, correct outcome.
-
-Resolve `<owner>/<repo>` from `git remote get-url origin`. Then ask once via
-`AskUserQuestion`:
-
-> "File tracking issues for the <n> deferred items?"
-
-- **Skip** — create nothing. **This is the default option**: list it first, and
-  select it if the user dismisses the prompt or answers ambiguously.
-- **Pick which** — let the user select a subset, then create those.
-- **Create all** — one issue per deferred item.
-
-Skip any deferred item whose doc entry already carries a `Tracking:` line — a
-resumed walk must not re-file issues that exist.
-
-**Then confirm what will be filed, not just the count.** The prompt above
-approves the *batch*; it names not one of the issues it would create. Before the
-first `gh issue create`, compose every issue body and ask once more via
-`AskUserQuestion`. Set the `preview` field on the **File them** option to a
-metadata stub only — never the bodies. The bodies are far larger than the
-preview panel and will fail to render:
-
-```
-<title> (<N> lines)
-<title> (<N> lines)
-```
-
-One line per item, in doc order.
-
-- **File them** (description: "Create these issues as listed") — carries the
-  stub preview
-- **Edit** — the user revises a title or body in free-form; recompose and
-  re-confirm. First print the full composed title + body of the item being
-  revised as ordinary message text (not in a `preview` field) so the user can
-  read what they are revising — print it at most once per revision round, and
-  skip the print if this round's body has already been printed. If the input
-  names no item and the batch holds more than one, print nothing and ask which
-  item they mean. Then treat the input as revision notes, regenerate that
-  item's title and body accordingly, and re-ask with the updated stub.
-- **Cancel** — file nothing, leave every `Status:` line untouched.
-
-Batching every item into one prompt keeps this to two questions total, however
-many items are deferred. Do not skip this second confirm because the first was
-answered "Create all" — that answer is consent to a count, while this one shows
-which issues those are. It is a weaker guarantee than showing the bodies: the
-titles establish identity, not contents, and the bodies are one **Edit** away
-for a user who wants to read them before saying yes.
-
-For each item being created, build the body from the shared
-[issue template](../issue-from-context/issue-template.md) — same structure
-`/issue-from-context` uses — filled from the review doc:
-
-- **Summary**: the finding's one-line description plus its defer reason
-- **Evidence**: the finding's `Problem:` section
-- **Expected**: the finding's `Fix:` section
-- **Actual (if bug)** / **Repro (if applicable)**: fill when the finding is a
-  bug with observed behavior; otherwise "n/a"
-
-Write the filled template to a temp file with the Write tool, then:
-
-```bash
-gh issue create \
-  --repo <owner>/<repo> \
-  --title "<the issue's title from its review-doc heading>" \
-  --label "follow-up" \
-  --body-file <temp-file>
-```
-
-- If the command errors because the `follow-up` label doesn't exist, re-run
-  without `--label` and tell the user the label is missing on this repo.
-- **Immediately after each successful create**, add a `Tracking:
-  <owner>/<repo>#<n>` line under that item's `Status:` line in the review doc —
-  this is the durable record; Step 8b's list is derived from it, and an
-  interrupted batch resumes without duplicates.
-- If a create fails for any other reason, note the item and continue with the
-  rest; after the loop, report which deferred items did **not** get a tracking
-  issue. Step 8b's stamp must reflect the shortfall (e.g. `Tracking: 2 of 4
-  filed — P2-3, P2-5 failed`), never silently list only the successes.
-
-After the loop, report every created issue's URL from its `gh issue create`
-output, one per line, so each is one click away:
-
-```
-<P<X>-<N> title> — <issue-url>
-```
-
-### 8b. Stamp the Walk Outcome
-
-The stamp fires only here, at final summary — a walk abandoned before Step 8
-posts nothing. Statuses come from the doc's `Status:` lines (`done` →
-implemented, `deferred` → deferred, `wont-fix` → skipped), so resumed walks
-report correctly. Issue-number resolution (including the skip when none
-resolves), posting mechanics, marker encoding, and failure handling are defined
+The stamp fires only here — a walk abandoned before Step 6 posts nothing. Statuses come
+from the doc's `Status:` lines (`done` → implemented, `deferred` → deferred, `wont-fix` →
+skipped), so resumed walks report correctly. Issue-number resolution (including the skip
+when none resolves), posting mechanics, marker encoding, and failure handling are defined
 in [the issue-log spec](../issue-log/SKILL.md).
 
 Compose the body below, write it to a temp file with the Write tool, and post:
@@ -477,66 +351,31 @@ Compose the body below, write it to a temp file with the Write tool, and post:
 **Issues:**
 - <P<X>-<N>: short title>
   - <one line on what the issue is>
-  - <status>: <why>
-- <P<X>-<N>: short title>
-  - <one line on what the issue is>
-  - <status>: <why>
-**Tracking:** <owner>/<repo>#<n>, one ref per `Tracking:` line in the doc — note any shortfall from 8a
+  - <status>: <why — the Applied: / Skip reason: line, or the Tracking: ref>
+**Tracking:** <owner>/<repo>#<n>, one ref per `Tracking:` line in the doc
 **Terms added:** <n> — <term, term, term>
 ```
 ```bash
 gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
 ```
 
-Enumerate every walked issue, in doc order. Include `"followup":true` and the
-`**Tracking:**` line only when 8a created at least one tracking issue; omit
-both otherwise. Omit `**Terms added:**` when no term was captured — its count comes
-from Step 7's confirmation lines, tallied at Step 8, not from the doc.
+Enumerate every walked finding, in doc order. Include `"followup":true` and the
+`**Tracking:**` line only when at least one finding is `deferred`; omit both otherwise.
+Omit `**Terms added:**` when no term was captured.
 
 There is no `**Doc:**` field — the walk produces no document of its own, and the walked
 review doc's path rides in `paths`.
 
-## Fallback Mode Details
-
-When running in fallback mode (no `## Groups` section or no enriched fields):
-
-- Skip Step 4 entirely.
-- Skip Step 5a/5b/5c (no teach moment, no group block, no re-read for grounding).
-- Walk issues in strict `P1-* → P2-* → P3-*` numeric order.
-- Apply the 5d action question as in enriched mode, showing `Sweep:` when present.
-  `Add term` is offered here too — it reads no enriched field and touches no `Status:`,
-  so nothing about fallback mode restricts it.
-- For the noise marker: if the issue has no `Confidence:` field, skip the marker
-  entirely (don't fabricate confidence).
-- Status updates work the same way.
-
 ## Rules
 
 - Never edit code without setting `Status: in-progress` first.
-- Never fabricate `Confidence:`, `Category:`, or `Plain English:` values when they're
-  missing from the doc. Fallback mode handles their absence gracefully.
-- Never skip the user's chosen action (e.g., don't "implement" when they said
-  "defer").
-- **Walk order is fixed and every issue is presented individually.** Groups run in doc
-  order, `G1` through `Gn`, then orphan issues in `P1-* → P2-* → P3-*` order. Within a
-  group, members run in `Suggested order:`. Never reorder, never let the user pick a
-  group to start from, and **never offer to batch** — no "implement all of these?", no
-  group-level verdict, no bundling several issues behind one question. Each issue gets
-  its own presentation and its own action question, even when every issue in a group
-  has the same obvious answer and the batch would be faster. The walk exists so each
-  finding is looked at; a shortcut that skips presentation defeats it.
-- **`Add term` never advances the walk.** It writes only to the glossary, leaves
-  `Status:` and the code untouched, and the same action question is re-asked on the
-  same issue afterward.
-- **Never create a GitHub issue without an explicit, informed yes.** Two confirms
-  gate it (§8a): one for the batch, one listing the drafted title of every issue.
-  Deferring a finding is not consent to file anything; filing nothing is
-  the default and a perfectly good outcome. This holds even when the user's
-  project instructions are silent on issues — and where those instructions
-  forbid unprompted issue creation, they win outright.
-- The review doc is the source of truth. If the user manually edits the doc
-  between turns, re-read it before the next action so changes are picked up.
+- Never fabricate `Confidence:` or `Category:` when the doc lacks them; omit the field.
+- Never skip the user's chosen action (don't "implement" when they said "defer").
+- **Walk order is fixed: `P1-* → P2-* → P3-*`, every finding on its own card with its own
+  reply.** Never reorder, never batch, never offer a group-level verdict.
+- **Add term and Explain never advance the walk.** They touch neither `Status:` nor code.
+- **Only the user defers, and defer always files an issue.** The walk never defers on its
+  own, and never files an issue except as the user's chosen Defer action.
 - Respect the Protected Artifacts rule from `/deep-review`: never apply a fix that would
   delete or gitignore files under `docs/brainstorms/`, `docs/plans/`, or
-  `docs/solutions/`. If such an issue slipped through, treat it as automatic
-  `wont-fix` and warn the user.
+  `docs/solutions/`. Such a finding is automatic `wont-fix — protected-artifact`; say so.

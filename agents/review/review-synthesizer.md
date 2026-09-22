@@ -84,8 +84,8 @@ date: YYYY-MM-DD
 ## Groups
 
 <!--
-Clusters of related issues that span P-levels. Walk-through tools (e.g. /review-walk)
-read this section to drive a group-first execution flow. If no groups were formed,
+Clusters of related issues that span P-levels. /review-sweep and /grind read this
+section; /review-walk does not. If no groups were formed,
 write a single line: `_None — issues are independent._`
 -->
 

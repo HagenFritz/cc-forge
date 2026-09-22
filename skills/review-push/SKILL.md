@@ -44,10 +44,10 @@ This skill **reads** the review doc — it never edits it. `/review-walk` owns t
 
 ### Phase 3: Parse outcomes
 
-7. Read the full doc. For every issue heading (`### P<X>-<N>: <title>`), capture its `Status:` and, when present, `Category:`, `File(s):`, `Defer reason:` / `Skip reason:`.
+7. Read the full doc. For every issue heading (`### P<X>-<N>: <title>`), capture its `Status:` and, when present, `Category:`, `File(s):`, `Tracking:`, `Defer reason:` / `Skip reason:`.
 8. Bucket by terminal status:
    - `done` — a fix was applied.
-   - `deferred` — carried with a reason.
+   - `deferred` — carried with a `Tracking:` issue ref (written by `/review-walk`, which files an issue on defer) or a `Defer reason:` line (written by `/grind`, which files none). A doc may hold both kinds.
    - `wont-fix` — skipped with a reason (`<code> — <free text>`; older docs may carry free text only or none).
    - `open` / `in-progress` — **not terminal.** If any remain, the walk isn't finished. Warn: "N issues are still open/in-progress — the walk isn't complete. Push the fixes done so far anyway?" via `AskUserQuestion`: **Push what's done** / **Cancel** (go finish `/review-walk` first).
 9. **If zero `done` issues:** there are no fixes to commit. Skip Phase 4 (no commit/push); still offer to post a comment recording what was deferred/skipped so the PR reflects the review outcome. If there's also nothing deferred/skipped, stop: "The review produced no changes — nothing to push or report."
@@ -84,7 +84,7 @@ This skill **reads** the review doc — it never edits it. `/review-walk` owns t
     - ...
 
     ### Deferred
-    - **P2-1 <title>** — <defer reason> (`<file>`)
+    - **P2-1 <title>** — <the `Tracking:` ref as a link, e.g. #42; else the `Defer reason:` text> (`<file>`)
     - ...
 
     ### Skipped (won't fix)
