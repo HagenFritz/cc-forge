@@ -152,8 +152,9 @@ timeout.) On failure:
 On success, verify the doc rather than trusting the return message:
 
 - Confirm the returned path exists on disk.
-- Grep it for the structural anchors `/review-walk` needs: a `## Groups` heading, and at
-  least one `### P<X>-<N>:` heading with `**Status:**` on the line below it. If missing,
+- Grep it for the structural anchors the consumers need: a `## Groups` heading (read by
+  `/review-sweep` and `/grind`), and at least one `### P<X>-<N>:` heading with `**Status:**`
+  on the line below it (read by every consumer). If missing,
   treat as a failed dispatch.
 - Confirm the frontmatter `target:` matches this run's branch/PR and `date:` matches
   today — this guards against a stale same-path doc from an earlier run.

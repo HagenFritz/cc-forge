@@ -421,7 +421,7 @@ line has two plausible splits and neither reader nor script can tell which is ri
 | `stale citation` | The cited path or the described code could not be found. | Re-check against the current code; the review may have drifted. |
 | `sensitive path: <path>` | A cited path is a migration, a CI workflow, or a `.yaml`/`.yml`/`.tf` file; the sweep did not read the code. | Read it and decide — an unattended edit here has too large a blast radius. |
 | `overlaps surfaced P1-<N>` | A cited file also holds a P1 that was surfaced, not fixed. | Settle P1-`<N>` first; then this one is likely trivial. |
-| `cascade` | Its group's `Cascade:` says fix order matters. | Fix the group in `Suggested order:` — `/review-walk` does this well. |
+| `cascade` | Its group's `Cascade:` says fix order matters. | Fix the group in `Suggested order:` by hand — `/review-walk` walks P-order and ignores groups, so read the `Cascade:` line yourself. |
 | `test precondition` | A testing finding failed the R5 shape check or names a test file that does not exist. | Write the test yourself, or decide it is not worth writing. |
 | `interrupted` | A previous sweep run died mid-fix on this finding. | Check the working tree for a half-applied edit before doing anything else. |
 | `implemented — <what changed>` | The fix landed (`done`); the sweep made this edit. The free text is required here, however small the change. | Read the diff. It is uncommitted and in the working tree. |
