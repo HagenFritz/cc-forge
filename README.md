@@ -100,7 +100,7 @@ Subagents live in `agents/`, grouped by category. Skills reference them as `forg
 | `research/` | best-practices-researcher, framework-docs-researcher, git-history-analyzer, issue-intelligence-analyst, learnings-researcher, repo-research-analyst | External docs, git archaeology, issue analysis, institutional learnings, repo conventions |
 | `review/` | adversarial-reviewer, architecture-strategist, code-simplicity-reviewer, correctness-auditor, data-integrity-guardian, pattern-recognition-specialist, performance-oracle-{python,typescript}, python-reviewer, reliability-engineer, security-sentinel-{python,typescript}, test-coverage-reviewer, typescript-reviewer | Review specialists across correctness, security, performance, architecture, reliability, simplicity, tests, and language idioms |
 | `workflow/` | lint, spec-flow-analyzer | Linting and spec/flow analysis |
-| `test/` | blast-radius-lens, spec-lens, surface-lens, test-synthesizer, test-writer | Three lenses propose test cases from different views of a change, a synthesizer filters and writes the plan, and a writer turns the `auto` cases into tests |
+| `test-plan/` | blast-radius-lens, spec-lens, surface-lens, test-synthesizer, test-writer | Three lenses propose test cases from different views of a change, a synthesizer filters and writes the plan, and a writer turns the `auto` cases into tests |
 
 ## Typical flows
 

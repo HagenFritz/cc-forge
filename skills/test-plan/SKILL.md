@@ -87,7 +87,7 @@ All three in **one parallel batch**, per [the spec's three lenses](../test-proto
 Each brief carries exactly the values that lens's `## Inputs` section names, and nothing else. **A brief missing one of them is a broken dispatch, not a degraded one** — the spec lens in particular has no file tools and cannot fetch what the brief omits.
 
 ```
-Task forge:test:spec-lens(
+Task forge:test-plan:spec-lens(
   - the ladder-resolved requirements or plan fields, verbatim, bounded to this diff's units
   - the name of the rung they came from
   - the surface digest
@@ -95,13 +95,13 @@ Task forge:test:spec-lens(
   - the file names of existing tests
 )
 
-Task forge:test:blast-radius-lens(
+Task forge:test-plan:blast-radius-lens(
   - the diff, or the base ref to diff against
   - the surface digest
   - the repo's test conventions
 )
 
-Task forge:test:surface-lens(
+Task forge:test-plan:surface-lens(
   - the changed file paths
   - the surface digest
   - the repo's UI conventions, if step 4 found any

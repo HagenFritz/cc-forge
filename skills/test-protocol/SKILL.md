@@ -34,7 +34,7 @@ Every rule here is written so all three callers can execute it. A rule that only
 
 Throughout, **the orchestrator** means whichever caller is running — it holds `Bash` and
 runs every command; **lens** means one of the three proposing agents; **the writer** means
-`forge:test:test-writer`; **a case** means one `T-NNN` block in the document.
+`forge:test-plan:test-writer`; **a case** means one `T-NNN` block in the document.
 
 ## Scope and non-goals
 
@@ -84,11 +84,11 @@ test roster and it lives here, so grind can cite it rather than re-enumerate it.
 
 | Agent | Tools | Role |
 |---|---|---|
-| `forge:test:spec-lens` | none (via `disallowedTools`) | proposes black-box behavior cases from the intent alone |
-| `forge:test:blast-radius-lens` | full | proposes regression cases for adjacent behavior |
-| `forge:test:surface-lens` | `Read, Glob, Grep, Bash` | proposes browser and manual cases from changed UI paths |
-| `forge:test:test-synthesizer` | `Read, Write, Glob, Grep` | de-dupes, tags, applies the keep and drop rules, caps, writes the document |
-| `forge:test:test-writer` | `Read, Write, Glob, Grep` | writes the `auto` tests; never runs anything |
+| `forge:test-plan:spec-lens` | none (via `disallowedTools`) | proposes black-box behavior cases from the intent alone |
+| `forge:test-plan:blast-radius-lens` | full | proposes regression cases for adjacent behavior |
+| `forge:test-plan:surface-lens` | `Read, Glob, Grep, Bash` | proposes browser and manual cases from changed UI paths |
+| `forge:test-plan:test-synthesizer` | `Read, Write, Glob, Grep` | de-dupes, tags, applies the keep and drop rules, caps, writes the document |
+| `forge:test-plan:test-writer` | `Read, Write, Glob, Grep` | writes the `auto` tests; never runs anything |
 
 **The synthesizer and the writer are always-run infrastructure** — never list either in a
 caller's lens roster and never count either among the lenses whose output is synthesized.
@@ -295,9 +295,9 @@ reads from it.
 When the synthesizer dispatch fails, read the lens outputs from the scratch files, not
 from memory. Then locate the synthesizer's rules and template by trying, in order:
 
-1. Read `${CLAUDE_PLUGIN_ROOT}/agents/test/test-synthesizer.md`, if that env var resolves
+1. Read `${CLAUDE_PLUGIN_ROOT}/agents/test-plan/test-synthesizer.md`, if that env var resolves
    to a non-empty path this session.
-2. Else `"$(git rev-parse --show-toplevel)"/agents/test/test-synthesizer.md`.
+2. Else `"$(git rev-parse --show-toplevel)"/agents/test-plan/test-synthesizer.md`.
 3. If neither Read succeeds, present the raw proposed cases grouped by lens rather than
    exiting with no output.
 
@@ -306,7 +306,7 @@ produced by fallback, not the synthesizer.
 
 **"Dispatch failed"** means the Task call returned an error or returned without a
 `Doc path:` line. On a **model or spawn rejection** (the model pinned in
-`agents/test/test-synthesizer.md` frontmatter is not on the org's allowlist), do **not**
+`agents/test-plan/test-synthesizer.md` frontmatter is not on the org's allowlist), do **not**
 retry — a re-spawn with the same model fails identically. Emit one line naming that pinned
 model and pointing at `agents/README.md` to repin, then go straight to the fallback. On
 any other failure, retry the dispatch once, then fall inline.
@@ -316,7 +316,7 @@ any other failure, retry the dispatch once, then fall inline.
 Collect every lens's output and dispatch a single synthesis task:
 
 ```
-Task forge:test:test-synthesizer(
+Task forge:test-plan:test-synthesizer(
   - every lens's proposed cases, verbatim
   - the surface digest
   - the repo's test conventions, and whether a test directory and runner exist
@@ -326,7 +326,7 @@ Task forge:test:test-synthesizer(
 )
 ```
 
-The synthesizer's `## Inputs` section (`agents/test/test-synthesizer.md`) is the
+The synthesizer's `## Inputs` section (`agents/test-plan/test-synthesizer.md`) is the
 authoritative description of each value — **pass the values, not restatements of what they
 mean.** It owns the filename convention
 (`docs/tests/YYYY-MM-DD-NNN-<slug>-test-plan.md`) and sanitizes the slug the same way the

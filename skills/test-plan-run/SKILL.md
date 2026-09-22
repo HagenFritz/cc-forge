@@ -89,10 +89,10 @@ Everything here runs **before any agent is dispatched, any test file is written,
 
 3. **Select the cases to write.** Apply [the spec's re-run semantics](../test-protocol/SKILL.md#what-a-re-run-does) against the case IDs on disk: grep the test directories for each `auto` case's `T-NNN` ID. A case whose ID is already in a test file is **re-verified**, never rewritten, whatever its `Status:`; only the cases with no test on disk go to the writer. Every case already covered → dispatch no writer and go straight to the filters.
 
-4. **Dispatch the writer** with exactly the five values its [`## Inputs` section](../../agents/test/test-writer.md) names:
+4. **Dispatch the writer** with exactly the five values its [`## Inputs` section](../../agents/test-plan/test-writer.md) names:
 
    ```
-   Task forge:test:test-writer(
+   Task forge:test-plan:test-writer(
      - the selected auto cases, verbatim, each with its T-NNN ID, title, steps, and expected result
      - the regenerated surface digest
      - the repo's test conventions

@@ -13,9 +13,9 @@ Models are pinned per agent using **bare family aliases** (`opus`, `sonnet`, `ha
 | `research/learnings-researcher` | `sonnet` + `effort: high` — deterministic grep-filter-read pipeline |
 | `research/git-history-analyzer` | `sonnet` + `effort: high` — runs prescribed git incantations and summarizes; callers supply the commands |
 | `research/repo-research-analyst`, `research/framework-docs-researcher`, `research/best-practices-researcher`, `workflow/spec-flow-analyzer` | `opus` + `effort: high` — `/blueprint`'s research fan-out, whose output gates downstream planning decisions |
-| `test/spec-lens`, `test/blast-radius-lens`, `test/surface-lens` | `sonnet` — three parallel proposers; each reads one slice of the change and writes no file, so the judgment cost sits downstream |
-| `test/test-synthesizer` | `opus` + `effort: high` — scores every proposed case, applies the keep and drop rules, and writes a drop list the user acts on |
-| `test/test-writer` | `opus` + `effort: high` — writes real test code from the stated behavior alone, with no view of the implementation to copy from |
+| `test-plan/spec-lens`, `test-plan/blast-radius-lens`, `test-plan/surface-lens` | `sonnet` — three parallel proposers; each reads one slice of the change and writes no file, so the judgment cost sits downstream |
+| `test-plan/test-synthesizer` | `opus` + `effort: high` — scores every proposed case, applies the keep and drop rules, and writes a drop list the user acts on |
+| `test-plan/test-writer` | `opus` + `effort: high` — writes real test code from the stated behavior alone, with no view of the implementation to copy from |
 | `research/issue-intelligence-analyst` | `opus` + `effort: high` — clusters issues by root cause rather than symptom; grounds all of `/ideate`'s fan-out |
 
 No agent uses `inherit`; every model is pinned so a run's cost and quality don't shift with the session model.
@@ -27,11 +27,11 @@ Pins are plain frontmatter — edit them if your org's model allowlist differs. 
 | Agent | `tools:` | Why |
 |---|---|---|
 | `review/review-synthesizer` | `Read, Write, Glob, Grep` | consolidates findings and writes one document; it has no reason to run commands |
-| `test/test-synthesizer` | `Read, Write, Glob, Grep` | same shape — reads lens output, writes one document |
-| `test/test-writer` | `Read, Write, Glob, Grep` | **no `Bash`**, so it cannot `git diff`, `git log -p`, or `cat` an implementation file. The outside-observer wall depends on this, and the orchestrator runs every test itself |
-| `test/surface-lens` | `Read, Glob, Grep, Bash` | reads the changed UI paths; no `Write`, because a lens proposes and never edits |
+| `test-plan/test-synthesizer` | `Read, Write, Glob, Grep` | same shape — reads lens output, writes one document |
+| `test-plan/test-writer` | `Read, Write, Glob, Grep` | **no `Bash`**, so it cannot `git diff`, `git log -p`, or `cat` an implementation file. The outside-observer wall depends on this, and the orchestrator runs every test itself |
+| `test-plan/surface-lens` | `Read, Glob, Grep, Bash` | reads the changed UI paths; no `Write`, because a lens proposes and never edits |
 
-`test/spec-lens` is the one agent that must reach **no file tools at all** — it proposes test cases from the stated intent, so seeing the repo would defeat it. `tools:` cannot express that, so the shape is `disallowedTools:`:
+`test-plan/spec-lens` is the one agent that must reach **no file tools at all** — it proposes test cases from the stated intent, so seeing the repo would defeat it. `tools:` cannot express that, so the shape is `disallowedTools:`:
 
 ```yaml
 disallowedTools: Read, Glob, Grep, Bash, Edit, Write, NotebookEdit, Agent, WebFetch, WebSearch
@@ -78,7 +78,7 @@ Several were ported from [EveryInc/compound-engineering-plugin](https://github.c
 | `python-reviewer` | High-bar Python: Pythonic patterns, type safety, maintainability | _opt-in via `cc-forge.local.md`_ |
 | `typescript-reviewer` | High-bar TypeScript: type safety, modern patterns, maintainability | _opt-in via `cc-forge.local.md`_ |
 
-## test/
+## test-plan/
 
 | Agent | Does | Used by |
 |-------|------|---------|
