@@ -10,6 +10,7 @@ Models are pinned per agent using **bare family aliases** (`opus`, `sonnet`, `ha
 | `review/review-synthesizer` | `opus` — highest-judgment step in `/deep-review` |
 | `review/adversarial-reviewer` | `opus` + `effort: high` — race conditions, TOCTOU, and cascade failures are the fleet's hardest reasoning; runs only on large or sensitive diffs, so the cost is bounded |
 | `workflow/lint` | `haiku` — mechanical, fast |
+| `workflow/scope-observer` | `sonnet` — compares one unit's diff to its plan fields after every unit; flags and never acts, so the judgment cost stays small |
 | `research/learnings-researcher` | `sonnet` + `effort: high` — deterministic grep-filter-read pipeline |
 | `research/git-history-analyzer` | `sonnet` + `effort: high` — runs prescribed git incantations and summarizes; callers supply the commands |
 | `research/repo-research-analyst`, `research/framework-docs-researcher`, `research/best-practices-researcher`, `workflow/spec-flow-analyzer` | `opus` + `effort: high` — `/blueprint`'s research fan-out, whose output gates downstream planning decisions |
@@ -22,7 +23,7 @@ No agent uses `inherit`; every model is pinned so a run's cost and quality don't
 
 Pins are plain frontmatter — edit them if your org's model allowlist differs. Note a pin also applies when *other* skills dispatch the same agent, and it overrides (even downgrades) whatever model the main session runs. `effort` accepts `low`/`medium`/`high`/`xhigh`/`max` and overrides the session effort level.
 
-`tools:` is an optional frontmatter field naming the exact tools an agent may use. Omit it and the agent inherits every tool available to subagents; list tools and it gets only those. Four agents restrict it, and in every case the restriction is the design rather than a precaution — an agent that cannot reach something cannot be talked into reaching it:
+`tools:` is an optional frontmatter field naming the exact tools an agent may use. Omit it and the agent inherits every tool available to subagents; list tools and it gets only those. Five agents restrict it, and in every case the restriction is the design rather than a precaution — an agent that cannot reach something cannot be talked into reaching it:
 
 | Agent | `tools:` | Why |
 |---|---|---|
@@ -30,6 +31,7 @@ Pins are plain frontmatter — edit them if your org's model allowlist differs. 
 | `test-plan/test-synthesizer` | `Read, Write, Glob, Grep` | same shape — reads lens output, writes one document |
 | `test-plan/test-writer` | `Read, Write, Glob, Grep` | **no `Bash`**, so it cannot `git diff`, `git log -p`, or `cat` an implementation file. The outside-observer wall depends on this, and the orchestrator runs every test itself |
 | `test-plan/surface-lens` | `Read, Glob, Grep, Bash` | reads the changed UI paths; no `Write`, because a lens proposes and never edits |
+| `workflow/scope-observer` | `Read, Glob, Grep, Bash` | reads the diff and the plan; **no `Write` or `Edit`**, so a deviation card is all it can produce — it never fixes, reverts, or gates |
 
 `test-plan/spec-lens` is the one agent that must reach **no file tools at all** — it proposes test cases from the stated intent, so seeing the repo would defeat it. `tools:` cannot express that, so the shape is `disallowedTools:`:
 
@@ -96,6 +98,7 @@ Several were ported from [EveryInc/compound-engineering-plugin](https://github.c
 |-------|------|---------|
 | `spec-flow-analyzer` | User-flow completeness, edge-case/gap discovery in a spec or plan | blueprint, blueprint-deepen |
 | `lint` | Detects and runs the project's linter/formatter/type-checker on changed files | work |
+| `scope-observer` | Audits each unit's diff against its plan unit, blind to the worker's account; returns `D1`/`D2`/`D3` deviation cards and checks `Verification` lines at wrap-up | work, grind |
 
 ## How `/deep-review` selects reviewers
 
