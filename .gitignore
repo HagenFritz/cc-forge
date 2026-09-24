@@ -7,5 +7,6 @@ docs/handoff/
 .devin/
 docs/reviews/
 docs/tests/
+docs/work/
 .env
 .env.local
