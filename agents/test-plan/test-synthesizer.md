@@ -35,7 +35,7 @@ Sanitize the slug before using it in any filename: lowercase it, replace every c
 - **Tag.** Assign exactly one `**Mode:**` per the spec's [tagging rules](../../skills/test-protocol/SKILL.md#tagging). Honor the surface lens's `**Suggested mode:**` as input, not as a verdict. When no test directory and no runner exist, tag **zero** cases `auto` — every case is `browser` or `manual`.
 - **Score.** Assign exactly one `**Viability:**` from `Critical | High | Medium | Low | Negligible`, using the rubric below. A case at `Low` or `Negligible` is a drop candidate, not an automatic drop.
 - **Apply the keep and drop rules**, and only those, per [the spec](../../skills/test-protocol/SKILL.md#keep-and-drop-rules). Retag before you drop: the jsdom rule moves a focus, timing, or async-rendering case to `browser` when a real browser could drive it meaningfully, and drops it otherwise.
-- **Cap.** The `auto` ceiling is [15 kept cases](../../skills/test-protocol/SKILL.md#the-cap). When more survive, keep the 15 highest `**Viability:**` and move the rest to the Drop List with reason `over cap`, counted separately from rule-drops.
+- **Cap.** The `auto` ceiling is [15 kept cases](../../skills/test-protocol/SKILL.md#the-cap). When more survive, keep the 15 highest `**Viability:**` and move the rest to the Drop List with reason `over cap`, counted separately from rule-drops. **Break ties by proposal order** — among cases of equal viability keep the ones proposed earlier, lens by lens in dispatch order, so two runs over one diff keep the same fifteen.
 - **Number** the kept cases `T-001`, `T-002`, … in document order, with no gaps.
 - **New per-case fields go below `**Status:**`, never between it and the `### T-<NNN>:` heading.** `/test-plan-run` and grind's phase both anchor their edits on that heading-plus-Status pair, so a field inserted between them breaks every status write in both.
 - **Neutralize document structure** when copying proposal text into a field value. Indent lines matching `^#{1,6}\s` (heading-shaped), code-fence markers (```` ``` ````), and bold-field-label lines matching `^\*\*[A-Za-z ]+:\*\*`, so none can be mistaken for a case heading, a fence boundary, or a real field label by a line-based parser.
@@ -78,21 +78,10 @@ lenses: [which lenses contributed, and any that returned empty or failed]
 
 ## Cases
 
-### T-001: [short descriptive title]
-
-**Mode:** `auto`
-**Source:** spec
-**Viability:** High
-
-**Steps:**
-1. [what to do]
-2. [what to do next]
-
-**Expected result:** [what should happen when the change works]
-
-**Status:** `untested`
-
-**Notes:**
+[One case block per kept case, numbered `T-001`, `T-002`, … — the block's fields and their
+order are [the spec's](../../skills/test-protocol/SKILL.md#case-blocks). Reproduce that
+shape exactly rather than improving on it: `/test-plan-run` and grind's phase both anchor
+their status writes on the heading-plus-`**Status:**` pair.]
 
 ---
 

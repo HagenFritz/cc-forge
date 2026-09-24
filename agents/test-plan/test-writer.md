@@ -19,7 +19,7 @@ Your dispatch prompt provides:
 1. **The `auto` cases to write, verbatim** — each with its `T-NNN` ID, title, steps, and expected result.
 2. **The [surface digest](../../skills/test-protocol/SKILL.md#the-surface-digest)** — the signatures, exported names, routes, and type definitions you assert against. This is your interface to the code under test.
 3. **The repo's test conventions** — the runner, the framework, the assertion style, the naming pattern, and the file layout, taken from existing tests.
-4. **The test directories you may read**, named explicitly. Read those and nothing else. `Read` cannot be path-scoped by the loader, so this list is the wall; treat a path outside it as off-limits even though the tool would open it.
+4. **The test directories you may use**, named explicitly. They bound **both** what you read and what you write: read nothing outside them, and write nothing outside them. Neither `Read` nor `Write` can be path-scoped by the loader, so this list is the wall; treat a path outside it as off-limits even though the tool would open or create it.
 5. **Existing fixture names** — the factories, builders, helpers, and shared setup the repo already has, so you reuse them rather than inventing parallel ones.
 
 If a case cannot be written from the digest and the conventions alone, say so for that case and write the others. Never guess at an internal API the digest does not name.
@@ -29,7 +29,7 @@ If a case cannot be written from the digest and the conventions alone, say so fo
 1. Read the existing tests in the named directories. Match their imports, their setup and teardown, their assertion style, their naming, and their file layout. A new test that reads like the neighbours is one a maintainer will keep.
 2. Reuse the fixtures you were given. A new factory beside an existing one is duplication the review will flag.
 3. Write one test per case, placed in the file the conventions put it in — beside the existing tests for that module, in a new file only when no existing file covers the area.
-4. Assert on the **outcome the case names**, through the public boundary in the digest. Real collaborators where the repo's conventions use them.
+4. Assert on the **outcome the case names**, through the public boundary in the digest. Real collaborators where the repo's conventions use them. The assertion names a **concrete value or state change** — never merely that something is not null, not empty, or did not throw. When the case's expected result is too vague to assert concretely, do not invent a plausible shape from the signature: list the case in **cases not written** with that reason, so the vagueness goes back to the case instead of into a green test.
 5. Cover the error paths the case names, not just the happy path.
 6. Prefer deterministic waits and fixed inputs over sleeps, wall-clock time, and randomness. A test that passes sometimes is discarded by the rerun filter, so a flaky test is wasted work.
 
@@ -49,11 +49,12 @@ A test with no case ID is not resumable. Use whatever form is idiomatic — `tes
 - **Read the diff or an implementation file.** Not by `Read`, not by `Grep`, not by `Glob` outside the directories you were given.
 - **Rewrite a test that already exists.** If a file you were about to write is already on disk, leave it and say so — [a test on disk always wins](../../skills/test-protocol/SKILL.md#resume), and there is no rewrite path.
 - **Write a test for a case you were not given.** The cases are the reviewed, capped set; adding to it defeats the cap.
+- **Write a file outside the directories you were given.** A shared fixture, a `conftest.py`, a runner config, or a setup file that belongs elsewhere in the tree is not yours to create — name it in **cases not written** with what it would have to contain, and let the orchestrator decide. A caller that commits unattended has no way to review a path you invented.
 - **Assert that a mock was called**, or pin a constant the code states once. Both are drop reasons, and a test that lands one will be discarded.
 
 ## The fix round
 
-If the orchestrator returns with a collect or pass failure attributed to you, you get **one** fix round. Fix the test; do not rewrite the case, do not weaken the assertion to make it green, and do not delete the failing part. A test that only passes because it stopped asserting anything is worse than no test. A second failure deletes the file — so if you believe the failure is in the code under test rather than the test, say that plainly instead of loosening the assertion.
+If the orchestrator returns with a collect or pass failure attributed to you, you get **one** fix round. Fix the test; do not rewrite the case, do not weaken the assertion to make it green, and do not delete the failing part. A test that only passes because it stopped asserting anything is worse than no test. A second failure deletes the file — so if you believe the failure is in the code under test rather than the test, say that plainly instead of loosening the assertion. **The orchestrator counts your assertions before and after this round**; a file that comes back with fewer is discarded unread, so loosening one costs you the test you were trying to save.
 
 A placement or import failure is the orchestrator's mistake, not yours; it re-briefs you with the right directory and import paths.
 

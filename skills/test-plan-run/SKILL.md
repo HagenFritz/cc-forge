@@ -101,7 +101,7 @@ Everything here runs **before any agent is dispatched, any test file is written,
    )
    ```
 
-   **The directory list is the writer's only path wall** — `Read` cannot be path-scoped by the loader, so an unnamed directory is an unbounded one. Name them all, and name nothing outside the test tree.
+   **The directory list is the writer's only path wall, for reads and writes alike** — neither tool can be path-scoped by the loader, so an unnamed directory is an unbounded one. Name them all, and name nothing outside the test tree. A returned path outside the list is not a file to keep: discard it, and report it with the case it came from.
 
    Its return carries files written with their case IDs, a per-test live-service hint, and a **"cases not written"** section. Lines in that section — including "left an existing file alone" — are **expected outcomes, not failures**: the first is a case the digest could not support, the second is [the file-on-disk-wins rule](../test-protocol/SKILL.md#what-a-re-run-does) working. Carry both into the report; neither stops the run.
 

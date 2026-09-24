@@ -34,14 +34,16 @@ Pins are plain frontmatter — edit them if your org's model allowlist differs. 
 `test-plan/spec-lens` is the one agent that must reach **no file tools at all** — it proposes test cases from the stated intent, so seeing the repo would defeat it. `tools:` cannot express that, so the shape is `disallowedTools:`:
 
 ```yaml
-disallowedTools: Read, Glob, Grep, Bash, Edit, Write, NotebookEdit, Agent, WebFetch, WebSearch
+disallowedTools: Read, Glob, Grep, Bash, Edit, Write, NotebookEdit, Agent, Skill, ToolSearch, WebFetch, WebSearch
 ```
 
 `disallowedTools` denies tools out of the inherited pool, in the same comma-separated format as `tools`. When both are set, the deny list is applied first and `tools` is then resolved against what remains; `spec-lens` therefore carries **no `tools:` key** and relies on the deny list alone.
 
 Two shapes that look right and are not. A bare `tools:` with an empty value parses as null, which the loader treats as an **omitted key** — the agent gets all tools, and the plugin listing reports `(Tools: All tools)` while the file reads as if it granted none. An explicit `tools: []` is worse than useless: a tool list that resolves to nothing makes the `Agent` tool refuse to launch the subagent at all.
 
-`Agent` is on the deny list so the lens cannot spawn a subagent holding the tools it lacks, and the web tools are there so it cannot fetch the repository from GitHub instead of reading it. One residual: MCP tools the session happens to expose are inherited and are not enumerated on the deny list, since none of them read this repo. A session that adds an MCP server with repo-read access would need it added here.
+`Agent` is on the deny list so the lens cannot spawn a subagent holding the tools it lacks; `Skill` because invoking a skill loads its `SKILL.md` and any template or asset file it references; `ToolSearch` because it surfaces the schemas of deferred tools, including MCP tools with file or browser reach; and the web tools so the lens cannot fetch the repository from GitHub instead of reading it.
+
+**The deny list holds only for the tools it names.** A grant written as "all tools except these" leaks every capability the list forgot, so the wall is a closed enumeration rather than a property of the agent. MCP tools the session exposes are inherited and are not enumerated, since none of the current ones read this repo; a session that adds an MCP server with repo-read access must add it here. Verify the wall by dispatching the agent and asking it to list its resolved tools — checking that the denied names are absent tests the wrong half.
 
 An alias resolves per-provider, and not every provider is current: on the Anthropic API `opus`→Opus 5 and `sonnet`→Sonnet 5, but `sonnet` resolves to Sonnet 4.6 on Claude Platform on AWS and Sonnet 4.5 on Bedrock and Google Cloud's Agent Platform. Set `ANTHROPIC_DEFAULT_SONNET_MODEL` / `ANTHROPIC_DEFAULT_OPUS_MODEL` to override, or `CLAUDE_CODE_SUBAGENT_MODEL` to force every subagent onto one model for a session.
 

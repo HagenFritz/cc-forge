@@ -56,6 +56,7 @@ Optional keys:
 | `merged` | number | PRs merged in a completed `/grind` run |
 | `tracking` | string | `owner/repo#N` of a tracking issue this event created |
 | `scope` | string | The mode a `tests-run` event covered: `auto`, `browser`, or `manual`. Written by `/test-plan-run` only; grind's test phase omits it. |
+| `branch` | string | The branch a per-slice event belongs to. Grind's `tests-run` carries it, because every slice of one plan writes the same `paths` and the branch is what tells them apart. |
 
 **Versioning:** additive-only within v1 — new optional keys, new event names, and new skills never bump the version. A **v2** is required only when an existing key's meaning or read type changes (e.g. `tracking` string → array). Readers skip unknown versions with a warning.
 

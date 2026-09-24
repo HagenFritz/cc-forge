@@ -71,6 +71,7 @@ runs every command; **lens** means one of the three proposing agents; **the writ
   |---|---|---|
   | `test_reruns` | `5` | Consecutive reruns a new test must pass to be kept |
   | `test_rerun_timeout` | `10m` | Wall-clock cap on one test's rerun loop |
+  | `test_run_timeout` | `30m` | Wall-clock cap on the filter phase as a whole |
 
   These defaults are stated here once. Every other site cites this table rather than
   repeating a number. A missing file, missing frontmatter, or a missing key takes the
@@ -110,10 +111,12 @@ public boundary.
 [surface digest](#the-surface-digest), the repo's test conventions, and the file names of
 existing tests.
 
-**May not see:** the diff, any implementation body, or the repo at all. The wall is
-structural — the agent is dispatched with **no file tools**, so its brief must be
-self-contained. A brief that tells the lens to "read X" is a broken dispatch, not a
-degraded one.
+**May not see:** the diff, any implementation body, or the repo at all. The wall is a
+deny list: the agent is dispatched with every tool that reads a file, spawns a subagent,
+or reaches the network denied by name, so its brief must be self-contained. A brief that
+tells the lens to "read X" is a broken dispatch, not a degraded one. **The list holds only
+for the tools it names** — a session that adds a tool with file or network reach has to add
+it there before the wall holds again.
 
 `Glob` over the test directories is deliberately withheld too: a diff-blind lens that can
 list test files immediately after a change can reconstruct the blast radius from what is
@@ -254,6 +257,13 @@ When more than 15 `auto` cases survive the keep rules, the synthesizer keeps the
 the highest `**Viability:**` and moves the rest to the Drop List with reason `over cap`.
 Cap-excluded cases are **counted separately** from rule-dropped ones so
 [the count check](#the-count-check) still closes.
+
+**Ties are broken by proposal order.** Viability has five levels and the cut line usually
+falls inside one of them, so several cases routinely tie at the boundary. Among cases of
+equal viability, the ones proposed earlier are kept — spec lens first, then blast-radius,
+then surface, and within a lens the order it returned them. Without a stated tiebreak two
+runs over one diff keep a different fifteen, and nobody can tell that from a real change in
+the diff.
 
 ### The Drop List
 
@@ -431,6 +441,11 @@ The orchestrator's signature on every case whose test it decided, written **dire
 `Status:`**, exactly one per case for the life of the document:
 
 ```markdown
+**Status:** `pass`
+**Filter:** kept
+```
+
+```markdown
 **Status:** `untested`
 **Filter:** discarded — <which filter>
 ```
@@ -440,8 +455,15 @@ The orchestrator's signature on every case whose test it decided, written **dire
 **Filter:** reruns incomplete — <n>/<N>
 ```
 
+The first is the happy path and the most common line in any document: a test that collected,
+passed, and passed its full reruns is `kept`, and it carries the line like every other
+decided case. `kept` takes no detail — there is nothing to qualify.
+
 Grammar: `**Filter:** <outcome>[ — <detail>]`, always one line. The outcomes are
-`discarded`, `reruns incomplete`, and `kept`. This is the same signature-line-under-
+`discarded`, `reruns incomplete`, and `kept`. A test discarded before it ever ran, for
+reaching outside the repository, carries `discarded — forbidden operation` and names the
+pattern that matched; one discarded for coming back from its fix round with fewer
+assertions carries `discarded — assertions weakened`. This is the same signature-line-under-
 `Status:` shape `/review-sweep` writes with `**Sweep:**` and `/grind` with `**Grind:**` —
 a case carrying no `**Filter:**` line was decided by a human in `manual` mode or by a
 browser run, not by the filters.
@@ -485,6 +507,18 @@ separate Bash-only runner subagent is deliberately not used — it adds a dispat
 the highest-iteration path with no visibility benefit, since a runner never touches the
 writer's context, and the orchestrator already holds `Bash`.
 
+**Generated tests are not sandboxed.** They run in the user's shell with the user's
+environment, credentials, and network — the same privileges `/work` has always had, stated
+here because the code being run was written by an agent minutes earlier and read by no one.
+Before a file is executed for the first time, the orchestrator greps it the way it already
+greps for live-service markers, and **discards without running it** any test that reaches
+outside the repository: an outbound network call to a host the repo's conventions do not
+declare, a read of a credential path (`~/.ssh`, `~/.aws`, `~/.config/gh`, a `.env` outside
+the repo), a write or delete outside the repo's test directories and the system temp
+directory, or a spawned shell. The discard records `**Filter:** discarded — forbidden
+operation` and names the pattern. This is a coarse grep, not a sandbox; it catches the
+plausible accident, not a determined one.
+
 Every newly written test passes all three, in order, before it is kept:
 
 1. **Collect or compile.** The test is discovered by the runner and the file parses.
@@ -506,7 +540,23 @@ A failure at step 1 is classified before anything is re-dispatched:
 - **Assertion or syntax** (the test itself is wrong) → the **writer** gets one fix round.
 
 **One round, either way.** A second failure of the same test deletes the file and records
-the discard. A failure at step 2 goes straight to the writer's one fix round; a failure at
+the discard. **The orchestrator does the deleting**, at the exact path the writer returned,
+and confirms the path is gone before it writes the `**Filter:** discarded` line. A file left
+on disk after a recorded discard is the worst outcome available: the document says the test
+was thrown away and CI runs it anyway. If the path cannot be resolved or the file will not
+delete, report the discard as incomplete and name the path rather than recording it as
+done.
+
+**The fix round is checked, not trusted.** The writer is told not to weaken an assertion to
+go green, but it is told that by the same brief that says a second failure deletes its file,
+and an empty test passes all three filters better than a real one — nothing about collect,
+pass, or rerun determinism can tell `assert True` from an assertion. So before a fixed file
+re-enters step 1, the orchestrator counts the assertions in it, in the repo's idiom, and
+compares that against the version that failed. A file that comes back with **fewer
+assertions than it went in with, or with none at all**, is discarded rather than re-run,
+with `**Filter:** discarded — assertions weakened`. This is the same principle as the
+visibility wall: a rule the agent has every incentive to break is enforced by the caller,
+not by the instruction. A failure at step 2 goes straight to the writer's one fix round; a failure at
 step 3 is a flake and discards immediately, with no fix round — a test that passes
 sometimes is exactly what the filter exists to catch.
 
@@ -516,6 +566,14 @@ The rerun loop is capped at `test_rerun_timeout` per test. A test that hits the 
 **kept**, with `**Filter:** reruns incomplete — <n>/<N>` — a slow suite is not evidence of
 a bad test, and discarding on slowness would silently strip coverage from the repos that
 need it most.
+
+**The per-test cap does not bound the phase.** Fifteen cases at the per-test default would
+run for hours, so the filter phase carries its own cap, `test_run_timeout` (see
+[Prerequisites](#prerequisites)), measured across every test in the run. When it expires,
+the tests still unfiltered are **kept unverified**, each with
+`**Filter:** reruns incomplete — 0/<N>`, and the run reports how many never ran. A caller
+that is itself clocked re-reads its own budget between tests rather than only before the
+phase.
 
 ### Live-service tests
 
@@ -754,9 +812,10 @@ happened.
 
 ## Rules every test run inherits
 
-- **Visibility is structural, not instructed.** The spec lens gets no file tools and a
-  self-contained brief; the writer gets no `Bash`. Never "tell" an agent not to look at
-  something it has the tools to reach.
+- **Visibility is structural, not instructed.** The spec lens's file, subagent, and network
+  tools are denied by name and its brief is self-contained; the writer gets no `Bash`.
+  Never "tell" an agent not to look at something it has the tools to reach — and keep the
+  deny list current, because it only covers the tools it enumerates.
 - **The orchestrator runs every command.** The writer writes and the lenses propose;
   nothing but the orchestrator executes.
 - **The roster is fixed and lives here.** Never re-enumerate the lenses, the synthesizer,

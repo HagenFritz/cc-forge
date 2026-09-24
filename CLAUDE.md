@@ -22,7 +22,7 @@ docs/             Plans, brainstorms, reviews, tests, initiatives generated at r
 
 ## Skills
 
-Core workflow: brainstorm -> blueprint -> work -> test -> ship -> review -> land
+Core workflow: `/brainstorm → /blueprint → /work → /test-plan → /test-plan-run → /ship → /quick-review | /deep-review → [/review-sweep] → /review-walk → /review-push → /land`
 
 **Issue-log convention:** the workflow skills stamp their key events onto the linked GitHub issue as standardized comments (hidden `<!-- cc-forge-log v1: {...} -->` marker + short human body), making the issue thread a reconstructable work log. All shared rules — envelope, event registry, issue-number resolution, encoding, failure posture, reader contract — live in `skills/issue-log/SKILL.md` (a non-invocable reference skill). Writer skills embed only their own filled stamp template and reference the spec; never restate a shared rule inline.
 
