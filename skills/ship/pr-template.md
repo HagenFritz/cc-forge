@@ -15,7 +15,7 @@ If there are no related changes, omit this section entirely.
 ### Test Plan
 
 **Pre-merge Tests**
-*(Actionable tests that Claude Code can run via CLI before merge, e.g., `pytest path/to/test.py`, `npm run playwright`, etc.)*
+*(Only tests CI cannot run, such as suites gated on a local database; leave empty when CI covers everything.)*
 - [ ] 
 
 **Post-merge Tests**

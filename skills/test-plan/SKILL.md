@@ -1,250 +1,158 @@
 ---
 name: test-plan
-description: Generate a manual test plan from current branch diffs (unstaged, staged, and committed). Covers happy-path flows, regression, UX, edge cases, and notes where unit/integration tests would help. Saves a living document to docs/tests/ with pass/fail statuses you update as you test.
-argument-hint: ""
+description: >
+  Produce a reviewable test plan for the current branch. Dispatches the three test
+  lenses in parallel — spec (no file tools), blast-radius (full tools), surface (UI
+  paths) — then hands their proposals to the test-synthesizer, which de-dupes, tags,
+  scores, caps, and writes the document to docs/tests/ with its Drop List. Stops once
+  the document verifies; it runs nothing and writes no test files. Triggers on phrases
+  like "write a test plan", "plan the tests for this branch", "test-plan", or passing a
+  path to the plan this branch implements.
+user-invocable: true
+argument-hint: "[path to docs/plans/*.md]"
+allowed-tools: Bash, Read, Write, Grep, Glob, Task
 ---
 
-# Test Plan Command
+# Test Plan — The Producer
 
-<command_purpose>
-Generate a practical manual test plan from what changed on the current branch. The output is a living document you work through and update as you test — not automated test code.
-</command_purpose>
+<command_purpose> Propose, filter, and record the test cases worth running for what changed on this branch, and stop for review. </command_purpose>
 
-## Role
+`/test-plan` obeys [the test-protocol spec](../test-protocol/SKILL.md) and embeds only its own prose: origin discovery, how it builds the surface digest, its lens briefs, its filled stamp template, and its terminal summary. Every shared rule — the roster, what each lens may see, the keep and drop rules, the cap, the scratch contract, the count check, document verification, the report's shape — lives in the spec and is cited, never restated.
 
-You are a senior QA engineer who understands both the technical and user-facing sides of a platform. Your job is to produce a clear, honest test plan that covers what matters most: does the feature work, and does it break anything that worked before?
+It is the **producer** half of the pair. It writes the document and stops; `/test-plan-run` is what acts on it.
 
-## Step 1: Gather Context
+## Prerequisites
 
-### 1.1 Read Project Context
+Follow [the test-protocol spec](../test-protocol/SKILL.md#prerequisites) — it owns the git-repo baseline, resolving `docs/tests/` from the repo root, the gitignore posture, and the optional `cc-forge.local.md` keys.
 
-Read `CLAUDE.md` (and any files it references via `@`) from the project root to understand:
-- What the platform does
-- The tech stack
-- Who the users are
-- Any known constraints or important behaviors
+This skill adds none of its own. It runs no tests and needs no runner: a repo with neither simply yields a browser-or-manual document.
 
-### 1.2 Collect the Diff
+## Input
 
-Run all three of the following to get the full picture of what changed on this branch:
+<origin_plan> #$ARGUMENTS </origin_plan>
 
-```bash
-# Unstaged changes
-git diff
+Split the argument into flags and a path: no flags are defined, so whatever remains is a path to the plan this branch implements. When a path is given, use it as rung 1 of the input ladder without discovery.
 
-# Staged changes
-git diff --cached
+**When no path remains**, discover the origin by the ladder below.
 
-# Commits on this branch not yet in main
-git log main..HEAD --oneline
-git diff main...HEAD
-```
+## Main Tasks
 
-Read the output carefully. Note:
-- Which files changed and roughly what each change does
-- Whether changes are backend (API, data model, jobs), frontend (UI, forms, navigation), infrastructure (config, GCP, deployments), or a mix
-- Any new endpoints, GCP CLI interactions, or external service calls introduced
+### 1. Resolve the run's context
 
-### 1.3 Identify What to Test
+Run these before anything is dispatched:
 
-Based on the diff, identify:
+- **Branch and repo root** — `git rev-parse --abbrev-ref HEAD` and `git rev-parse --show-toplevel`. The branch is the document's `target:` and the unsanitized slug; the root resolves `docs/tests/`.
+- **Default branch** — the diff base for the digest and the blast-radius lens.
+- **Origin documents** — the newest `docs/plans/*.md` whose frontmatter names this branch's issue or whose title matches the branch, and the brainstorm its `origin:` field names. An argument-supplied path skips this discovery.
+- **Linked issue and PR** — the issue number from the branch name, and `gh pr view --json number,body` for an open PR on this branch. Both are ladder rungs and the stamp's target.
 
-1. **The new or changed behavior** — what the feature is supposed to do
-2. **The surfaces it touches** — UI screens, API endpoints, GCP resources, background jobs, etc.
-3. **The adjacent behaviors that could regress** — things nearby in the code that weren't meant to change
+### 2. Resolve the intent
 
-Do not generate test cases yet. Just build a mental model of the change.
+Descend [the spec's spec-lens input ladder](../test-protocol/SKILL.md#spec-lens-input-ladder) over what step 1 found, and record which rung yielded text — the completion report and the lens brief both name it.
 
----
+**The ladder's last rung is a stop.** With no plan, no brainstorm, no issue body, and no PR body, emit its stop message and end the run. Dispatch no lens, build no digest, write nothing.
 
-## Step 2: Generate Test Cases
+Carry only the fields for the units this branch's diff touches, per [the brief-is-bounded rule](../test-protocol/SKILL.md#the-brief-is-bounded).
 
-Write out all plausible, useful test cases. Use judgment — don't pad the list with noise, but don't skip things that a reasonable person would want to verify before shipping.
+### 3. Build the surface digest
 
-### Categories to cover (use what applies, skip what doesn't):
+Build it yourself — no agent does. Follow [the spec's surface digest](../test-protocol/SKILL.md#the-surface-digest) for what each file class contributes and for the empty-digest case.
 
-**Happy Path**
-The primary intended use case. Does the feature do what it's supposed to do when used correctly?
+The extraction is grep-level, over `git diff --name-only <default-branch>...HEAD`, one entry per changed file. Read each source file at its post-change state and take the declaration lines only:
 
-**Regression**
-Key behaviors that existed before this change that must still work. Prioritize things that share code paths with the change.
+| Language | Lines taken |
+|---|---|
+| Python | `^\s*(async )?def `, `^\s*class `, `^[A-Z_]+ =` module constants, Pydantic/dataclass field lines |
+| TypeScript / JavaScript | `export ` declarations, `function `, `class `, `interface `, `type `, `const <name> = (`, route and handler registrations |
+| Go | `^func `, `^type ` |
+| Rust | `^\s*pub (fn|struct|enum|trait)` |
+| Shell | `^\w+\(\)` |
+| Markdown, YAML, TOML, JSON, SQL, config, lockfiles, generated files | nothing |
 
-**Edge Cases**
-Boundary inputs, empty states, missing data, permission edge cases, unusual sequences of actions.
+A language not in the table contributes its top-level declaration lines by the same principle: the line that names the thing, never the block beneath it. **Stop at the opening brace or colon** — a signature's body never enters the digest, because the spec lens must not see it.
 
-**UX / Accessibility**
-Does the UI make sense? Are error messages helpful? Does the layout hold up? Basic keyboard navigation if relevant.
+### 4. Discover the test conventions
 
-**Stress / Load (lightweight manual)**
-Only include if the change touches something performance-sensitive. E.g., "submit 10 items in quick succession and verify no duplicates appear."
+One pass, recorded as plain text and passed to the lenses and the synthesizer:
 
-**GCP / API / CLI**
-If the change touches GCP resources, external APIs, or CLI-driven workflows — include steps to verify those. Where a specific `gcloud` command or API call would help verify something, include it as a runnable snippet the user can ask Claude to help execute.
+- **Test directories** — `tests/`, `test/`, `spec/`, `__tests__/`, or whatever the repo actually uses. None found → record **"no test directory"** verbatim; the synthesizer reads that and tags zero cases `auto`.
+- **Runner** — detect it with [`/land`'s ladder](../land/SKILL.md) (`package.json` scripts, `Makefile`, `pytest.ini`, `Cargo.toml`, and peers). None found → record "no runner detected".
+- **Live-service markers** — the fixture names, decorators, or marks the repo uses for tests needing a database, queue, or network endpoint (`@pytest.mark.integration`, a `db` fixture, a `testcontainers` import). `/test-plan-run` greps for these; discovering them here puts them in the document's context rather than re-deriving them later.
+- **Existing test file names** — file names only, no contents. The spec lens gets these in its brief because it cannot glob for them itself.
 
-### Test case format
+### 5. Dispatch the three lenses
 
-Each test case should follow this structure:
+All three in **one parallel batch**, per [the spec's three lenses](../test-protocol/SKILL.md#the-three-lenses). The roster is [the spec's](../test-protocol/SKILL.md#the-roster) — never add, substitute, or skip one.
+
+Each brief carries exactly the values that lens's `## Inputs` section names, and nothing else. **A brief missing one of them is a broken dispatch, not a degraded one** — the spec lens in particular has no file tools and cannot fetch what the brief omits.
 
 ```
-### T-NNN: [Short descriptive title]
+Task forge:test-plan:spec-lens(
+  - the ladder-resolved requirements or plan fields, verbatim, bounded to this diff's units
+  - the name of the rung they came from
+  - the surface digest
+  - the repo's test conventions
+  - the file names of existing tests
+)
 
-**Category:** Happy Path | Regression | Edge Case | UX | Stress | API/CLI
+Task forge:test-plan:blast-radius-lens(
+  - the diff, or the base ref to diff against
+  - the surface digest
+  - the repo's test conventions
+)
 
-**Steps:**
-1. [What to do]
-2. [What to do next]
-3. ...
-
-**Expected result:** [What should happen if the feature is working correctly]
-
-**Status:** `untested` <!-- untested | pass | fail | blocked | skip -->
-
-**Notes:** <!-- Leave blank initially. Fill in observations, reproduction details, or context as you test. -->
+Task forge:test-plan:surface-lens(
+  - the changed file paths
+  - the surface digest
+  - the repo's UI conventions, if step 4 found any
+)
 ```
 
-### Notes on automated tests
+Never tell a lens to "read X" in place of putting X in its brief, and never hand the spec lens the diff, a file path to open, or anything the digest excludes.
 
-As you write test cases, flag any that are strong candidates for unit or integration test coverage with a brief note like:
+Handle an empty or failed lens by [the spec's lens-failure posture](../test-protocol/SKILL.md#lens-failure-posture).
 
-> **Automated test note:** This case is a good candidate for a unit test on `[ClassName#method_name]` — the logic is deterministic and isolated enough to test without a browser.
+### 6. Persist and synthesize
 
-Keep these notes inline with the relevant test case. Do not create a separate section.
+Persist each lens's raw returned output per [the spec's raw scratch contract](../test-protocol/SKILL.md#the-raw-scratch-contract) **before** dispatching the synthesizer, then [dispatch it](../test-protocol/SKILL.md#dispatching-the-synthesizer) with the six values its `## Inputs` section names, lens output attributed per lens so it can write `**Source:**`. Run [the count check](../test-protocol/SKILL.md#the-count-check) on what comes back, summing each lens's `Proposed: <n> cases` line as the raw total.
 
----
+The synthesizer is always-run infrastructure: never count it among the lenses and never list it in a roster.
 
-## Step 3: Write the Test Plan Document
+### 7. Verify the document
 
-**REQUIRED: Write the file before presenting any summary.**
+Follow [the spec's verification section](../test-protocol/SKILL.md#verifying-the-document) — it owns every structural and freshness check, re-reading the verified file as the report's source of truth, and the scratch deletion gated on those checks passing. A dispatch that fails, or a document that fails a check, goes to [the spec's inline fallback](../test-protocol/SKILL.md#inline-fallback).
 
-### Determine the filename
+### 8. Report
 
-- Create `docs/tests/` if it does not exist
-- Check existing files for today's date to determine the next sequence number (zero-padded to 3 digits, starting at 001)
-- Format: `docs/tests/YYYY-MM-DD-NNN-<branch-slug>-test-plan.md`
-- Example: `docs/tests/2026-04-28-001-feat-add-checkout-test-plan.md`
+Emit [the spec's completion report](../test-protocol/SKILL.md#the-completion-report) with `Test plan written` as the heading, filled from the verified document's own sections — the case table from its `### T-<NNN>:` blocks, `Dropped` from its `## Drop List`, `Lenses` from its frontmatter plus the rung that fed the spec lens. `Receipts` is empty on a producer run and the heading is never omitted.
 
-### Document template
+**Read the counts; never assume a shape.** A document with zero surviving cases is a valid outcome — its Drop List is the whole of it — so the summary must hold up with no `### T-` block present.
+
+Close with [the spec's next-steps block](../test-protocol/SKILL.md#the-next-steps-block), which ends this skill at "review the document, then `/test-plan-run`."
+
+### 9. Stamp the linked issue
+
+Follow [the spec's `test-plan-written` section](../test-protocol/SKILL.md#test-plan-written) — it owns when the stamp fires and the rule that a fallback-produced document posts none. Issue-number resolution (including the silent skip when none resolves), posting mechanics, marker encoding, and the never-fatal failure posture are [the issue-log spec's](../issue-log/SKILL.md).
+
+Compose the body below, write it to a temp file with the Write tool, and post:
 
 ```markdown
----
-title: [Test Plan Title]
-branch: [current branch name]
-date: YYYY-MM-DD
-status: in-progress <!-- in-progress | complete -->
----
+<!-- cc-forge-log v1: {"skill":"test-plan","event":"test-plan-written","paths":["docs/tests/<filename>"]} -->
 
-# [Test Plan Title]
+### 🧪 /test-plan — test plan written
 
-## What Changed
-
-[2-4 sentences summarizing what this branch does, written for someone who hasn't read the diff. Focus on user-visible or operator-visible impact.]
-
-## Surfaces Touched
-
-[Bullet list of what this change affects — UI screens, endpoints, GCP resources, jobs, config, etc.]
-
-## Test Summary
-
-| Category | Count |
-|----------|-------|
-| Happy Path | N |
-| Regression | N |
-| Edge Cases | N |
-| UX | N |
-| Stress / Load | N |
-| API / CLI | N |
-| **Total** | N |
-
-Progress: X / N tests completed (pass or skip count toward completion; fail and blocked do not)
-
----
-
-## Test Cases
-
-[All test cases here, numbered T-001 through T-NNN]
-
-### T-001: [Title]
-
-**Category:** Happy Path
-
-**Steps:**
-1. ...
-2. ...
-
-**Expected result:** ...
-
-**Status:** `untested`
-
-**Notes:**
-
----
-
-[Continue for all test cases]
-
----
-
-## Automated Test Candidates
-
-[Collect all automated test notes from the test cases above into a single list here for easy reference.]
-
-- **T-NNN** — [class/method] — [one sentence on what to test]
+**Doc:** `docs/tests/<filename>`
+**Cases:** <n> auto / <n> browser / <n> manual
+**Dropped:** <n> (<n> over cap)
+**Lenses:** <which contributed; any empty or failed>
 ```
 
----
-
-## Step 4: Critic Pass
-
-After writing the file, spawn the `forge:test:test-plan-critic` agent. Pass it:
-- The absolute path to the test plan file you just wrote
-- The full git diff output collected in Step 1.2 (unstaged + staged + branch commits)
-
-The critic will annotate each test case in-place with a `**Viability:**` score and append a Drop List. Wait for it to complete before presenting the summary.
-
----
-
-## Step 5: Present Summary
-
-After the critic completes, present a brief summary:
-
-```
-## Test Plan Created
-
-**File:** docs/tests/YYYY-MM-DD-NNN-[branch]-test-plan.md
-**Branch:** [branch name]
-**Total test cases:** N
-
-| Category | Count |
-|----------|-------|
-| Happy Path | N |
-| Regression | N |
-| Edge Cases | N |
-| UX | N |
-| Stress / Load | N |
-| API / CLI | N |
-
-| Viability | Count |
-|-----------|-------|
-| Critical | N |
-| High | N |
-| Medium | N |
-| Low | N |
-| Negligible | N |
-
-**Recommended to drop:** N cases (see Drop List at bottom of file)
-**Automated test candidates flagged:** N
-
-Open the file, review the Drop List first, delete any cases you agree with, then work through the remaining cases and update the Status field as you go.
-For any GCP commands or API calls in the plan, paste the test case here and I can help you run or interpret it.
+```bash
+gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
 ```
 
----
+## What this skill never does
 
-## Updating an Existing Test Plan
-
-If the user invokes `/test-plan` and passes a path to an existing test plan document, treat it as a resume request:
-
-1. Read the existing document
-2. Show the current progress summary (how many untested / pass / fail / blocked / skip)
-3. Ask which test case to work on next, or offer to re-generate cases if the branch has changed significantly since the plan was written
-
-Do not overwrite an existing document unless the user explicitly asks.
+- **It writes no test file and runs no test.** Both belong to `/test-plan-run`; the writer is never dispatched from here.
+- **It never edits an existing document.** Each run writes a new one under the synthesizer's filename convention. Handing it a path to a `docs/tests/*.md` file is not a resume request — `/test-plan-run` is what resumes.
+- **It never commits, pushes, or opens anything.** `docs/tests/` is a local artifact.

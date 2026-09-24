@@ -13,12 +13,37 @@ Models are pinned per agent using **bare family aliases** (`opus`, `sonnet`, `ha
 | `research/learnings-researcher` | `sonnet` + `effort: high` — deterministic grep-filter-read pipeline |
 | `research/git-history-analyzer` | `sonnet` + `effort: high` — runs prescribed git incantations and summarizes; callers supply the commands |
 | `research/repo-research-analyst`, `research/framework-docs-researcher`, `research/best-practices-researcher`, `workflow/spec-flow-analyzer` | `opus` + `effort: high` — `/blueprint`'s research fan-out, whose output gates downstream planning decisions |
-| `test/test-plan-critic` | `opus` + `effort: high` — scores every case against the diff and writes a drop list the user acts on |
+| `test-plan/spec-lens`, `test-plan/blast-radius-lens`, `test-plan/surface-lens` | `sonnet` — three parallel proposers; each reads one slice of the change and writes no file, so the judgment cost sits downstream |
+| `test-plan/test-synthesizer` | `opus` + `effort: high` — scores every proposed case, applies the keep and drop rules, and writes a drop list the user acts on |
+| `test-plan/test-writer` | `opus` + `effort: high` — writes real test code from the stated behavior alone, with no view of the implementation to copy from |
 | `research/issue-intelligence-analyst` | `opus` + `effort: high` — clusters issues by root cause rather than symptom; grounds all of `/ideate`'s fan-out |
 
 No agent uses `inherit`; every model is pinned so a run's cost and quality don't shift with the session model.
 
 Pins are plain frontmatter — edit them if your org's model allowlist differs. Note a pin also applies when *other* skills dispatch the same agent, and it overrides (even downgrades) whatever model the main session runs. `effort` accepts `low`/`medium`/`high`/`xhigh`/`max` and overrides the session effort level.
+
+`tools:` is an optional frontmatter field naming the exact tools an agent may use. Omit it and the agent inherits every tool available to subagents; list tools and it gets only those. Four agents restrict it, and in every case the restriction is the design rather than a precaution — an agent that cannot reach something cannot be talked into reaching it:
+
+| Agent | `tools:` | Why |
+|---|---|---|
+| `review/review-synthesizer` | `Read, Write, Glob, Grep` | consolidates findings and writes one document; it has no reason to run commands |
+| `test-plan/test-synthesizer` | `Read, Write, Glob, Grep` | same shape — reads lens output, writes one document |
+| `test-plan/test-writer` | `Read, Write, Glob, Grep` | **no `Bash`**, so it cannot `git diff`, `git log -p`, or `cat` an implementation file. The outside-observer wall depends on this, and the orchestrator runs every test itself |
+| `test-plan/surface-lens` | `Read, Glob, Grep, Bash` | reads the changed UI paths; no `Write`, because a lens proposes and never edits |
+
+`test-plan/spec-lens` is the one agent that must reach **no file tools at all** — it proposes test cases from the stated intent, so seeing the repo would defeat it. `tools:` cannot express that, so the shape is `disallowedTools:`:
+
+```yaml
+disallowedTools: Read, Glob, Grep, Bash, Edit, Write, NotebookEdit, Agent, Skill, ToolSearch, WebFetch, WebSearch
+```
+
+`disallowedTools` denies tools out of the inherited pool, in the same comma-separated format as `tools`. When both are set, the deny list is applied first and `tools` is then resolved against what remains; `spec-lens` therefore carries **no `tools:` key** and relies on the deny list alone.
+
+Two shapes that look right and are not. A bare `tools:` with an empty value parses as null, which the loader treats as an **omitted key** — the agent gets all tools, and the plugin listing reports `(Tools: All tools)` while the file reads as if it granted none. An explicit `tools: []` is worse than useless: a tool list that resolves to nothing makes the `Agent` tool refuse to launch the subagent at all.
+
+`Agent` is on the deny list so the lens cannot spawn a subagent holding the tools it lacks; `Skill` because invoking a skill loads its `SKILL.md` and any template or asset file it references; `ToolSearch` because it surfaces the schemas of deferred tools, including MCP tools with file or browser reach; and the web tools so the lens cannot fetch the repository from GitHub instead of reading it.
+
+**The deny list holds only for the tools it names.** A grant written as "all tools except these" leaks every capability the list forgot, so the wall is a closed enumeration rather than a property of the agent. MCP tools the session exposes are inherited and are not enumerated, since none of the current ones read this repo; a session that adds an MCP server with repo-read access must add it here. Verify the wall by dispatching the agent and asking it to list its resolved tools — checking that the denied names are absent tests the wrong half.
 
 An alias resolves per-provider, and not every provider is current: on the Anthropic API `opus`→Opus 5 and `sonnet`→Sonnet 5, but `sonnet` resolves to Sonnet 4.6 on Claude Platform on AWS and Sonnet 4.5 on Bedrock and Google Cloud's Agent Platform. Set `ANTHROPIC_DEFAULT_SONNET_MODEL` / `ANTHROPIC_DEFAULT_OPUS_MODEL` to override, or `CLAUDE_CODE_SUBAGENT_MODEL` to force every subagent onto one model for a session.
 
@@ -55,11 +80,15 @@ Several were ported from [EveryInc/compound-engineering-plugin](https://github.c
 | `python-reviewer` | High-bar Python: Pythonic patterns, type safety, maintainability | _opt-in via `cc-forge.local.md`_ |
 | `typescript-reviewer` | High-bar TypeScript: type safety, modern patterns, maintainability | _opt-in via `cc-forge.local.md`_ |
 
-## test/
+## test-plan/
 
 | Agent | Does | Used by |
 |-------|------|---------|
-| `test-plan-critic` | Scores a proposed test *plan* in-place (viability + drop list) | test-plan |
+| `spec-lens` | Proposes black-box behavior cases from the stated intent; **no tools** | test-plan, grind |
+| `blast-radius-lens` | Proposes regression cases for adjacent behavior; reads the diff and its call sites | test-plan, grind |
+| `surface-lens` | Proposes browser and manual cases from changed UI paths; empty on a backend diff | test-plan, grind |
+| `test-synthesizer` | De-dupes, tags, scores, caps, and writes the `docs/tests/` document with its Drop List | test-plan, grind |
+| `test-writer` | Writes the `auto` tests from the cases and the public surface; never runs anything | test-plan-run, grind |
 
 ## workflow/
 

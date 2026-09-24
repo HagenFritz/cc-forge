@@ -112,10 +112,10 @@ For each non-terminal unit, in plan order:
 Show the unit's heading (`Unit N: <name>`) and every field present in the doc,
 **exactly as written**: `**Goal:**`, `**Requirements:**`, `**Dependencies:**`,
 `**Files:**`, `**Approach:**`, `**Execution note:**`, `**Technical design:**`,
-`**Patterns to follow:**`, `**Test scenarios:**`, `**Verification:**`.
+`**Patterns to follow:**`, `**Verification:**`.
 
 Several of those are optional. **An absent field is the normal case** — Lightweight
-plans routinely omit `Execution note`, `Technical design`, and `Test scenarios`. Show
+plans routinely omit `Execution note` and `Technical design`. Show
 what is there; never fabricate a missing field, and never fill one in from inference.
 If the current `**Reviewed:**` state is present, show it too.
 
@@ -439,7 +439,7 @@ through `/blueprint`.
   load-bearing: other units cite them, and `/work` composes issue-stamp keys from unit
   headings.
 - **Never fabricate a missing field.** An absent `**Execution note:**` or
-  `**Test scenarios:**` is normal. Render what exists; never infer the rest.
+  `**Technical design:**` is normal. Render what exists; never infer the rest.
 - **Never modify or retire without the before/after confirm.** Both actions destroy plan
   text that is not in git. The user sees old and new, labeled, and says apply.
 - **Never edit another unit's `**Dependencies:**`** when retiring. Dependency fallout is

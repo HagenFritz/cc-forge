@@ -29,12 +29,12 @@ Do not proceed until you have a clear planning input.
 ## Core Principles
 
 1. **Use requirements as the source of truth** - If `brainstorm` produced a requirements document, planning should build from it rather than re-inventing behavior.
-2. **Decisions, not code** - Capture approach, boundaries, files, dependencies, risks, and test scenarios. Do not pre-write implementation code or shell command choreography. Pseudo-code sketches or DSL grammars that communicate high-level technical design are welcome when they help a reviewer validate direction — but they must be explicitly framed as directional guidance, not implementation specification.
+2. **Decisions, not code** - Capture approach, boundaries, files, dependencies, and risks. Do not pre-write implementation code or shell command choreography. Pseudo-code sketches or DSL grammars that communicate high-level technical design are welcome when they help a reviewer validate direction — but they must be explicitly framed as directional guidance, not implementation specification.
 3. **Research before structuring** - Explore the codebase, institutional learnings, and external guidance when warranted before finalizing the plan.
 4. **Right-size the artifact** - Small work gets a compact plan. Large work gets more structure. The philosophy stays the same at every depth.
 5. **Separate planning from execution discovery** - Resolve planning-time questions here. Explicitly defer execution-time unknowns to implementation.
 6. **Keep the plan portable** - The plan should work as a living document, review artifact, or issue body without embedding tool-specific executor instructions.
-7. **Carry execution posture lightly when it matters** - If the request, origin document, or repo context clearly implies test-first, characterization-first, or another non-default execution posture, reflect that in the plan as a lightweight signal. Do not turn the plan into step-by-step execution choreography.
+7. **Carry execution posture lightly when it matters** - If the request or repo context clearly calls for external delegation, reflect that in the plan as a lightweight signal. Do not turn the plan into step-by-step execution choreography.
 
 ## Plan Quality Bar
 
@@ -42,10 +42,9 @@ Every plan should contain:
 - A clear problem frame and scope boundary
 - Concrete requirements traceability back to the request or origin document
 - Exact file paths for the work being proposed
-- Explicit test file paths for feature-bearing implementation units
 - Decisions with rationale, not just tasks
 - Existing patterns or code references to follow
-- Specific test scenarios and verification outcomes
+- Specific verification outcomes
 - Clear dependencies and sequencing
 
 A plan is ready when an implementer can start confidently without needing the plan to write the code for them.
@@ -152,7 +151,7 @@ Run these agents in parallel:
 Collect:
 - Technology stack and versions (used in section 1.2 to make sharper external research decisions)
 - Architectural patterns and conventions to follow
-- Implementation patterns, relevant files, modules, and tests
+- Implementation patterns, relevant files, and modules
 - AGENTS.md guidance that materially affects the plan, with CLAUDE.md used only as compatibility fallback when present
 - Institutional learnings from `docs/solutions/`
 
@@ -161,9 +160,6 @@ Collect:
 Decide whether the plan should carry a lightweight execution posture signal.
 
 Look for signals such as:
-- The user explicitly asks for TDD, test-first, or characterization-first work
-- The origin document calls for test-first implementation or exploratory hardening of legacy code
-- Local research shows the target area is legacy, weakly tested, or historically fragile, suggesting characterization coverage before changing behavior
 - The user asks for external delegation, says "use codex", "delegate mode", or mentions token conservation -- add `Execution target: external-delegate` to implementation units that are pure code writing
 
 When the signal is clear, carry it forward silently in the relevant implementation units.
@@ -313,23 +309,15 @@ For each unit, include:
 - **Goal** - what this unit accomplishes
 - **Requirements** - which requirements or success criteria it advances
 - **Dependencies** - what must exist first
-- **Files** - exact file paths to create, modify, or test
+- **Files** - exact file paths to create or modify
 - **Approach** - key decisions, data flow, component boundaries, or integration notes
-- **Execution note** - optional, only when the unit benefits from a non-default execution posture such as test-first, characterization-first, or external delegation
+- **Execution note** - optional, only when the unit benefits from external delegation
 - **Technical design** - optional pseudo-code or diagram when the unit's approach is non-obvious and prose alone would leave it ambiguous. Frame explicitly as directional guidance, not implementation specification
 - **Patterns to follow** - existing code or conventions to mirror
-- **Test scenarios** - specific behaviors, edge cases, and failure paths to cover
 - **Verification** - how an implementer should know the unit is complete, expressed as outcomes rather than shell command scripts
 
-Every feature-bearing unit should include the test file path in `**Files:**`.
-
-Use `Execution note` sparingly. Good uses include:
-- `Execution note: Start with a failing integration test for the request/response contract.`
-- `Execution note: Add characterization coverage before modifying this legacy parser.`
-- `Execution note: Implement new domain behavior test-first.`
+Use `Execution note` sparingly. Its only use is:
 - `Execution note: Execution target: external-delegate`
-
-Do not expand units into literal `RED/GREEN/REFACTOR` substeps.
 
 #### 3.6 Keep Planning-Time and Implementation-Time Unknowns Separate
 
@@ -338,7 +326,7 @@ If something is important but not knowable yet, record it explicitly under defer
 Examples:
 - Exact method or helper names
 - Final SQL or query details after touching real code
-- Runtime behavior that depends on seeing actual test failures
+- Runtime behavior that depends on seeing the code actually run
 - Refactors that may become unnecessary once implementation starts
 
 ### Phase 4: Write the Plan
@@ -461,21 +449,16 @@ deepened: YYYY-MM-DD  # optional, set later by blueprint-deepen when the plan is
 **Files:**
 - Create: `path/to/new_file`
 - Modify: `path/to/existing_file`
-- Test: `path/to/test_file`
 
 **Approach:**
 - [Key design or sequencing decision]
 
-**Execution note:** [Optional test-first, characterization-first, external-delegate, or other execution posture signal]
+**Execution note:** [Optional `Execution target: external-delegate` signal]
 
 **Technical design:** *(optional -- pseudo-code or diagram when the unit's approach is non-obvious. Directional guidance, not implementation specification.)*
 
 **Patterns to follow:**
 - [Existing file, class, or pattern]
-
-**Test scenarios:**
-- [Specific scenario with expected behavior]
-- [Edge case or failure path]
 
 **Verification:**
 - [Outcome that should hold when this unit is complete]
@@ -486,7 +469,7 @@ deepened: YYYY-MM-DD  # optional, set later by blueprint-deepen when the plan is
 - **Error propagation:** [How failures should travel across layers]
 - **State lifecycle risks:** [Partial-write, cache, duplicate, or cleanup concerns]
 - **API surface parity:** [Other interfaces that may require the same change]
-- **Integration coverage:** [Cross-layer scenarios unit tests alone will not prove]
+- **Cross-layer interactions:** [scenarios that span layers, for the test lenses to read]
 
 ## Risks & Dependencies
 
@@ -547,7 +530,7 @@ For larger `Deep` plans, extend the core template only when useful with sections
 - Do not include implementation code — no imports, exact method signatures, or framework-specific syntax
 - Pseudo-code sketches and DSL grammars are allowed in the High-Level Technical Design section and per-unit technical design fields when they communicate design direction. Frame them explicitly as directional guidance, not implementation specification
 - Mermaid diagrams are encouraged when they clarify relationships or flows that prose alone would make hard to follow — ERDs for data model changes, sequence diagrams for multi-service interactions, state diagrams for lifecycle transitions, flowcharts for complex branching logic
-- Do not include git commands, commit messages, or exact test command recipes
+- Do not include git commands or commit messages
 - Do not expand implementation units into micro-step `RED/GREEN/REFACTOR` instructions
 - Do not pretend an execution-time question is settled just to make the plan look complete
 
@@ -560,8 +543,7 @@ Before finalizing, check:
 - If there was no origin document, the bounded planning bootstrap established enough product clarity to plan responsibly
 - Every major decision is grounded in the origin document or research
 - Each implementation unit is concrete, dependency-ordered, and implementation-ready
-- If test-first or characterization-first posture was explicit or strongly implied, the relevant units carry it forward with a lightweight `Execution note`
-- Test scenarios are specific without becoming test code
+- If external delegation was explicit or strongly implied, the relevant units carry it forward with a lightweight `Execution note`
 - Deferred items are explicit and not hidden as fake certainty
 - If a High-Level Technical Design section is included, it uses the right medium for the work, carries the non-prescriptive framing, and does not contain implementation code (no imports, exact signatures, or framework-specific syntax)
 - Per-unit technical design fields, if present, are concise and directional rather than copy-paste-ready
@@ -620,7 +602,7 @@ After writing the plan file, present the options using the platform's blocking q
 1. **Open plan in editor** - Open the plan file for review
 2. **Run `/blueprint-deepen`** - Stress-test weak sections with targeted research when the plan needs more confidence
 3. **Share to Proof** - Upload the plan for collaborative review and sharing
-4. **Start `/work`** - Begin implementing this plan in the current environment
+4. **Start `/work`** - Begin implementing this plan in the current environment, then `/test-plan` once the units have landed
 5. **Start `/work` in another session** - Begin implementing in a separate agent session when the current platform supports it
 6. **Create Issue** - Create an issue in the configured tracker
 
