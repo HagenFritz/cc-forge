@@ -1,6 +1,6 @@
 ---
 name: work
-description: Execute work plans unit-by-unit through orchestrated dispatch — the main session briefs one Opus subagent per implementation unit (strictly serial), reviews each diff, commits, stamps the issue, and carries a rolling digest of prior units into every next brief; the orchestrator never writes code itself
+description: Execute work plans unit-by-unit through orchestrated dispatch — the main session briefs one Opus subagent per implementation unit (strictly serial), reviews each diff, has the scope observer flag deviations from the plan, commits, stamps the issue, and records every unit in a work doc under docs/work/ carrying a rolling digest of prior units into every next brief; the orchestrator never writes code itself
 argument-hint: "[plan file, specification, or todo file path]"
 ---
 
@@ -53,7 +53,7 @@ This command takes a work document (plan, specification, or todo file) and execu
    - Derive tasks from the plan's implementation units, dependencies, files, and verification criteria
    - Carry each unit's `Execution note` into the task when present
    - For each unit, read the `Patterns to follow` field before implementing — these point to specific files or conventions to mirror
-   - Use each unit's `Verification` field as the primary "done" signal for that task
+   - Use each unit's `Goal` and `Files` as the "done" signal for that task; its `Verification` lines are checked once, by the observer's wrap-up pass (Phase 4)
    - Do not expect the plan to contain implementation code or exact shell commands
    - Include dependencies between tasks
    - Prioritize based on what needs to be done first
@@ -64,13 +64,21 @@ This command takes a work document (plan, specification, or todo file) and execu
 
    `/work` has one execution mode: **orchestrated dispatch**. The main session is the orchestrator; every implementation unit — including in a single-unit plan — is built by a dispatched subagent. There is no inline mode and no parallel mode.
 
-   **The orchestrator** (this session) briefs workers, reviews their diffs, commits, stamps, updates plan checkboxes, and maintains the digest. It **never writes code** — no exceptions: a typo or drive-by fix spotted while reviewing a diff rides the next worker's brief as an addendum, or gets a micro-dispatch of its own when no units remain. One absolute rule is followable; "except trivial" invites drift.
+   **The orchestrator** (this session) briefs workers, reviews their diffs, dispatches the scope observer, commits, stamps, updates plan checkboxes, maintains the digest, and is the sole writer of the work doc. It **never writes code** — no exceptions: a typo or drive-by fix spotted while reviewing a diff rides the next worker's brief as an addendum, or gets a micro-dispatch of its own when no units remain. One absolute rule is followable; "except trivial" invites drift.
 
    **The worker** — `Agent` with `model: "opus"` and `subagent_type: "general-purpose"` — implements exactly one unit in the shared working tree, runs the System-Wide Check (see Phase 2), and returns its report. It writes no tests — tests come later, from `/test-plan`. Workers never touch git and never post stamps.
 
-   **Strictly serial:** one worker at a time. Dispatch is asynchronous, so serialization is the orchestrator's job: wait for the worker's completion notification and finish reviewing its diff before dispatching the next unit. Commit-per-unit in a shared tree makes concurrent workers a race; unit N+1's brief needs unit N's digest anyway.
+   **The observer** — `Agent` with `subagent_type: "forge:workflow:scope-observer"` — audits each unit's diff against its plan fields and returns deviation cards. It flags and never blocks. Its dispatch contract, what it may and may not see, and its failure handling are [the work-protocol spec's](../work-protocol/SKILL.md#the-scope-observer).
+
+   **Strictly serial:** one worker at a time. Dispatch is asynchronous, so serialization is the orchestrator's job: wait for the worker's completion notification, finish reviewing its diff, and wait for the observer to return before dispatching the next unit. Commit-per-unit in a shared tree makes concurrent workers a race; unit N+1's brief needs unit N's digest anyway.
 
    For genuinely large plans needing persistent inter-agent communication (agents challenging each other's approaches, shared coordination across 10+ tasks), see Swarm Mode below which uses Agent Teams.
+
+5. **Create the Work Doc**
+
+   Once the user has approved the start, create the run's work doc in `docs/work/` per [the work-protocol spec](../work-protocol/SKILL.md#the-document) — its filename, frontmatter (`base:` is `git rev-parse HEAD` now), four sections, and empty-section placeholders are all the spec's. Seed `## Decisions` from the `Deferred to Implementation` questions resolved in step 1. When the input is a spec or todo file with no plan units, the Deviations section takes the spec's no-plan state and no observer runs this run.
+
+   **Resume:** when a doc already exists for this branch and plan, continue it per [the spec's resume rules](../work-protocol/SKILL.md#resume) instead of creating one — committed units lacking an observed marker are observed and recorded first, before any worker is dispatched.
 
 ### Phase 2: Execute
 
@@ -84,10 +92,12 @@ This command takes a work document (plan, specification, or todo file) and execu
      - Compose the worker brief (see below)
      - Dispatch the worker; block until it returns
      - Review the actual diff — a returned "done" is a hypothesis
+     - `git add -N` the worker's new files; dispatch the observer in `unit` mode (see below)
      - Commit (orchestrator; see Incremental Commits)
      - Mark task completed; check the plan checkbox
-     - Stamp the unit on the issue (see below)
      - Append to the digest (see below)
+     - Update the work doc and write the unit's observed marker (see below)
+     - Stamp the unit on the issue (see below)
    ```
 
    **The worker brief** must contain, and nothing may be left implicit:
@@ -98,9 +108,19 @@ This command takes a work document (plan, specification, or todo file) and execu
    - The instruction to follow the repo's `CLAUDE.md` conventions and honor the unit's `Execution note` when it carries `Execution target: external-delegate`.
    - The instruction to run the System-Wide Check (below) before returning.
    - **The digest** — the orchestrator's accumulated notes from every prior unit, verbatim.
-   - **The return contract:** what changed per file, any deviation from the unit's Approach with its reason, discoveries bearing on later units, or — if the unit cannot be completed — a blocked report saying exactly what gates it.
+   - **Addenda**, when any — drive-by fixes the orchestrator spotted in earlier diffs. The same list goes to this unit's observer.
+   - **The return contract:** what changed per file, with a one-line summary each; any deviation from the unit's Approach with its reason; discoveries bearing on later units; **stale tests** — existing tests the change may have made stale, each as its path (optionally `::<test name>`) plus one sentence on why, found by grepping the test directories for the symbols and modules the unit changed, renamed, or removed and then judging each hit, erring broad; or — if the unit cannot be completed — a blocked report saying exactly what gates it.
 
-   **The orchestrator's review** is conformance-level: the diff does what the unit's Goal and Verification say, stays inside the unit's Files and the plan's Scope Boundaries, and matches repo conventions. Deviations the worker justified are accepted or sent back with a follow-up dispatch; unjustified drift is a re-dispatch with a corrected brief. Never fix it by hand.
+   **The orchestrator's review** is conformance-level: the diff does what the unit's Goal says, stays inside the unit's Files and the plan's Scope Boundaries, and matches repo conventions. `Verification` is not checked here — the observer's wrap-up pass owns it. Deviations the worker justified are accepted or sent back with a follow-up dispatch; unjustified drift is a re-dispatch with a corrected brief. Never fix it by hand.
+
+   **The observer dispatch** — after the review, before the commit. Mark the worker's new files intent-to-add, then dispatch `forge:workflow:scope-observer` in `unit` mode with the inputs [the spec names](../work-protocol/SKILL.md#unit-mode): the absolute plan path, the unit ordinal, `git diff HEAD`, and this unit's addenda list. The observer brief carries nothing from the worker's return — not its summary, its deviations, or its reasons. A failed dispatch is handled per [the spec](../work-protocol/SKILL.md#failure): the unit commits anyway.
+
+   **The work doc update** — after the commit and the digest, one update per [the spec's lifecycle](../work-protocol/SKILL.md#lifecycle):
+   - Rewrite `## Changes` from git and the accumulated per-file summary lines.
+   - Merge the worker's stale tests into `## Tests to Revisit`.
+   - Rewrite `## Decisions` from the digest.
+   - Turn the observer's return into cards: assign each its number and fill its `Reason:` per [the spec's `Reason:` rule](../work-protocol/SKILL.md#reason), and card every deviation the worker reported that the observer missed and that is still in the committed diff.
+   - Write the unit's [observed marker](../work-protocol/SKILL.md#the-observed-marker).
 
    **The digest** — after each review, record 1–3 bullets: decisions made, patterns established, gotchas hit. Cap ~4 lines per unit; when the run grows long, consolidate rather than append. The digest states *constraints on future work* ("auth helpers live in lib/auth, not per-route", "the fixtures assume UTC"), not a change log.
 
@@ -198,15 +218,7 @@ This command takes a work document (plan, specification, or todo file) and execu
    - Each unit leaves the working tree buildable and lint-clean. That is the bar the worker owns.
    - A change that breaks an existing test is caught in CI after ship, not here.
 
-5. **Simplify as You Go**
-
-   After completing a cluster of related implementation units (or every 2-3 units), review recently changed files for simplification opportunities — consolidate duplicated patterns, extract shared helpers, and improve code reuse and efficiency. This is especially valuable when using subagents, since each agent works with isolated context and can't see patterns emerging across units.
-
-   Don't simplify after every single unit — early patterns may look duplicated but diverge intentionally in later units. Wait for a natural phase boundary or when you notice accumulated complexity.
-
-   Use `/simplify` to review the changed files for reuse and consolidation opportunities.
-
-6. **Track Progress**
+5. **Track Progress**
    - Keep the task list updated as you complete tasks
    - Note any blockers or unexpected discoveries
    - Create new tasks if scope expands
@@ -241,36 +253,32 @@ This command takes a work document (plan, specification, or todo file) and execu
 
 ### Phase 4: Wrap Up
 
-1. **Update Plan Status**
+1. **Wrap-Up Observer Pass**
+
+   Dispatch `forge:workflow:scope-observer` once in [`wrap-up` mode](../work-protocol/SKILL.md#wrap-up-mode) with the absolute plan path and the ordinals of every unit this run committed — never a blocked one. This is the run's only check of the plan's `Verification` lines. Record its cards, numbered per the spec, and the wrap-up marker; a failed dispatch is recorded per [the spec](../work-protocol/SKILL.md#failure) and never blocks. When the Deviations section carries the no-plan state, skip the dispatch. Either way, then set the work doc's `status: complete`.
+
+2. **Update Plan Status**
 
    If the input document has YAML frontmatter with a `status` field, update it to `completed`:
    ```
    status: active  →  status: completed
    ```
 
-2. **Display Work Summary**
-
-   Run `git diff --stat` (against the branch point or last commit before `/work` started) and present a summary table. Resolve each file's absolute path with `git rev-parse --show-toplevel` + the relative path, and show that absolute path as the visible cell text — the terminal renders only the visible text of a markdown link, so a relative path there is neither clickable nor resolvable in the user's editor:
-
-   | File | +/- | Unit | Summary |
-   |------|-----|------|---------|
-   | `/absolute/path/to/repo/path/to/file.ts` | +45 / -12 | Auth middleware | Added token refresh logic |
-
-   **Column definitions:**
-   - **File** — the full absolute filesystem path, shown verbatim in backticks. Never a repo-relative path, and never a markdown link whose visible text is relative
-   - **+/-** — insertions and deletions for that file
-   - **Unit** — which plan implementation unit the change maps to (or "—" if not from a plan)
-   - **Summary** — one-line description of what changed in that file
-
-   After the table, show the total: `N files changed, X insertions(+), Y deletions(-)`.
-
-   If any follow-up work was discovered during execution, list it under a **Follow-ups** heading.
-
 3. **Suggest Next Steps**
    - Run [`/test-plan`](../test-plan/SKILL.md) to generate the test plan for this change
    - Run [`/test-plan-run`](../test-plan-run/SKILL.md) to write and verify its tests
    - Run `/ship` to commit, push, and open a PR — the suite runs in CI off that push
    - Review after ship: `/quick-review`, or `/deep-review` if the change is large or risky
+
+4. **Display Work Summary**
+
+   The run's output ends here. Print the work doc's `## Changes` table and its total line — the terminal copy may truncate a long table; the doc never does. Every **File** cell is the full absolute filesystem path shown verbatim in backticks, never a repo-relative path and never a markdown link whose visible text is relative: the terminal renders only a link's visible text, so a relative path there is neither clickable nor resolvable in the user's editor. The columns and their sources are [the spec's](../work-protocol/SKILL.md#changes).
+
+   Close with [the spec's `/work` one-liner](../work-protocol/SKILL.md#terminal-one-liners) as the final line.
+
+5. **Act on Replies**
+
+   The user acts on a card by replying with a verb and its card ID. Which verbs a card takes, what each does, the pre-dispatch warning, and the revert brief's hunk rule are all [the spec's reply verbs](../work-protocol/SKILL.md#reply-verbs). What `/work` adds is the mechanics: a `fix` or `revert` dispatches an Opus worker like any unit and then runs the dispatch loop's review → observer → commit → work-doc update sequence, observed with the card-ID marker; the card's `Status:` moves once that commit lands. It gets no issue stamp.
 
 ---
 
