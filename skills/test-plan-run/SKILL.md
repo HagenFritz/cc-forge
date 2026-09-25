@@ -72,7 +72,7 @@ Everything here runs **before any agent is dispatched, any test file is written,
 
 2. **The target-match gate.** Apply [the spec's gate](../test-protocol/SKILL.md#the-target-match-gate) to the document's `target:` against the current branch. A mismatch **stops here**, naming both values — before the writer, before an edit, and without switching branches.
 
-3. **Count the mode's cases.** Parse every `### T-<NNN>:` block and its `**Mode:**` field. Zero cases carrying this scope's tag exits the mode per [the spec](../test-protocol/SKILL.md#zero-cases-in-a-mode-is-success); on the no-argument path the run continues to the other mode rather than ending.
+3. **Count the mode's cases.** Parse every `### T-<NNN>:` and `### V-<NNN>:` block and its `**Mode:**` field. Zero cases carrying this scope's tag exits the mode per [the spec](../test-protocol/SKILL.md#zero-cases-in-a-mode-is-success); on the no-argument path the run continues to the other mode rather than ending.
 
 4. **Scope-specific, in the same pass:**
    - `auto` → detect the repo's test command with [`/land`'s ladder](../land/SKILL.md). Nothing detected → **stop** per [no runner, no writer](../test-protocol/SKILL.md#no-runner-no-writer), naming what was looked for. The writer is not dispatched.
@@ -87,13 +87,19 @@ Everything here runs **before any agent is dispatched, any test file is written,
 
 2. **Re-derive the repo's test conventions** — test directories, runner, live-service markers, existing fixture names — the way `/test-plan` step 4 does. The document does not carry the markers, so they are derived here, not read.
 
-3. **Select the cases to write.** Apply [the spec's re-run semantics](../test-protocol/SKILL.md#what-a-re-run-does) against the case IDs on disk: grep the test directories for each `auto` case's `T-NNN` ID. A case whose ID is already in a test file is **re-verified**, never rewritten, whatever its `Status:`; only the cases with no test on disk go to the writer. Every case already covered → dispatch no writer and go straight to the filters.
+3. **Select the cases to write.** Apply [the spec's re-run semantics](../test-protocol/SKILL.md#what-a-re-run-does) against the case IDs on disk: grep the test directories for each `auto` case's `T-NNN` or `V-NNN` ID. A `T-NNN` case whose ID is already in a test file is **re-verified**, never rewritten, whatever its `Status:`; only the cases with no test on disk go to the writer. A `V-NNN` case is selected by the same section's revise lines — an `update` whose ID is on disk is re-verified, a `delete` whose target is already gone only re-checks collection. Every case already covered → dispatch no writer and go straight to the filters.
 
-4. **Dispatch the writer** with exactly the five values its [`## Inputs` section](../../agents/test-plan/test-writer.md) names:
+4. **Gate and snapshot the revise cases.** A selected `V-NNN` case is [the one exception](../test-protocol/SKILL.md#executing-revise-cases) to never rewriting a test on disk, and runs by that section:
+
+   - Run [the update gate](../test-protocol/SKILL.md#the-update-gate) on each `update` before the writer sees it. A gate pass is recorded then and there and the case never reaches the writer.
+   - [Snapshot](../test-protocol/SKILL.md#snapshot-and-restore) every `update` and within-file `delete` target still bound for the writer into `docs/tests/.raw/<sanitized-slug>/revise/`.
+   - Carry out whole-file deletes yourself, per [the spec's delete section](../test-protocol/SKILL.md#delete). Within-file deletes go to the writer.
+
+5. **Dispatch the writer** with exactly the five values its [`## Inputs` section](../../agents/test-plan/test-writer.md) names:
 
    ```
    Task forge:test-plan:test-writer(
-     - the selected auto cases, verbatim, each with its T-NNN ID, title, steps, and expected result
+     - the selected auto cases, verbatim, each with its T-NNN or V-NNN ID, title, steps or **Action:** and **Target test:**, and expected result
      - the regenerated surface digest
      - the repo's test conventions
      - the test directories it may read, named explicitly
@@ -105,16 +111,19 @@ Everything here runs **before any agent is dispatched, any test file is written,
 
    Its return carries files written with their case IDs, a per-test live-service hint, and a **"cases not written"** section. Lines in that section — including "left an existing file alone" — are **expected outcomes, not failures**: the first is a case the digest could not support, the second is [the file-on-disk-wins rule](../test-protocol/SKILL.md#what-a-re-run-does) working. Carry both into the report; neither stops the run.
 
-5. **Run the filters** — [the spec's assurance filters](../test-protocol/SKILL.md#the-assurance-filters) own the three steps, their order, the rerun count, and the rule that only the new tests are run. Run them yourself; the writer holds no `Bash` and runs nothing.
+   After it returns, confirm each within-file delete per [the spec's delete section](../test-protocol/SKILL.md#delete).
+
+6. **Run the filters** — [the spec's assurance filters](../test-protocol/SKILL.md#the-assurance-filters) own the three steps, their order, the breadth-first rule, the rerun count, and the rule that only the new and updated tests are run. Run them yourself; the writer holds no `Bash` and runs nothing.
 
    - Classify a collect failure and take the one fix round per [the spec](../test-protocol/SKILL.md#classifying-a-collect-failure-and-the-one-fix-round). A placement or import failure is re-briefed by you with the right directory; an assertion or syntax failure goes back to the writer.
-   - Cap each rerun loop per [the rerun wall clock](../test-protocol/SKILL.md#the-rerun-wall-clock).
+   - Cap each rerun loop and the phase as a whole per [the rerun wall clock](../test-protocol/SKILL.md#the-rerun-wall-clock), including its `discarded — timeout` rule for a test that never reached pass.
+   - A discarded `update` is restored, not deleted: send the writer a restore request naming the case, its target test, and its snapshot path, then confirm the result per [snapshot and restore](../test-protocol/SKILL.md#snapshot-and-restore).
    - Derive the live-service flag yourself per [the spec](../test-protocol/SKILL.md#live-service-tests): grep each written test for the live-service markers step 2 found. The writer's per-test hint is advisory — on disagreement run the full reruns and say so in one report line.
    - When a second failure deletes a test and the writer's fix round said it believes **the code under test is wrong**, carry that sentence into the report verbatim. A discarded test whose author thought the code was broken is the most useful line in the run; swallowing it is how a real bug ships.
 
-6. **Record the outcome per case** — a `Status:` value from [the spec's five](../test-protocol/SKILL.md#the-five-status-values) and a `**Filter:**` line in [the spec's grammar](../test-protocol/SKILL.md#the-filter-line), written directly under `Status:`, anchored on that case's `### T-<NNN>:` heading. One `**Filter:**` line per case: rewrite the existing one rather than adding a second.
+7. **Record the outcome per case** — a `Status:` value from [the spec's five](../test-protocol/SKILL.md#the-five-status-values) and a `**Filter:**` line in [the spec's grammar](../test-protocol/SKILL.md#the-filter-line), written directly under `Status:`, anchored on that case's `### T-<NNN>:` or `### V-<NNN>:` heading. One `**Filter:**` line per case: rewrite the existing one rather than adding a second. Once every revise outcome is recorded, delete the snapshot directory per [the spec](../test-protocol/SKILL.md#snapshot-and-restore).
 
-7. **Leave the test files uncommitted.** `/ship` commits them. Never `git add`, never commit, never push, never stash.
+8. **Leave the test files uncommitted** — deleted ones included, as working-tree deletions. `/ship` commits them. Never `git add`, never commit, never push, never stash.
 
 #### `browser`
 
@@ -140,12 +149,12 @@ Counts come from **real runner output**, parsed from what the command printed. A
 
 Emit [the spec's completion report](../test-protocol/SKILL.md#the-completion-report) with `Test run complete` as the heading, filled from the document as re-read after this run's writes:
 
-- **Cases** — the table, from the document's `### T-<NNN>:` blocks and their current `Status:` values.
+- **Cases** — the table, from the document's `### T-<NNN>:` blocks and their current `Status:` values, with the `revise` row from its `### V-<NNN>:` blocks.
 - **Receipts** — this invocation's block, the same fields just appended. Never the sentence "tests pass" on its own.
 - **Dropped** — the discarded tests: the case ID and the filter that discarded it, plus the document's `## Drop List` rows.
 - **Lenses** — from the document's `lenses:` frontmatter. This run dispatched none; it reports what the document records.
 
-Add, below the table, any line this run owes the reader and the spec's sections do not hold: the digest drift warning, a live-service disagreement, the writer's "cases not written" lines, and a "the code under test may be wrong" sentence carried from a fix round.
+Add, below the table, any line this run owes the reader and the spec's sections do not hold: every `discarded — timeout` case ID, per [the rerun wall clock](../test-protocol/SKILL.md#the-rerun-wall-clock), the digest drift warning, a live-service disagreement, the writer's "cases not written" lines, and a "the code under test may be wrong" sentence carried from a fix round.
 
 Close with [the spec's next-steps block](../test-protocol/SKILL.md#the-next-steps-block), which ends this skill at `/ship`.
 
@@ -163,6 +172,7 @@ Compose the body below, write it to a temp file with the Write tool, and post:
 **Doc:** `docs/tests/<filename>`
 **Scope:** <auto | browser | manual>
 **Result:** <n> pass / <n> fail / <n> blocked / <n> skip
+**Revised:** <n> updated / <n> deleted / <n> still valid
 **Receipts:** `<command>` → exit <code>, <n> passed
 **Discarded:** <n> (<case id: filter>, …)
 ```
@@ -175,8 +185,8 @@ A no-argument run that covered two modes stamps **once per mode**, each with its
 
 ## What this skill never does
 
-- **It never rewrites a test on disk.** There is no `--rewrite` flag and no prompt that offers one. Deleting the file by hand is how a human asks for a rewrite.
-- **It never runs the suite.** Only this run's new or re-verified tests, per the spec — CI runs the suite once, off `/ship`'s push.
+- **It never rewrites a test on disk**, except a revise case's named target, once, per [the spec](../test-protocol/SKILL.md#executing-revise-cases). There is no `--rewrite` flag and no prompt that offers one. Deleting the file by hand is how a human asks for a rewrite.
+- **It never runs the suite.** Only this run's new, updated, or re-verified tests and the update gate's single targets, per the spec — CI runs the suite once, off `/ship`'s push.
 - **It never commits, pushes, or stashes.** The tests land in the working tree and stay there.
 - **It never dispatches a lens or the synthesizer.** A document that does not exist is `/test-plan`'s problem; this skill consumes one that does.
 - **It never calls `AskUserQuestion`.** Every question is a plain-text numbered list with a free-text catch-all.
