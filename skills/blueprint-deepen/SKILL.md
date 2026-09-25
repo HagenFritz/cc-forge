@@ -181,7 +181,7 @@ Use these triggers.
 - File paths are missing where they should be explicit
 - Units are too large, too vague, or broken into micro-steps
 - Approach notes are thin or do not name the pattern to follow
-- Verification outcomes are vague
+- Verification lines are vague, describe behavior rather than conformance, or could not be confirmed with read-only checks (files, symbols, greps, config)
 
 **System-Wide Impact**
 - Affected interfaces, callbacks, middleware, entry points, or parity surfaces are missing
@@ -341,7 +341,7 @@ Allowed changes:
 - Clarify or strengthen decision rationale
 - Tighten requirements trace or origin fidelity
 - Reorder or split implementation units when sequencing is weak
-- Add missing pattern references, file paths, or verification outcomes
+- Add missing pattern references, file paths, or verification conformance checks
 - Expand system-wide impact, risks, or rollout treatment where justified
 - Reclassify open questions between `Resolved During Planning` and `Deferred to Implementation` when evidence supports the change
 - Strengthen, replace, or add a High-Level Technical Design section when the work warrants it and the current representation is weak, uses the wrong medium, or is absent where it would help. Preserve the non-prescriptive framing

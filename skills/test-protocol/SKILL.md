@@ -4,8 +4,9 @@ description: >
   Shared specification for the test skills — test-plan, test-plan-run, and grind's
   mirrored test phase. Owns the rules all three obey identically: the three lenses and
   what each may see, the surface digest, the tag vocabulary, the keep and drop rules, the
-  cap and Drop List, the scratch contract, the synthesizer dispatch and count check, the
-  document shape, the assurance filters, the re-run semantics, the receipts, the
+  Drop List, the revise bucket, the scratch contract, the synthesizer dispatch and count
+  check, the document shape, the assurance filters and revise execution, the re-run
+  semantics, the receipts, the
   completion report, and the two stamps' shared bodies. Not user-invocable; the test
   skills cite it and restate none of it.
 user-invocable: false
@@ -34,7 +35,8 @@ Every rule here is written so all three callers can execute it. A rule that only
 
 Throughout, **the orchestrator** means whichever caller is running — it holds `Bash` and
 runs every command; **lens** means one of the three proposing agents; **the writer** means
-`forge:test-plan:test-writer`; **a case** means one `T-NNN` block in the document.
+`forge:test-plan:test-writer`; **a case** means one `T-NNN` or `V-NNN` block in the
+document; **a revise case** means a `V-NNN` block, per [the revise bucket](#the-revise-bucket).
 
 ## Scope and non-goals
 
@@ -49,6 +51,11 @@ runs every command; **lens** means one of the three proposing agents; **the writ
   cross-consumption. `/review-walk`, `/review-sweep`, and `/review-push` never read
   `docs/tests/*.md`; `/test-plan-run` and grind's test phase never read
   `docs/reviews/*.md`.
+- **Work docs are a third family, read one way.** `docs/work/*.md` belongs to
+  [`work-protocol`](../work-protocol/SKILL.md), which owns its discovery and target match
+  under [readers](../work-protocol/SKILL.md#readers). The test callers read only its
+  `## Tests to Revisit` section, and only by passing the doc's path to the blast-radius
+  lens; the spec lens never receives it. A work doc never reads a test doc.
 - **This spec owns the document format**, unlike `review-protocol`, which delegates the
   format to its synthesizer. No single agent writes the whole test document: the
   synthesizer writes it and the run appends to it, so the format has to live where both
@@ -65,15 +72,16 @@ runs every command; **lens** means one of the three proposing agents; **the writ
   run.
 - `docs/tests/` is gitignored. Test documents are local working artifacts, not committed
   repo content. The tests themselves are ordinary source files and are committed.
-- `cc-forge.local.md` is **optional**. Its frontmatter may carry two keys this spec reads:
+- `cc-forge.local.md` is **optional**. Its frontmatter may carry three keys this spec reads:
 
   | Key | Default | Meaning |
   |---|---|---|
   | `test_reruns` | `5` | Consecutive reruns a new test must pass to be kept |
-  | `test_rerun_timeout` | `10m` | Wall-clock cap on one test's rerun loop |
-  | `test_run_timeout` | `30m` | Wall-clock cap on the filter phase as a whole |
+  | `test_timeout` | `5s` | Wall-clock cap on any single run of one test — its first run or any rerun |
+  | `test_run_timeout` | `5m` | Wall-clock cap on the filter phase as a whole |
 
-  These defaults are stated here once. Every other site cites this table rather than
+  The timeouts are deliberately tight, so a slow test is flagged early rather than
+  absorbed. These defaults are stated here once. Every other site cites this table rather than
   repeating a number. A missing file, missing frontmatter, or a missing key takes the
   default silently — a stale `cc-forge.local.md` must keep working.
 
@@ -88,8 +96,8 @@ test roster and it lives here, so grind can cite it rather than re-enumerate it.
 | `forge:test-plan:spec-lens` | none (via `disallowedTools`) | proposes black-box behavior cases from the intent alone |
 | `forge:test-plan:blast-radius-lens` | full | proposes regression cases for adjacent behavior |
 | `forge:test-plan:surface-lens` | `Read, Glob, Grep, Bash` | proposes browser and manual cases from changed UI paths |
-| `forge:test-plan:test-synthesizer` | `Read, Write, Glob, Grep` | de-dupes, tags, applies the keep and drop rules, caps, writes the document |
-| `forge:test-plan:test-writer` | `Read, Write, Glob, Grep` | writes the `auto` tests; never runs anything |
+| `forge:test-plan:test-synthesizer` | `Read, Write, Glob, Grep` | de-dupes, tags, applies the keep and drop rules, formats the revise verdicts, writes the document |
+| `forge:test-plan:test-writer` | `Read, Write, Glob, Grep` | writes the `auto` tests and removes a within-file `delete`'s named test; never runs anything |
 
 **The synthesizer and the writer are always-run infrastructure** — never list either in a
 caller's lens roster and never count either among the lenses whose output is synthesized.
@@ -127,7 +135,7 @@ list test files immediately after a change can reconstruct the blast radius from
 The orchestrator resolves the intent by descending this ladder and stops at the first rung
 that yields text:
 
-1. The plan's `Goal`, `Requirements`, and `Verification` fields.
+1. The plan's `Goal` and `Requirements` fields.
 2. The brainstorm's `Requirements` and `Success Criteria` sections.
 3. The linked issue body.
 4. The PR body.
@@ -140,7 +148,8 @@ The completion report names the rung that fed the lens.
 
 The brief carries only the requirements and plan fields for **the units this diff or slice
 touches**, never the whole plan. A fourteen-unit plan must not produce a fourteen-unit
-brief. The [cap](#the-cap) bounds the output; this bounds the input.
+brief. The lens's output is judged case by case under
+[the keep and drop rules](#keep-and-drop-rules); this rule bounds only what goes in.
 
 ### Blast-radius lens
 
@@ -151,6 +160,14 @@ tests. It is the only lens with full tools, and reading widely is its job.
 
 **May not:** propose cases for the intended new behavior. That is the spec lens's output,
 and duplicating it wastes the de-dupe budget rather than adding coverage.
+
+**May receive:** the path of the branch's work doc, when [readers](../work-protocol/SKILL.md#readers)
+finds one. It reads only `## Tests to Revisit` and returns a **revise verdict** per entry —
+`delete`, `regression`, or `still valid` — in a block separate from its regression cases. It
+may add stale tests the entries missed, and should err broad: a stale test left alone
+fails in CI, while one proposed and found `still valid` costs one gated run. With no work
+doc it still proposes revise verdicts for any stale test it finds on its own. The verdict
+is the lens's alone; see [the revise bucket](#the-revise-bucket).
 
 ### Surface lens
 
@@ -201,7 +218,8 @@ Every case carries exactly one tag, from a closed set:
 | `browser` | a flow driven through Playwright or the Chrome tools | `/test-plan-run browser` |
 | `manual` | a check a human performs and reports | `/test-plan-run manual` |
 
-There is no `all` tag and no untagged case.
+There is no `all` tag and no untagged case. A revise case is always `auto`; its
+`**Action:**` is a field, not a tag, and the set stays closed.
 
 Every case block carries three fields the tag drives:
 
@@ -240,30 +258,12 @@ holds:
 | `asserts a mock` | asserts that a mock was called, how often, or in what order |
 | `duplicates existing` | an existing test already covers it |
 | `jsdom focus/timing` | asserts focus, timing, or async rendering under jsdom |
-| `unchanged code` | tests code the diff did not touch |
-| `over cap` | see [the cap](#the-cap) |
+| `unchanged code` | tests code the diff did not touch — never applied to a revise proposal |
+| `still valid` | a revise proposal the blast-radius lens judged still valid |
 
 **The jsdom retag.** A focus, timing, or async-rendering case is **never** kept as `auto`.
 It is retagged `browser` when a real browser could drive it meaningfully, and dropped with
 reason `jsdom focus/timing` otherwise. Retag first, drop second.
-
-### The cap
-
-The `auto` ceiling is **15 kept cases.** `browser` and `manual` are uncapped — a human or
-a browser session paces itself, and the cost that motivated the cap is writing and
-rerunning code.
-
-When more than 15 `auto` cases survive the keep rules, the synthesizer keeps the 15 with
-the highest `**Viability:**` and moves the rest to the Drop List with reason `over cap`.
-Cap-excluded cases are **counted separately** from rule-dropped ones so
-[the count check](#the-count-check) still closes.
-
-**Ties are broken by proposal order.** Viability has five levels and the cut line usually
-falls inside one of them, so several cases routinely tie at the boundary. Among cases of
-equal viability, the ones proposed earlier are kept — spec lens first, then blast-radius,
-then surface, and within a lens the order it returned them. Without a stated tiebreak two
-runs over one diff keep a different fifteen, and nobody can tell that from a real change in
-the diff.
 
 ### The Drop List
 
@@ -276,6 +276,39 @@ One table, one row per dropped case, under a `## Drop List` heading in the docum
 **The Drop List is never empty in a real run** and never omitted. A run that drops nothing
 writes the heading with `_None — every proposed case was kept._` beneath it, so a reader
 can tell "nothing was dropped" from "the section was skipped."
+
+**Nothing is capped.** Every case that survives the keep rules is kept, in every mode —
+`auto` included — and the revise bucket is uncapped too. The tight
+[timeouts](#prerequisites) are what bound the run, not a count.
+
+## The revise bucket
+
+Existing tests the change made stale. They are not new cases, so they live apart from the
+`T-NNN` cases, in their own section and ID space.
+
+- **IDs are `V-NNN`**, numbered in their own sequence from `V-001`, under a `## Revise`
+  heading in the document. `**Mode:**` is always `auto`.
+- **Two extra fields**, both directly after `**Mode:**`:
+  - `**Action:** delete | regression`:
+    - `delete` — the test covers code the change removed, or behavior a plan Requirement
+      or unit intentionally changed. Its `**Why:**` cites the removed code or the
+      Requirement or unit. Nothing is rewritten: the new behavior's test is the spec
+      lens's ordinary `T-NNN` case.
+    - `regression` — the test fails and no removed code or intended change explains it:
+      the test is right and the code is wrong. Never touched; left to fail in CI.
+  - `**Target test:** <path>::<test name>` — the path is absolute and repo-local; without
+    `::<test name>` the target is the whole file, which only a `delete` may name.
+- **The verdict is the blast-radius lens's**: `delete`, `regression`, or `still valid`
+  per entry. The synthesizer never sees the diff, so it de-dupes the verdicts by target
+  and formats them, and never judges one: a `delete` or `regression` becomes a `V-NNN`
+  block; a `still valid` becomes a Drop List row with reason `still valid`.
+- **Unreviewed runs.** Where no human reviews the document before the run — grind's test
+  phase — the orchestrator converts every `delete` whose `**Why:**` cites neither removed
+  code nor a plan Requirement or unit into `regression`, before [the gate](#the-gate).
+- **The keep and drop rules do not re-judge a revise verdict.** `unchanged code` never
+  applies — a revise target is by definition existing test code.
+- **Uncapped**, like every other mode.
+- Executed per [executing revise cases](#executing-revise-cases).
 
 ## The raw scratch contract
 
@@ -341,23 +374,23 @@ authoritative description of each value — **pass the values, not restatements 
 mean.** It owns the filename convention
 (`docs/tests/YYYY-MM-DD-NNN-<slug>-test-plan.md`) and sanitizes the slug the same way the
 review synthesizer does, so `feat/foo` becomes `feat-foo`. It writes the document itself
-and returns the document path plus the four counts below.
+and returns the document path plus the three counts below.
 
 ### The count check
 
-After synthesis, check the returned counts. The four parts must close against the raw
+After synthesis, check the returned counts. The three parts must close against the raw
 proposed cases:
 
 ```
-kept + dropped + merged + over-cap  ≈  raw proposed
+kept + dropped + merged  ≈  raw proposed
 ```
+
+Revise proposals count as proposed cases: a `V-NNN` block is kept, a `still valid` row is
+dropped.
 
 A large shortfall means the payload overflowed the synthesizer's context and cases were
 silently lost. On a shortfall, report it; a caller that can split the dispatch into
 lens-ordered batches does so rather than re-issuing one oversized call.
-
-**`over-cap` is counted separately from `dropped`** precisely so this arithmetic closes
-without the cap hiding inside the drop count.
 
 ## Verifying the document
 
@@ -365,8 +398,9 @@ On success, verify the document rather than trusting the return message:
 
 - Confirm the returned path exists on disk.
 - Grep it for the structural anchors every consumer needs: a `## Drop List` heading, a
-  `## Receipts` heading, and at least one `### T-<NNN>:` heading with `**Status:**` on a
-  line below it.
+  `## Receipts` heading, and at least one `### T-<NNN>:` or `### V-<NNN>:` heading with
+  `**Status:**` on a line below it. A document holding only revise cases verifies; one
+  holding any `V-NNN` block also carries a `## Revise` heading.
 - Confirm the frontmatter `target:` matches this run's branch and `date:` matches today.
   This guards against a stale same-path document from an earlier run.
 - Re-read the verified file as the source of truth for the completion report. Never report
@@ -419,6 +453,32 @@ The `### T-<NNN>:` heading with `**Status:**` below it is the anchor every consu
 against. **A new per-case field goes below `**Status:**`, never between it and the
 heading.**
 
+### Revise blocks
+
+Under `## Revise`, after the `T-NNN` cases:
+
+```markdown
+### V-001: <short descriptive title>
+
+**Mode:** `auto`
+**Action:** `delete`   <!-- delete | regression -->
+**Target test:** `/abs/path/tests/test_auth.py::test_refresh_expired`
+**Source:** blast-radius
+**Viability:** High
+
+**Why:** <one sentence: a `delete` cites the removed code or the plan Requirement or unit that changed the behavior; a `regression` names what the change broke>
+
+**Expected result:** <"removed" for a delete; the behavior the test still asserts for a regression>
+
+**Status:** `untested`
+
+**Notes:**
+```
+
+`### V-<NNN>:` with `**Status:**` below it is an anchor exactly like `### T-<NNN>:`, and
+the same field-placement rule holds. Every anchor rule in this spec accepts
+`### (T|V)-<NNN>:`.
+
 ### The five `Status:` values
 
 `untested | pass | fail | blocked | skip`
@@ -427,8 +487,9 @@ heading.**
 - `pass` — the case was run and behaved as expected.
 - `fail` — the case was run and did not.
 - `blocked` — the environment to run it was unavailable. Belongs to `browser` and `manual`
-  modes; an `auto` case is never `blocked`, because a missing runner stops the mode before
-  any case is touched.
+  modes, and to a revise case whose [gate](#the-gate) was inconclusive; a `T-NNN` `auto`
+  case is never `blocked`, because a missing runner stops the mode before any case is
+  touched.
 - `skip` — deliberately not run this time.
 
 **Every mode may move a case to any of these values on every run; last run wins.** A case
@@ -455,15 +516,27 @@ The orchestrator's signature on every case whose test it decided, written **dire
 **Filter:** reruns incomplete — <n>/<N>
 ```
 
+```markdown
+**Status:** `pass`
+**Filter:** deleted
+```
+
 The first is the happy path and the most common line in any document: a test that collected,
 passed, and passed its full reruns is `kept`, and it carries the line like every other
 decided case. `kept` takes no detail — there is nothing to qualify.
 
 Grammar: `**Filter:** <outcome>[ — <detail>]`, always one line. The outcomes are
-`discarded`, `reruns incomplete`, and `kept`. A test discarded before it ever ran, for
-reaching outside the repository, carries `discarded — forbidden operation` and names the
-pattern that matched; one discarded for coming back from its fix round with fewer
-assertions carries `discarded — assertions weakened`. This is the same signature-line-under-
+`discarded`, `reruns incomplete`, `kept`, `deleted`, `still valid`, `regression`, and
+`blocked`. A test discarded
+before it ever ran, for reaching outside the repository, carries `discarded — forbidden
+operation` and names the pattern that matched; one discarded for coming back from its fix
+round with fewer assertions carries `discarded — assertions weakened`; one that never
+reached pass before [the phase clock](#time-limits) expired carries `discarded —
+timeout`, and one whose single run passed `test_timeout` carries `discarded — slow`. The last four belong to revise cases, per [the gate](#the-gate): `deleted` is a
+`delete` carried out (`Status: pass`); `still valid` is a target that passed the gate, so
+nothing was touched (`Status: pass`); `regression` is a `regression` whose target failed
+the gate, left untouched (`Status: fail`); `blocked — <reason>` is an inconclusive gate
+(`Status: blocked`). This is the same signature-line-under-
 `Status:` shape `/review-sweep` writes with `**Sweep:**` and `/grind` with `**Grind:**` —
 a case carrying no `**Filter:**` line was decided by a human in `manual` mode or by a
 browser run, not by the filters.
@@ -519,12 +592,16 @@ directory, or a spawned shell. The discard records `**Filter:** discarded — fo
 operation` and names the pattern. This is a coarse grep, not a sandbox; it catches the
 plausible accident, not a determined one.
 
-Every newly written test passes all three, in order, before it is kept:
+Every newly written test passes all three before it is kept:
 
 1. **Collect or compile.** The test is discovered by the runner and the file parses.
 2. **Pass.** The test runs green.
 3. **N consecutive reruns.** The test passes `test_reruns` more times in a row (see
    [Prerequisites](#prerequisites) for the default).
+
+**Breadth-first.** Steps 1 and 2 run for **every** new test, fix rounds
+included, before any test's reruns begin. The phase clock then spends itself on reruns,
+never on a test that has not yet been seen to pass.
 
 **Only the new tests are run — never the suite.** Running the suite here would duplicate
 the CI run that `/ship`'s push triggers, which is the whole reason the suite was taken out
@@ -532,7 +609,7 @@ of `/work`.
 
 ### Classifying a collect failure, and the one fix round
 
-A failure at step 1 is classified before anything is re-dispatched:
+A failure at step 1 is classified before anything is re-dispatched.
 
 - **Placement or import** (wrong directory, unresolvable import path, a fixture the repo
   keeps somewhere else) → the **orchestrator** re-briefs the writer once with the correct
@@ -560,20 +637,23 @@ not by the instruction. A failure at step 2 goes straight to the writer's one fi
 step 3 is a flake and discards immediately, with no fix round — a test that passes
 sometimes is exactly what the filter exists to catch.
 
-### The rerun wall clock
+### Time limits
 
-The rerun loop is capped at `test_rerun_timeout` per test. A test that hits the cap is
-**kept**, with `**Filter:** reruns incomplete — <n>/<N>` — a slow suite is not evidence of
-a bad test, and discarding on slowness would silently strip coverage from the repos that
-need it most.
+**Every single run of a test is capped at `test_timeout`** — its first run and each
+rerun. A run that hits the cap is killed; the test is deleted and recorded
+`**Filter:** discarded — slow`. The slow test is the one flagged, never a test queued
+behind it.
 
-**The per-test cap does not bound the phase.** Fifteen cases at the per-test default would
-run for hours, so the filter phase carries its own cap, `test_run_timeout` (see
-[Prerequisites](#prerequisites)), measured across every test in the run. When it expires,
-the tests still unfiltered are **kept unverified**, each with
-`**Filter:** reruns incomplete — 0/<N>`, and the run reports how many never ran. A caller
-that is itself clocked re-reads its own budget between tests rather than only before the
-phase.
+**`test_run_timeout` is a backstop across the whole run.** When it expires:
+
+- **Reruns are cut, nothing else.** A test that passed step 2 keeps `**Filter:** reruns
+  incomplete — <n>/<N>`, `0/<N>` included.
+- **A test that never reached pass is discarded.** The orchestrator deletes it and records
+  `**Filter:** discarded — timeout`. No never-run test is ever kept or shipped.
+
+**The report names every `discarded — slow` and `discarded — timeout` case ID**, so the
+slow tests are the first thing a reader sees. A caller that is itself clocked re-reads its
+own budget between tests rather than only before the phase.
 
 ### Live-service tests
 
@@ -585,6 +665,44 @@ The flag is **orchestrator-derived**: grep the written test for the repo's live-
 markers and fixture names, discovered alongside the test conventions. The writer's own
 per-test hint is advisory. **On disagreement, run the full reruns** and say so in one
 report line — over-running a test costs time, under-running one lets a flake through.
+
+## Executing revise cases
+
+`V-NNN` cases run in `auto` mode alongside the `T-NNN` cases. None is ever rewritten, and
+none passes through the assurance filters — there is no new test to filter.
+
+### The gate
+
+Before anything else happens to a `V-NNN` case, the orchestrator runs its **original
+target** once on the current tree: the one test, or the whole file for a whole-file
+`delete` — never the suite.
+
+- **Passes** → `Status: pass`, `**Filter:** still valid`. Nothing is deleted.
+- **Fails** — a clean test failure, or a collection error from a removed module → the
+  action proceeds: [delete](#delete) or [regression](#regression).
+- **Anything else** — no tests collected, a bad test ID, an environment error, a timeout →
+  nothing is touched; `Status: blocked`, `**Filter:** blocked — <reason>`.
+
+### Delete
+
+- **Whole file** (no `::`) → only when the whole file failed the gate, and only when the
+  path is inside the test directories the writer is given; a path outside them is not
+  deleted and the case is `blocked`. The orchestrator deletes it and confirms the path is
+  gone, as for a [discard](#classifying-a-collect-failure-and-the-one-fix-round).
+- **One test within a file** → the orchestrator copies the file to
+  `docs/tests/.raw/<sanitized-slug>/revise/`, keeping its repo-relative path; the writer
+  removes the named test and nothing else; the orchestrator confirms the rest of the file
+  still collects. If it does not, the writer restores the file from that snapshot — never
+  `git checkout`, never a whole-file delete — and the case records `Status: blocked`,
+  `**Filter:** blocked — remaining file does not collect`. The snapshot is scratch,
+  deleted once every revise outcome is recorded.
+
+A done delete records `Status: pass`, `**Filter:** deleted`.
+
+### Regression
+
+Never touched and never sent to the writer. A target that failed the gate records
+`Status: fail`, `**Filter:** regression`, and is left for CI and the human to see.
 
 ## Preflights
 
@@ -631,10 +749,13 @@ Both `/test-plan-run` and grind's `testing` rung enter here.
 - **A case at `untested` or `fail` with no test on disk is written.**
 - **A case at `untested` or `fail` whose test file exists is re-verified, not rewritten.**
   The file on disk always wins.
+- **A `V-NNN` `delete` whose target is already gone** re-checks collection of the
+  remaining file, if any, and nothing more. Any other `V-NNN` case goes through
+  [the gate](#the-gate) again.
 - **There is no rewrite path.** No flag, no argument, no prompt rewrites a test file that
   exists. Deleting the file by hand is how a human asks for a rewrite.
 
-Case IDs are the join key for all of this, which is why
+Case IDs are what tie a test on disk to its case, which is why
 [every written test names its case](#every-test-names-its-case).
 
 ### Every test names its case
@@ -702,9 +823,12 @@ Per run:
 - **Exit code** — the integer the command returned.
 - **Passed / failed** — counts read from **real runner output**, never inferred from the
   exit code.
-- **Reruns** — per test: `T-NNN: <n>/<N>`, or `live-service: 1 run` for a test that ran
-  once by [the live-service rule](#live-service-tests).
-- **Discarded** — per discarded test: the case ID and the filter that discarded it.
+- **Reruns** — per test: `T-NNN: <n>/<N>`, or `live-service: 1 run` for a
+  test that ran once by [the live-service rule](#live-service-tests).
+- **Revised** — per revise case: `V-NNN: deleted`, `V-NNN: still valid`, `V-NNN:
+  regression`, or `V-NNN: blocked — <reason>`, with the gate command.
+- **Discarded** — per discarded test: the case ID and the filter that discarded it; every
+  `discarded — timeout` case is named.
 
 The block is appended, never rewritten. An earlier run's receipts stay exactly as written.
 
@@ -725,6 +849,7 @@ wording is the caller's own.
 | auto | n | n | n | n | n | n |
 | browser | n | n | n | n | n | n |
 | manual | n | n | n | n | n | n |
+| revise | n | n | n | n | n | n |
 
 ### Receipts
 
@@ -774,8 +899,8 @@ carries `paths`. The body below the marker heading:
 
 ```markdown
 **Doc:** `docs/tests/<filename>`
-**Cases:** <n> auto / <n> browser / <n> manual
-**Dropped:** <n> (<n> over cap)
+**Cases:** <n> auto / <n> browser / <n> manual / <n> revise
+**Dropped:** <n>
 **Lenses:** <which contributed; any empty or failed>
 ```
 
@@ -792,6 +917,7 @@ The body is the same in both, and nothing else belongs in it:
 **Doc:** `docs/tests/<filename>`
 **Scope:** <auto | browser | manual>
 **Result:** <n> pass / <n> fail / <n> blocked / <n> skip
+**Revised:** <n> deleted / <n> still valid / <n> regression
 **Receipts:** `<command>` → exit <code>, <n> passed
 **Discarded:** <n> (<case id: filter>, …)
 ```
@@ -826,11 +952,18 @@ happened.
   anchors the consumers need, and is this run's rather than an earlier one's.
 - **Check `target:` before any write.** A document from another branch is never acted on.
 - **A test on disk is never rewritten.** A re-run re-verifies what exists and writes only
-  what is missing.
-- **Only the new tests are run, never the suite.** CI runs the suite once, off `/ship`'s
-  push.
-- **Every kept test names its case.** Without the ID, receipts and resume have no join
-  key.
+  what is missing. The one exception: a within-file `delete` removes one named test.
+- **Every revise case passes [the gate](#the-gate) first.** Only a failing target is
+  deleted or recorded `regression`; a passing one is `still valid` and untouched.
+- **Only the new tests are run, never the suite.** The gate runs one original target. CI
+  runs the suite once, off `/ship`'s push.
+- **Breadth-first: every test reaches pass before any reruns.** The phase clock cuts only
+  reruns; a test that never passed is discarded as `timeout`, never shipped.
+- **Nothing is capped.** Not `auto`, not the revise bucket.
+- **The revise verdict is the blast-radius lens's.** The synthesizer formats it; the spec
+  lens never sees the work doc.
+- **Every kept test names its case.** Without its `T-NNN`, receipts and resume cannot
+  find it.
 - **Receipts, never "tests pass."** The command, the exit code, the counts from real
   runner output, the reruns, and the discards.
 - **A discarded test leaves its case `untested`.** It never ran, so it never failed.

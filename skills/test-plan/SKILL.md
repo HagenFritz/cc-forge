@@ -4,7 +4,7 @@ description: >
   Produce a reviewable test plan for the current branch. Dispatches the three test
   lenses in parallel — spec (no file tools), blast-radius (full tools), surface (UI
   paths) — then hands their proposals to the test-synthesizer, which de-dupes, tags,
-  scores, caps, and writes the document to docs/tests/ with its Drop List. Stops once
+  scores, and writes the document to docs/tests/ with its Drop List. Stops once
   the document verifies; it runs nothing and writes no test files. Triggers on phrases
   like "write a test plan", "plan the tests for this branch", "test-plan", or passing a
   path to the plan this branch implements.
@@ -17,7 +17,7 @@ allowed-tools: Bash, Read, Write, Grep, Glob, Task
 
 <command_purpose> Propose, filter, and record the test cases worth running for what changed on this branch, and stop for review. </command_purpose>
 
-`/test-plan` obeys [the test-protocol spec](../test-protocol/SKILL.md) and embeds only its own prose: origin discovery, how it builds the surface digest, its lens briefs, its filled stamp template, and its terminal summary. Every shared rule — the roster, what each lens may see, the keep and drop rules, the cap, the scratch contract, the count check, document verification, the report's shape — lives in the spec and is cited, never restated.
+`/test-plan` obeys [the test-protocol spec](../test-protocol/SKILL.md) and embeds only its own prose: origin discovery, how it builds the surface digest, its lens briefs, its filled stamp template, and its terminal summary. Every shared rule — the roster, what each lens may see, the keep and drop rules, the revise bucket, the scratch contract, the count check, document verification, the report's shape — lives in the spec and is cited, never restated.
 
 It is the **producer** half of the pair. It writes the document and stops; `/test-plan-run` is what acts on it.
 
@@ -44,6 +44,7 @@ Run these before anything is dispatched:
 - **Branch and repo root** — `git rev-parse --abbrev-ref HEAD` and `git rev-parse --show-toplevel`. The branch is the document's `target:` and the unsanitized slug; the root resolves `docs/tests/`.
 - **Default branch** — the diff base for the digest and the blast-radius lens.
 - **Origin documents** — the newest `docs/plans/*.md` whose frontmatter names this branch's issue or whose title matches the branch, and the brainstorm its `origin:` field names. An argument-supplied path skips this discovery.
+- **Work doc** — per [the work-protocol readers rule](../work-protocol/SKILL.md#readers): the newest `docs/work/*.md` whose `target:` matches this branch. No match, or no doc, means none is passed — never a stop.
 - **Linked issue and PR** — the issue number from the branch name, and `gh pr view --json number,body` for an open PR on this branch. Both are ladder rungs and the stamp's target.
 
 ### 2. Resolve the intent
@@ -99,6 +100,7 @@ Task forge:test-plan:blast-radius-lens(
   - the diff, or the base ref to diff against
   - the surface digest
   - the repo's test conventions
+  - the work doc's absolute path, when step 1 found one
 )
 
 Task forge:test-plan:surface-lens(
@@ -108,13 +110,13 @@ Task forge:test-plan:surface-lens(
 )
 ```
 
-Never tell a lens to "read X" in place of putting X in its brief, and never hand the spec lens the diff, a file path to open, or anything the digest excludes.
+Never tell a lens to "read X" in place of putting X in its brief, and never hand the spec lens the diff, the work doc, a file path to open, or anything the digest excludes.
 
 Handle an empty or failed lens by [the spec's lens-failure posture](../test-protocol/SKILL.md#lens-failure-posture).
 
 ### 6. Persist and synthesize
 
-Persist each lens's raw returned output per [the spec's raw scratch contract](../test-protocol/SKILL.md#the-raw-scratch-contract) **before** dispatching the synthesizer, then [dispatch it](../test-protocol/SKILL.md#dispatching-the-synthesizer) with the six values its `## Inputs` section names, lens output attributed per lens so it can write `**Source:**`. Run [the count check](../test-protocol/SKILL.md#the-count-check) on what comes back, summing each lens's `Proposed: <n> cases` line as the raw total.
+Persist each lens's raw returned output per [the spec's raw scratch contract](../test-protocol/SKILL.md#the-raw-scratch-contract) **before** dispatching the synthesizer, then [dispatch it](../test-protocol/SKILL.md#dispatching-the-synthesizer) with the six values its `## Inputs` section names, lens output attributed per lens so it can write `**Source:**`. Run [the count check](../test-protocol/SKILL.md#the-count-check) on what comes back, summing each lens's `Proposed: <n> cases` line plus the blast-radius lens's `Revise: <n> verdicts` line as the raw total.
 
 The synthesizer is always-run infrastructure: never count it among the lenses and never list it in a roster.
 
@@ -124,9 +126,9 @@ Follow [the spec's verification section](../test-protocol/SKILL.md#verifying-the
 
 ### 8. Report
 
-Emit [the spec's completion report](../test-protocol/SKILL.md#the-completion-report) with `Test plan written` as the heading, filled from the verified document's own sections — the case table from its `### T-<NNN>:` blocks, `Dropped` from its `## Drop List`, `Lenses` from its frontmatter plus the rung that fed the spec lens. `Receipts` is empty on a producer run and the heading is never omitted.
+Emit [the spec's completion report](../test-protocol/SKILL.md#the-completion-report) with `Test plan written` as the heading, filled from the verified document's own sections — the case table from its `### T-<NNN>:` blocks plus a `revise` row from its `### V-<NNN>:` blocks, `Dropped` from its `## Drop List`, `Lenses` from its frontmatter plus the rung that fed the spec lens. `Receipts` is empty on a producer run and the heading is never omitted.
 
-**Read the counts; never assume a shape.** A document with zero surviving cases is a valid outcome — its Drop List is the whole of it — so the summary must hold up with no `### T-` block present.
+**Read the counts; never assume a shape.** A document with zero surviving cases is a valid outcome — its Drop List is the whole of it — so the summary must hold up with no `### T-` or `### V-` block present.
 
 Close with [the spec's next-steps block](../test-protocol/SKILL.md#the-next-steps-block), which ends this skill at "review the document, then `/test-plan-run`."
 
@@ -142,8 +144,8 @@ Compose the body below, write it to a temp file with the Write tool, and post:
 ### 🧪 /test-plan — test plan written
 
 **Doc:** `docs/tests/<filename>`
-**Cases:** <n> auto / <n> browser / <n> manual
-**Dropped:** <n> (<n> over cap)
+**Cases:** <n> auto / <n> browser / <n> manual / <n> revise
+**Dropped:** <n>
 **Lenses:** <which contributed; any empty or failed>
 ```
 

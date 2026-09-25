@@ -44,7 +44,7 @@ Every plan should contain:
 - Exact file paths for the work being proposed
 - Decisions with rationale, not just tasks
 - Existing patterns or code references to follow
-- Specific verification outcomes
+- Conformance checks under `Verification` that a read-only pass can confirm — files, symbols, greps, config — leaving behavior to the test plan
 - Clear dependencies and sequencing
 
 A plan is ready when an implementer can start confidently without needing the plan to write the code for them.
@@ -226,7 +226,7 @@ For **Standard** or **Deep** plans, or when user flow completeness is still uncl
 
 Use the output to:
 - Identify missing edge cases, state transitions, or handoff gaps
-- Tighten requirements trace or verification strategy
+- Tighten requirements trace or scenario coverage
 - Add only the flow details that materially improve the plan
 
 ### Phase 2: Resolve Planning Questions
@@ -314,7 +314,7 @@ For each unit, include:
 - **Execution note** - optional, only when the unit benefits from external delegation
 - **Technical design** - optional pseudo-code or diagram when the unit's approach is non-obvious and prose alone would leave it ambiguous. Frame explicitly as directional guidance, not implementation specification
 - **Patterns to follow** - existing code or conventions to mirror
-- **Verification** - how an implementer should know the unit is complete, expressed as outcomes rather than shell command scripts
+- **Verification** - checks that the change was made correctly: files exist, symbols or strings are present or gone, config is set. Write each line so it can be confirmed with read-only commands (`grep`, `ls`, `git`, file reads); the [scope observer](../work-protocol/SKILL.md#wrap-up-mode) checks them once at wrap-up and silently skips any line that would need project code run. Behavioral outcomes do not belong here — they belong to the test plan, which never reads this field
 
 Use `Execution note` sparingly. Its only use is:
 - `Execution note: Execution target: external-delegate`
@@ -461,7 +461,7 @@ deepened: YYYY-MM-DD  # optional, set later by blueprint-deepen when the plan is
 - [Existing file, class, or pattern]
 
 **Verification:**
-- [Outcome that should hold when this unit is complete]
+- [Read-only conformance check: a file, symbol, string, or config value that should be present or gone]
 
 ## System-Wide Impact
 
