@@ -248,8 +248,9 @@ Audits one unit's diff against that unit's plan fields.
 | `/work` | after the orchestrator's conformance review, **before** the unit's commit | the uncommitted working tree, `git diff HEAD`; the orchestrator marks the worker's new files intent-to-add (`git add -N`) first so they appear in it |
 | grind | after the build agent returns, once per unit | that unit's commit range, `git diff <base>..<head>`, from the build agent's return verified against `git log` |
 
-**Inputs:** the absolute plan path, the unit ordinal, the diff or range, and the
-orchestrator's addenda list (empty when there are none).
+**Inputs:** the absolute plan path, the unit ordinal, the diff or range, the
+orchestrator's addenda list (empty when there are none), and optionally the working
+directory — the absolute path of the tree to audit, defaulting to the current directory.
 
 **Addenda are allowed extras.** A drive-by fix the orchestrator rode on the worker's brief
 is in scope for that unit; the observer flags nothing it lists. Addenda are the
@@ -258,7 +259,10 @@ orchestrator's words, not the worker's return, so passing them does not breach t
 ### `wrap-up` mode
 
 Runs once, after the last unit, over every unit the run committed — units reported blocked
-and units the plan marks `retired` are not checked. It checks each unit's `Verification`
+and units the plan marks `retired` are not checked.
+
+**Inputs:** the absolute plan path, the unit ordinals to check, and optionally the working
+directory, as in [`unit` mode](#unit-mode). It checks each unit's `Verification`
 lines against the tree **with read-only commands only** — `grep`, `ls`, `git`, and file
 reads. A line that would need project code executed is behavioral and is **skipped
 silently**. A miss becomes a `D1` card naming the failed line in `**Deviation:**`. A

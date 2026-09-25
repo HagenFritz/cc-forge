@@ -50,7 +50,7 @@ This command takes a work document (plan, specification, or todo file) and execu
 
 3. **Create Todo List**
    - Use your available task tracking tool (e.g., TodoWrite, task lists) to break the plan into actionable tasks
-   - Derive tasks from the plan's implementation units, dependencies, files, and verification criteria
+   - Derive tasks from the plan's implementation units, dependencies, and files
    - Carry each unit's `Execution note` into the task when present
    - For each unit, read the `Patterns to follow` field before implementing — these point to specific files or conventions to mirror
    - Use each unit's `Goal` and `Files` as the "done" signal for that task; its `Verification` lines are checked once, by the observer's wrap-up pass (Phase 4)

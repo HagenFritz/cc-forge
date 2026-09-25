@@ -29,11 +29,13 @@ Your dispatch prompt names the mode. If a value below is missing, say which and 
 2. **The unit ordinal** to audit.
 3. **The diff or range** — `git diff HEAD` for an uncommitted `/work` unit, or a `<base>..<head>` range for a grind unit.
 4. **The addenda list** — drive-by changes the orchestrator added to the unit's brief. Possibly empty. Everything on it is in scope; flag none of it.
+5. **The working directory** — optional. The absolute path of the tree to audit; run every command there. Defaults to the current directory.
 
 ### `wrap-up` mode
 
 1. **The absolute plan path.**
 2. **The unit ordinals to check** — every unit the run committed. Units reported blocked are already left out; skip any the plan marks `retired` as well.
+3. **The working directory** — optional, as in `unit` mode.
 
 ## Method
 

@@ -89,7 +89,7 @@ Several were ported from [EveryInc/compound-engineering-plugin](https://github.c
 | `spec-lens` | Proposes black-box behavior cases from the stated intent; **no tools** | test-plan, grind |
 | `blast-radius-lens` | Proposes regression cases for adjacent behavior; reads the diff and its call sites | test-plan, grind |
 | `surface-lens` | Proposes browser and manual cases from changed UI paths; empty on a backend diff | test-plan, grind |
-| `test-synthesizer` | De-dupes, tags, scores, caps, and writes the `docs/tests/` document with its Drop List | test-plan, grind |
+| `test-synthesizer` | De-dupes, tags, scores, formats revise verdicts, and writes the `docs/tests/` document with its Drop List | test-plan, grind |
 | `test-writer` | Writes the `auto` tests from the cases and the public surface; never runs anything | test-plan-run, grind |
 
 ## workflow/
