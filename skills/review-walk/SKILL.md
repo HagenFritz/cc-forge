@@ -116,15 +116,16 @@ Rules per line:
   too mundane to have a principle behind it (a typo, a stale comment), omit the line
   rather than invent one.
 - **Fix** — one sentence when the doc describes one remedy. When `Fix:` (or `Problem:`)
-  describes more than one, number them, one sentence each, and end each with **why that fix
-  on its own terms** — a precedent in the codebase, the standard practice, the smallest
-  blast radius. No comparison between options, no pros and cons; each line justifies
-  itself in its own context.
+  describes more than one, letter them `A.`, `B.`, …, one sentence each, and end each with
+  **why that fix on its own terms** — a precedent in the codebase, the standard practice,
+  the smallest blast radius. No comparison between options, no pros and cons; each line
+  justifies itself in its own context. Letters, never numbers: numbered options run into the
+  numbered action list and render as one Markdown list, renumbering the actions.
 
   ```
   Fix:
-  1. <one sentence> — <why this one>
-  2. <one sentence> — <why this one>
+  A. <one sentence> — <why this one>
+  B. <one sentence> — <why this one>
   ```
 
 **Every summary sentence on the card — Sweep, Problem, Concept, each Fix — follows
@@ -147,7 +148,7 @@ Map the reply to one action:
 
 | Reply | Action |
 |-------|--------|
-| `1`, `implement`, `do it`, `fix`, or instructions describing a change | **Implement** (§5). Instructions that modify the fix are followed — the user is choosing the code, not the walk. When the card has more than one Fix option, the reply names it after the action (`1 2` = implement option 2); bare `1` → ask which, in one line of text, and wait. |
+| `1`, `implement`, `do it`, `fix`, or instructions describing a change | **Implement** (§5). Instructions that modify the fix are followed — the user is choosing the code, not the walk. When the card has more than one Fix option, the reply names it by letter after the action (`1 B` = implement option B); bare `1` → ask which, in one line of text, and wait. |
 | `2`, `defer`, `issue`, `file it`, `later` | **Defer** (§5). |
 | `3`, `wont-fix`, `won't fix`, `skip`, `no`, optionally followed by a reason number | **Won't fix** (§5). A reason given in the reply pre-answers the reason question. |
 | `4 <x>`, `term <x>`, `add term`, `what is <x>` | **Add term** (§5). Self-loop. |
@@ -166,7 +167,7 @@ The review doc is the durable progress store. Every advancing action mutates the
 ### Implement
 
 1. **Before touching code**, set `Status: in-progress` so a crash leaves clear state.
-2. Apply the fix. If the user picked a numbered option or gave instructions, follow those;
+2. Apply the fix. If the user picked a lettered option or gave instructions, follow those;
    otherwise follow the doc's `Fix:`. Do not invent scope. If the fix is unclear, ask in one
    line of text before editing.
 3. Set `Status: done` and append an `Applied:` line directly below it:
