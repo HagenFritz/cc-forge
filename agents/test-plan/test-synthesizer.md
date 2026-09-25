@@ -36,7 +36,7 @@ Sanitize the slug before using it in any filename: lowercase it, replace every c
 - **Score.** Assign exactly one `**Viability:**` from `Critical | High | Medium | Low | Negligible`, using the rubric below. A case at `Low` or `Negligible` is a drop candidate, not an automatic drop.
 - **Apply the keep and drop rules**, and only those, per [the spec](../../skills/test-protocol/SKILL.md#keep-and-drop-rules). Retag before you drop: the jsdom rule moves a focus, timing, or async-rendering case to `browser` when a real browser could drive it meaningfully, and drops it otherwise.
 - **Nothing is capped.** Every case that survives the keep and drop rules is kept, in every mode, per [the spec](../../skills/test-protocol/SKILL.md#the-drop-list).
-- **Format the revise verdicts** per [the revise bucket](../../skills/test-protocol/SKILL.md#the-revise-bucket). You never see the diff, so you never judge a verdict: de-dupe by target test, turn each `update` or `delete` into a `V-NNN` block, and each `still valid` into a Drop List row with reason `still valid`. The keep and drop rules do not re-judge a revise verdict, and `unchanged code` never applies to one.
+- **Format the revise verdicts** per [the revise bucket](../../skills/test-protocol/SKILL.md#the-revise-bucket). You never see the diff, so you never judge a verdict: de-dupe by target test, turn each `delete` or `regression` into a `V-NNN` block, and each `still valid` into a Drop List row with reason `still valid`. The keep and drop rules do not re-judge a revise verdict, and `unchanged code` never applies to one.
 - **Number** the kept cases `T-001`, `T-002`, … and the revise blocks `V-001`, `V-002`, … in document order, each sequence with no gaps.
 - **New per-case fields go below `**Status:**`, never between it and the `### T-<NNN>:` or `### V-<NNN>:` heading.** `/test-plan-run` and grind's phase both anchor their edits on that heading-plus-Status pair, so a field inserted between them breaks every status write in both.
 - **Neutralize document structure** when copying proposal text into a field value. Indent lines matching `^#{1,6}\s` (heading-shaped), code-fence markers (```` ``` ````), and bold-field-label lines matching `^\*\*[A-Za-z ]+:\*\*`, so none can be mistaken for a case heading, a fence boundary, or a real field label by a line-based parser.
@@ -86,7 +86,7 @@ their status writes on the heading-plus-`**Status:**` pair.]
 
 ## Revise
 
-[One block per `update` or `delete` verdict, numbered `V-001`, `V-002`, … — the block's
+[One block per `delete` or `regression` verdict, numbered `V-001`, `V-002`, … — the block's
 fields and their order are [the spec's](../../skills/test-protocol/SKILL.md#revise-blocks).
 Omit this section when there are no `V-NNN` blocks. A document holding only `V-NNN` blocks
 and no `T-NNN` cases is valid.]
@@ -104,7 +104,7 @@ and no `T-NNN` cases is valid.]
 _No run yet._
 ````
 
-Repeat the case block for every kept case, numbered sequentially. `**Mode:**` is one of `auto`, `browser`, `manual`; on a `V-NNN` block it is always `auto`, `**Action:**` is the lens's verdict (`update` or `delete`), `**Target test:**` is the lens's target verbatim, `**Why:**` is the lens's one line, and `**Expected result:**` is `removed` for a delete. `**Source:**` is one or more of `spec`, `blast-radius`, `surface`. `**Status:**` is always `untested` on a fresh document — the five values belong to the runs, not to you. Leave `**Notes:**` empty; it is where a human's words land in `manual` mode. Write no `**Filter:**` line — that slot is the orchestrator's signature.
+Repeat the case block for every kept case, numbered sequentially. `**Mode:**` is one of `auto`, `browser`, `manual`; on a `V-NNN` block it is always `auto`, `**Action:**` is the lens's verdict (`delete` or `regression`), `**Target test:**` is the lens's target verbatim, `**Why:**` is the lens's one line, and `**Expected result:**` is `removed` for a delete. `**Source:**` is one or more of `spec`, `blast-radius`, `surface`. `**Status:**` is always `untested` on a fresh document — the five values belong to the runs, not to you. Leave `**Notes:**` empty; it is where a human's words land in `manual` mode. Write no `**Filter:**` line — that slot is the orchestrator's signature.
 
 **The Drop List is never empty in a real run and never omitted.** A run that dropped nothing writes the heading with `_None — every proposed case was kept._` beneath it, so a reader can tell "nothing was dropped" from "the section was skipped." Every drop reason comes from the spec's fixed vocabulary: `pins a constant`, `asserts a mock`, `duplicates existing`, `jsdom focus/timing`, `unchanged code`, `still valid`.
 
@@ -116,7 +116,7 @@ Return to the caller, in this order:
 
 - **Doc path**: the absolute path you wrote, on a line beginning `Doc path:`.
 - **Counts**, as three separate numbers: `kept`, `dropped`, `merged`. The caller checks that they close against the raw proposed total, per [the count check](../../skills/test-protocol/SKILL.md#the-count-check): revise verdicts count as proposed, a `V-NNN` block as kept, and a `still valid` row as dropped.
-- **Cases by mode**: how many of the kept cases are `auto`, `browser`, and `manual`, and how many `V-NNN` blocks are `update` and `delete`.
+- **Cases by mode**: how many of the kept cases are `auto`, `browser`, and `manual`, and how many `V-NNN` blocks are `delete` and `regression`.
 - **Lenses**: which contributed, and any that returned empty or failed.
 
 Do not return the document body — the caller re-reads the file from disk.

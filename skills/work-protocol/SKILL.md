@@ -150,7 +150,7 @@ contract; the orchestrator records them. One entry per test:
 - **De-duped by path.** A second report of the same `<path>[::<name>]` merges into the
   existing entry: its unit ordinal is added and its reason merged into the sentence, never
   a second entry.
-- Entries are appended, never removed by a writer. Judging them — update, delete, or still
+- Entries are appended, never removed by a writer. Judging them — delete, regression, or still
   valid — belongs to the test pipeline under
   [`test-protocol`](../test-protocol/SKILL.md), not to this doc.
 - No entries: `_None reported._` under the heading.
@@ -170,6 +170,7 @@ always holds the consolidated digest rather than a log of every revision of it. 
 ```markdown
 ### D<severity>-<n>: <title>
 **Status:** `open`   <!-- open | kept | reverted | fixed -->
+**Category:** <extra | missing | changed>
 **Unit:** <ordinal>: <unit title>
 **Files:**
 - <absolute path>
@@ -178,6 +179,10 @@ always holds the consolidated digest rather than a log of every revision of it. 
 ```
 
 - **One sentence per field.** `**Files:**` is always a hyphenated list, even for one file.
+- **Neutralize before writing.** `**Deviation:**` and `**Reason:**` are agent prose beside
+  the anchor every reader keys on: collapse each to one line and escape heading-shaped,
+  code-fence, and bold-field-label fragments, as
+  [the review synthesizer](../../agents/review/review-synthesizer.md) does.
 - `### D<severity>-<n>:` with `**Status:**` on the line directly below is the anchor every
   reply edits against. A new per-card field goes below `**Status:**`, never between it and
   the heading.
@@ -195,6 +200,20 @@ always holds the consolidated digest rather than a log of every revision of it. 
 The levels deliberately parallel review's `P1`/`P2`/`P3` while staying visibly distinct
 from review findings. The rubric is tuned here, never in a caller.
 
+### Category
+
+Every card carries exactly one, independent of severity — the way a review finding carries
+a `Category:` beside its `P` tier. The three collapse the HAZOP guide words for a deviation
+from design intent.
+
+| Category | Means |
+|---|---|
+| `extra` | Did something the unit did not ask for — an unlisted file, an added behavior, a crossed `Scope Boundary` |
+| `missing` | Skipped part of what the unit asked for — including a `Verification` line that failed at wrap-up |
+| `changed` | Did the asked-for thing differently from the unit's `Approach` |
+
+The category picks the [reply verbs](#reply-verbs).
+
 ### Numbering
 
 `n` is a **per-severity sequence in discovery order**: the first `D2` found is `D2-1`, the
@@ -210,8 +229,8 @@ each severity continues at its highest existing `n` + 1.
   ever writes.
 - `kept` — the user accepted the deviation as built.
 - `reverted` — the deviating hunks were removed by a dispatched revert.
-- `fixed` — **`D1` cards about skipped or reshaped work only**: a dispatched fix finished
-  what the unit asked for.
+- `fixed` — **`missing` and `changed` cards only**: a dispatched fix did what the unit
+  asked for.
 
 ### `Reason:`
 
@@ -245,7 +264,7 @@ Audits one unit's diff against that unit's plan fields.
 
 | Caller | When | The diff |
 |---|---|---|
-| `/work` | after the orchestrator's conformance review, **before** the unit's commit | the uncommitted working tree, `git diff HEAD`; the orchestrator marks the worker's new files intent-to-add (`git add -N`) first so they appear in it |
+| `/work` | after the orchestrator's conformance review, **before** the unit's commit | the uncommitted working tree: `git diff HEAD` plus the untracked files `git status --porcelain` lists, which `git diff` never shows |
 | grind | after the build agent returns, once per unit | that unit's commit range, `git diff <base>..<head>`, from the build agent's return verified against `git log` |
 
 **Inputs:** the absolute plan path, the unit ordinal, the diff or range, the
@@ -276,11 +295,11 @@ passing line leaves no trace.
 **May not see:** the worker's return — its account of what it did and why. A persuasive
 rationale would suppress the flag the card exists to raise.
 
-**Where the wall is structural and where it is only instructed** — stated plainly, because
+**Where the wall is controlled and where it is only instructed** — stated plainly, because
 an instructed wall is weaker than it looks:
 
-- **Structural, for the current `/work` unit.** When the observer runs, that worker's
-  return exists nowhere on disk and no commit message has been written from it. The next
+- **Controlled, for the current `/work` unit's brief.** Only what the orchestrator puts in
+  the brief is controlled: when the observer runs, that worker's return exists nowhere on disk and no commit message has been written from it. The next
   worker is never dispatched until the observer returns, so it never sees half-finished
   edits either.
 - **Instruction-only, everywhere else.** Earlier units' `Reason:` lines and the digest sit
@@ -309,10 +328,9 @@ After a unit's doc update, the orchestrator writes one HTML comment directly und
 <!-- observed: <ordinal> -->
 <!-- observed: <ordinal> failed -->
 <!-- observed: wrap-up -->
-<!-- observed: <card ID> -->
 ```
 
-The last form marks a `/work` fix or revert commit, observed like a unit. **The doc update
+**The doc update
 — and so the marker — is written after the unit's commit**, so a marker's presence always
 means the unit is committed and recorded. A kill between commit and doc write leaves a
 committed unit with no marker, which resume repairs.
@@ -336,17 +354,17 @@ committed unit with no marker, which resume repairs.
 `/work` only; grind leaves every card `open`. The user replies with a verb and a card ID
 (`revert D2-1`, `keep D3-2`, `fix D1-1`).
 
-| Card | Verbs | Result |
+| Category | Verbs | Result |
 |---|---|---|
-| `D1` for skipped or reshaped work, including a failed `Verification` line | `fix`, `keep` | `fix` dispatches a worker to finish it → `fixed` |
-| `D1` for a crossed Scope Boundary, every `D2`, every `D3` | `revert`, `keep` | `revert` dispatches a worker to remove it → `reverted` |
+| `extra` | `revert`, `keep` | `revert` dispatches a worker to remove it → `reverted` |
+| `missing`, `changed` | `fix`, `keep` | `fix` dispatches a worker to do what the unit asked → `fixed` |
 
 - `keep` → `kept`, with no dispatch.
 - **A revert brief names the hunks, never whole files.** A file can carry in-scope and
   out-of-scope changes together.
-- **A fix or revert commit is observed like a unit**: `unit` mode over its diff, new cards
-  numbered as usual, `## Changes` rewritten, and its [marker](#the-observed-marker)
-  written.
+- **A fix or revert commit is never observed.** The user ordered it, so the observer
+  could only flag the correction itself. The orchestrator commits it, rewrites
+  `## Changes`, and moves the card's `Status:`.
 - **Warn before dispatching** when a test doc (`docs/tests/*.md` with a matching
   `target:`) or an open PR already exists for the branch — both describe the tree the fix
   or revert is about to change.
@@ -382,8 +400,8 @@ No other surface — PR body, stamp, PR comment — mentions deviations.
   agents return reports; only the orchestrator writes the doc.
 - **The observer flags, never blocks.** A failure records `observer failed` and the unit
   commits anyway.
-- **The observer never sees the worker's return.** Structural for the current `/work`
-  unit; instruction-only for earlier `Reason:` lines, the digest, and grind's commit
+- **The observer never sees the worker's return.** Controlled through the brief for the
+  current `/work` unit; instruction-only for earlier `Reason:` lines, the digest, and grind's commit
   messages — and the spec says so rather than pretending otherwise.
 - **Write after every unit's commit, never only at the end.** Changes, Decisions, Tests to
   Revisit, cards, and the marker, in one update.

@@ -92,7 +92,7 @@ This command takes a work document (plan, specification, or todo file) and execu
      - Compose the worker brief (see below)
      - Dispatch the worker; block until it returns
      - Review the actual diff — a returned "done" is a hypothesis
-     - `git add -N` the worker's new files; dispatch the observer in `unit` mode (see below)
+     - Dispatch the observer in `unit` mode (see below)
      - Commit (orchestrator; see Incremental Commits)
      - Mark task completed; check the plan checkbox
      - Append to the digest (see below)
@@ -106,6 +106,7 @@ This command takes a work document (plan, specification, or todo file) and execu
    - The instruction to ignore any `Test scenarios` field left by an older plan; this run writes no tests.
    - Any resolved `Deferred to Implementation` questions bearing on this unit, plus the plan's `Scope Boundaries` as explicit non-goals.
    - The instruction to follow the repo's `CLAUDE.md` conventions and honor the unit's `Execution note` when it carries `Execution target: external-delegate`.
+   - The instruction never to edit the plan file; the orchestrator owns it.
    - The instruction to run the System-Wide Check (below) before returning.
    - **The digest** — the orchestrator's accumulated notes from every prior unit, verbatim.
    - **Addenda**, when any — drive-by fixes the orchestrator spotted in earlier diffs. The same list goes to this unit's observer.
@@ -113,7 +114,7 @@ This command takes a work document (plan, specification, or todo file) and execu
 
    **The orchestrator's review** is conformance-level: the diff does what the unit's Goal says, stays inside the unit's Files and the plan's Scope Boundaries, and matches repo conventions. `Verification` is not checked here — the observer's wrap-up pass owns it. Deviations the worker justified are accepted or sent back with a follow-up dispatch; unjustified drift is a re-dispatch with a corrected brief. Never fix it by hand.
 
-   **The observer dispatch** — after the review, before the commit. Mark the worker's new files intent-to-add, then dispatch `forge:workflow:scope-observer` in `unit` mode with the inputs [the spec names](../work-protocol/SKILL.md#unit-mode): the absolute plan path, the unit ordinal, `git diff HEAD`, and this unit's addenda list. The observer brief carries nothing from the worker's return — not its summary, its deviations, or its reasons. A failed dispatch is handled per [the spec](../work-protocol/SKILL.md#failure): the unit commits anyway.
+   **The observer dispatch** — after the review, before the commit. Dispatch `forge:workflow:scope-observer` in `unit` mode with the inputs [the spec names](../work-protocol/SKILL.md#unit-mode): the absolute plan path, the unit ordinal, the uncommitted working tree, and this unit's addenda list. The observer brief carries nothing from the worker's return — not its summary, its deviations, or its reasons. A failed dispatch is handled per [the spec](../work-protocol/SKILL.md#failure): the unit commits anyway.
 
    **The work doc update** — after the commit and the digest, one update per [the spec's lifecycle](../work-protocol/SKILL.md#lifecycle):
    - Rewrite `## Changes` from git and the accumulated per-file summary lines.
@@ -278,7 +279,7 @@ This command takes a work document (plan, specification, or todo file) and execu
 
 5. **Act on Replies**
 
-   The user acts on a card by replying with a verb and its card ID. Which verbs a card takes, what each does, the pre-dispatch warning, and the revert brief's hunk rule are all [the spec's reply verbs](../work-protocol/SKILL.md#reply-verbs). What `/work` adds is the mechanics: a `fix` or `revert` dispatches an Opus worker like any unit and then runs the dispatch loop's review → observer → commit → work-doc update sequence, observed with the card-ID marker; the card's `Status:` moves once that commit lands. It gets no issue stamp.
+   The user acts on a card by replying with a verb and its card ID. Which verbs a card takes, what each does, the pre-dispatch warning, and the revert brief's hunk rule are all [the spec's reply verbs](../work-protocol/SKILL.md#reply-verbs). What `/work` adds is the mechanics: a `fix` or `revert` dispatches an Opus worker like any unit, then review → commit → work-doc update, with no observer pass; the card's `Status:` moves once that commit lands. It gets no issue stamp.
 
 ---
 
