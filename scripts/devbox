@@ -87,6 +87,57 @@ open_state() {
   fi
 }
 
+# Snapshots the in-scope laptop files into $tmp/L and VM files into $tmp/V, and
+# writes the in-scope union of laptop, VM and $state/base paths to $tmp/paths.
+collect() {
+  local p
+  local -A cand=() vm_tracked=()
+  skipped=()
+  mkdir -p "$tmp/raw" "$tmp/L" "$tmp/V"
+  : >"$tmp/candidates" >"$tmp/L.list" >"$tmp/V.list" >"$tmp/skipped"
+
+  git -C "$root" ls-files -z --others --ignored --exclude-standard -- docs >"$tmp/laptop.list"
+  ssh "$HOST" "cd '$remote' && git ls-files -z -- docs" >"$tmp/vm-tracked.list"
+  # --ignore-failed-read: a live VM session may delete a file between listing and tar.
+  ssh "$HOST" "set -o pipefail; cd '$remote' && git ls-files -z --others -- docs |
+    tar -cf - --null --no-recursion --ignore-failed-read -T -" |
+    tar -C "$tmp/raw" -xf - --no-xattrs --no-mac-metadata --no-fflags
+
+  while IFS= read -r -d '' p; do vm_tracked[$p]=1; done <"$tmp/vm-tracked.list"
+  while IFS= read -r -d '' p; do cand[$p]=1; done <"$tmp/laptop.list"
+  if [ -d "$tmp/raw/docs" ]; then
+    (cd "$tmp/raw" && find docs \( -type f -o -type l \) -print0) >"$tmp/vm.list"
+    while IFS= read -r -d '' p; do cand[$p]=1; done <"$tmp/vm.list"
+  fi
+  if [ -d "$state/base/docs" ]; then
+    (cd "$state/base" && find docs -type f -print0) >"$tmp/base.list"
+    while IFS= read -r -d '' p; do cand[$p]=1; done <"$tmp/base.list"
+  fi
+
+  for p in "${!cand[@]}"; do
+    case "$p" in
+      *$'\n'*)
+        skipped+=("$p")
+        printf '%s\0' "$p" >>"$tmp/skipped"
+        printf 'devbox sync: skipping name with a newline: %q\n' "$p" >&2
+        continue
+        ;;
+      *.vm | */._* | */.DS_Store) continue ;;
+    esac
+    [ -z "${vm_tracked[$p]:-}" ] || continue
+    [ -L "$root/$p" ] || [ -L "$tmp/raw/$p" ] || printf '%s\0' "$p" >>"$tmp/candidates"
+  done
+  git -C "$root" check-ignore --stdin -z <"$tmp/candidates" >"$tmp/paths" || [ $? -eq 1 ]
+
+  while IFS= read -r -d '' p; do
+    [ ! -f "$root/$p" ] || printf '%s\0' "$p" >>"$tmp/L.list"
+    [ ! -f "$tmp/raw/$p" ] || printf '%s\0' "$p" >>"$tmp/V.list"
+  done <"$tmp/paths"
+  tar -C "$root" -cf - --no-xattrs --no-mac-metadata --no-fflags --null -T "$tmp/L.list" | tar -C "$tmp/L" -xf -
+  tar -C "$tmp/raw" -cf - --null -T "$tmp/V.list" | tar -C "$tmp/V" -xf -
+  rm -rf "$tmp/raw"
+}
+
 vm_status() {
   gcloud compute instances describe "$INSTANCE" \
     --project="$PROJECT" --zone="$ZONE" --format='value(status)'
@@ -124,6 +175,9 @@ case "$cmd" in
     ensure_running
     resolve_repo
     open_state
+    export COPYFILE_DISABLE=1
+    tmp="$(mktemp -d)"
+    collect
     echo "devbox sync: not yet implemented" >&2
     exit 1
     ;;
