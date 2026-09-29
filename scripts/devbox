@@ -10,7 +10,7 @@
 #   devbox kill <name>  kill a tmux session
 #   devbox up|down      start / stop the VM
 #   devbox status       VM state (RUNNING / TERMINATED / ...)
-#   devbox sync         copy the current repo's docs/ to the same repo on the box
+#   devbox sync         two-way sync of the repo's gitignored docs/ files with the box
 set -euo pipefail
 
 PROJECT="app-dev-464512"
@@ -18,7 +18,433 @@ ZONE="us-central1-a"
 INSTANCE="ro-dev-devbox-hfritz"
 HOST="ro-devbox" # ~/.ssh/config entry (IAP ProxyCommand)
 
+STATE_ROOT="$HOME/.devbox-sync"
+
 usage() { sed -n '3,13p' "$0"; }
+
+tmp=""
+lock_held=""
+incomplete=""
+
+cleanup() {
+  local rc=$?
+  if [ "$rc" -ne 0 ] && [ -n "$incomplete" ]; then echo "devbox sync: $incomplete; rerun devbox sync" >&2; fi
+  if [ -n "$tmp" ]; then rm -rf "$tmp"; fi
+  if [ -n "$lock_held" ]; then rm -rf "$state/lock"; fi
+}
+
+# Sets $root and $remote for the primary checkout of the current repo, or exits.
+resolve_repo() {
+  local common repo
+  common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || {
+    echo "devbox sync: run from inside a git repo" >&2
+    exit 1
+  }
+  root="$(dirname "$common")"
+  [ -d "$root/docs" ] || {
+    echo "devbox sync: no docs/ in $root" >&2
+    exit 1
+  }
+  repo="$(basename "$root")"
+  remote="$(ssh "$HOST" "ls -d ~/'$repo' ~/Projects/'$repo' ~/Misc/'$repo' 2>/dev/null | head -1")"
+  [ -n "$remote" ] || {
+    echo "devbox sync: no '$repo' checkout found on the box" >&2
+    exit 1
+  }
+}
+
+# Sets $state, takes its lock, and checks it belongs to $remote, or exits.
+open_state() {
+  local lock pid recorded
+  state="$STATE_ROOT/$(basename "$root")"
+  lock="$state/lock"
+  mkdir -p "$state"
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM HUP
+  if ! mkdir "$lock" 2>/dev/null; then
+    pid="$(cat "$lock/pid" 2>/dev/null || true)"
+    if [ -z "$pid" ] || kill -0 "$pid" 2>/dev/null; then
+      echo "devbox sync: another sync (pid ${pid:-unknown}) holds $lock" >&2
+      exit 1
+    fi
+    echo "devbox sync: reclaiming stale lock from dead pid $pid" >&2
+    rm -rf "$lock"
+    mkdir "$lock" 2>/dev/null || {
+      echo "devbox sync: another sync holds $lock" >&2
+      exit 1
+    }
+  fi
+  lock_held=1
+  echo $$ >"$lock/pid"
+  if [ ! -d "$state/base" ] && [ -d "$state/base.old" ]; then
+    mv "$state/base.old" "$state/base"
+  fi
+  mkdir -p "$state/base" "$state/trash"
+  if [ -f "$state/remote" ]; then
+    recorded="$(cat "$state/remote")"
+    [ "$recorded" = "$remote" ] || {
+      echo "devbox sync: $state was synced with $recorded, but the box checkout is now $remote; remove $state to start over" >&2
+      exit 1
+    }
+  fi
+}
+
+# Snapshots the in-scope laptop files into $tmp/L and VM files into $tmp/V, and
+# writes the in-scope union of laptop, VM and $state/base paths to $tmp/paths.
+collect() {
+  local p
+  local -A cand=() vm_tracked=()
+  skipped=()
+  mkdir -p "$tmp/raw" "$tmp/L" "$tmp/V"
+  : >"$tmp/candidates" >"$tmp/L.list" >"$tmp/V.list" >"$tmp/skipped"
+
+  git -C "$root" ls-files -z --others --ignored --exclude-standard -- docs >"$tmp/laptop.list"
+  ssh "$HOST" "cd '$remote' && git ls-files -z -- docs" >"$tmp/vm-tracked.list"
+  # --ignore-failed-read: a live VM session may delete a file between listing and tar.
+  ssh "$HOST" "set -o pipefail; cd '$remote' && git ls-files -z --others -- docs |
+    tar -cf - --null --no-recursion --ignore-failed-read -T -" |
+    tar -C "$tmp/raw" -xf - --no-xattrs --no-mac-metadata --no-fflags
+
+  while IFS= read -r -d '' p; do vm_tracked[$p]=1; done <"$tmp/vm-tracked.list"
+  while IFS= read -r -d '' p; do cand[$p]=1; done <"$tmp/laptop.list"
+  if [ -d "$tmp/raw/docs" ]; then
+    (cd "$tmp/raw" && find docs \( -type f -o -type l \) -print0) >"$tmp/vm.list"
+    while IFS= read -r -d '' p; do cand[$p]=1; done <"$tmp/vm.list"
+  fi
+  if [ -d "$state/base/docs" ]; then
+    (cd "$state/base" && find docs -type f -print0) >"$tmp/base.list"
+    while IFS= read -r -d '' p; do cand[$p]=1; done <"$tmp/base.list"
+  fi
+
+  for p in "${!cand[@]}"; do
+    case "$p" in
+      *$'\n'*)
+        skipped+=("$p")
+        printf '%s\0' "$p" >>"$tmp/skipped"
+        printf 'devbox sync: skipping name with a newline: %q\n' "$p" >&2
+        continue
+        ;;
+      *.vm | */._* | */.DS_Store) continue ;;
+    esac
+    [ -z "${vm_tracked[$p]:-}" ] || continue
+    [ -L "$root/$p" ] || [ -L "$tmp/raw/$p" ] || printf '%s\0' "$p" >>"$tmp/candidates"
+  done
+  git -C "$root" check-ignore --stdin -z <"$tmp/candidates" >"$tmp/paths" || [ $? -eq 1 ]
+
+  while IFS= read -r -d '' p; do
+    [ ! -f "$root/$p" ] || printf '%s\0' "$p" >>"$tmp/L.list"
+    [ ! -f "$tmp/raw/$p" ] || printf '%s\0' "$p" >>"$tmp/V.list"
+  done <"$tmp/paths"
+  tar -C "$root" -cf - --no-xattrs --no-mac-metadata --no-fflags --null -T "$tmp/L.list" | tar -C "$tmp/L" -xf -
+  tar -C "$tmp/raw" -cf - --null -T "$tmp/V.list" | tar -C "$tmp/V" -xf -
+  rm -rf "$tmp/raw"
+}
+
+note() { printf '%s\0' "$2" >>"$tmp/out/$1"; }
+
+stage_copy() {
+  mkdir -p "$(dirname "$1/$2")"
+  cp "$3" "$1/$2"
+}
+
+stage_base() { stage_copy "$tmp/next-base" "$1" "$2"; }
+
+stage_laptop_write() {
+  stage_copy "$tmp/stage/laptop" "$1" "$2"
+  printf '%s\0' "$1" >>"$tmp/laptop-write"
+}
+
+stage_vm_write() {
+  stage_copy "$tmp/stage/vm" "$1" "$2"
+  printf '%s\0' "$1" >>"$tmp/vm-write"
+  if [ -f "$tmp/V/$1" ]; then expect_vm_hash "$1"; else printf '%s\0' "$1" >>"$tmp/expected-absent"; fi
+}
+
+expect_vm_hash() {
+  local hex
+  read -r hex _ < <(shasum -a 256 <"$tmp/V/$1")
+  printf '%s  %s\n' "$hex" "$1" >>"$tmp/expected.sha256"
+}
+
+# Laptop copy wins on both sides; the VM copy lands beside it on the laptop as <p>.vm.
+stage_vm_fallback() {
+  local p="$1"
+  stage_vm_write "$p" "$tmp/L/$p"
+  if [ -e "$root/$p.vm" ] || [ -L "$root/$p.vm" ]; then printf '%s\0' "$p.vm" >>"$tmp/laptop-trash-extra"; fi
+  stage_copy "$tmp/stage/laptop" "$p.vm" "$tmp/V/$p"
+  printf '%s\0' "$p.vm" >>"$tmp/vm-copy-write"
+  stage_base "$p" "$tmp/L/$p"
+  note vm-copy "$p"
+}
+
+stage_both() {
+  local p="$1" f="$2"
+  cmp -s "$f" "$tmp/L/$p" || stage_laptop_write "$p" "$f"
+  cmp -s "$f" "$tmp/V/$p" || stage_vm_write "$p" "$f"
+  stage_base "$p" "$f"
+}
+
+has_markers() { grep -q '^<<<<<<< laptop' "$1"; }
+
+# Classifies every path in $tmp/paths against laptop ($tmp/L), VM ($tmp/V) and
+# baseline ($state/base) and stages the outcome under $tmp without applying it.
+classify() {
+  local p l v b n first="" rc n_l=0 n_v=0 n_b=0 work
+  local L B V
+  [ -f "$state/remote" ] || first=1
+  mkdir -p "$tmp/stage/vm" "$tmp/stage/laptop" "$tmp/next-base" "$tmp/out" "$tmp/merge"
+  : >"$tmp/vm-write" >"$tmp/vm-delete" >"$tmp/laptop-write" >"$tmp/laptop-delete" \
+    >"$tmp/laptop-trash-extra" >"$tmp/vm-copy-write" >"$tmp/base-trash" \
+    >"$tmp/expected.sha256" >"$tmp/expected-absent"
+  for n in pulled pushed merged conflict unresolved deleted-laptop deleted-vm restored vm-copy; do
+    : >"$tmp/out/$n"
+  done
+
+  if [ -z "$first" ]; then
+    while IFS= read -r -d '' p; do
+      [ ! -f "$tmp/L/$p" ] || n_l=$((n_l + 1))
+      [ ! -f "$tmp/V/$p" ] || n_v=$((n_v + 1))
+      [ ! -f "$state/base/$p" ] || n_b=$((n_b + 1))
+    done <"$tmp/paths"
+    if [ "$n_b" -gt 0 ] && { [ "$n_l" -eq 0 ] || [ "$n_v" -eq 0 ]; }; then
+      if [ "$n_l" -eq 0 ]; then l="laptop ($root)"; else l="box ($remote)"; fi
+      echo "devbox sync: the $l has no synced docs/ files but the last sync had $n_b; refusing to delete them all. Remove $state to force a fresh first run" >&2
+      exit 1
+    fi
+  fi
+
+  while IFS= read -r -d '' p; do
+    L="$tmp/L/$p" V="$tmp/V/$p" B="$state/base/$p"
+    l="" v="" b=""
+    [ ! -f "$L" ] || l=1
+    [ ! -f "$V" ] || v=1
+    [ -n "$first" ] || [ ! -f "$B" ] || b=1
+
+    if [ -n "$l" ] && [ -n "$v" ] && cmp -s "$L" "$V"; then
+      stage_base "$p" "$L"
+    elif [ -n "$l" ] && [ -n "$v" ] && [ -z "$b" ]; then
+      stage_vm_fallback "$p"
+    elif [ -n "$l" ] && [ -n "$v" ]; then
+      if cmp -s "$L" "$B"; then
+        stage_laptop_write "$p" "$V"
+        stage_base "$p" "$V"
+        note pulled "$p"
+      elif cmp -s "$V" "$B"; then
+        stage_vm_write "$p" "$L"
+        stage_base "$p" "$L"
+        note pushed "$p"
+      elif has_markers "$L" || has_markers "$V"; then
+        stage_vm_fallback "$p"
+        note unresolved "$p"
+      else
+        work="$tmp/merge/$p"
+        mkdir -p "$(dirname "$work")"
+        cp "$L" "$work"
+        rc=0
+        git merge-file -q -L laptop -L base -L vm "$work" "$B" "$V" || rc=$?
+        if [ "$rc" -eq 0 ]; then
+          stage_both "$p" "$work"
+          note merged "$p"
+        elif [ "$rc" -le 127 ]; then
+          stage_both "$p" "$work"
+          note conflict "$p"
+        else
+          stage_vm_fallback "$p"
+        fi
+      fi
+    elif [ -n "$l" ] && [ -z "$b" ]; then
+      stage_vm_write "$p" "$L"
+      stage_base "$p" "$L"
+      note pushed "$p"
+    elif [ -n "$v" ] && [ -z "$b" ]; then
+      stage_laptop_write "$p" "$V"
+      stage_base "$p" "$V"
+      note pulled "$p"
+    elif [ -n "$l" ]; then
+      if cmp -s "$L" "$B"; then
+        printf '%s\0' "$p" >>"$tmp/laptop-delete"
+        note deleted-laptop "$p"
+      else
+        stage_vm_write "$p" "$L"
+        stage_base "$p" "$L"
+        note restored "$p"
+      fi
+    elif [ -n "$v" ]; then
+      if cmp -s "$V" "$B"; then
+        expect_vm_hash "$p"
+        printf '%s\0' "$p" >>"$tmp/vm-delete"
+        printf '%s\0' "$p" >>"$tmp/base-trash"
+        note deleted-vm "$p"
+      else
+        stage_laptop_write "$p" "$V"
+        stage_base "$p" "$V"
+        note restored "$p"
+      fi
+    fi
+  done <"$tmp/paths"
+}
+
+# $1 is mv or cp.
+trash_put() {
+  mkdir -p "$(dirname "$trash/$3")"
+  "$1" "$2" "$trash/$3"
+}
+
+# Runs on the box as: bash apply.sh <checkout> <stage>. Exit 3 = box changed since the pull.
+write_apply_script() {
+  cat >"$1" <<'EOF'
+set -euo pipefail
+cd "$1"
+s="$2"
+if [ -s "$s/expected.sha256" ]; then
+  sha256sum --quiet --strict -c "$s/expected.sha256" >/dev/null 2>&1 || exit 3
+fi
+while IFS= read -r -d '' p; do
+  if [ -e "$p" ] || [ -L "$p" ]; then exit 3; fi
+done <"$s/expected-absent"
+while IFS= read -r -d '' p; do
+  mkdir -p "$(dirname "$p")"
+  mv -f "$s/files/$p" "$p"
+done <"$s/vm-write"
+while IFS= read -r -d '' p; do
+  rm -f -- "$p"
+done <"$s/vm-delete"
+EOF
+}
+
+# Installs the staged VM writes and deletes in one ssh call, all-or-nothing on the hash check.
+push_vm() {
+  local rc=0
+  [ -s "$tmp/vm-write" ] || [ -s "$tmp/vm-delete" ] || return 0
+  mkdir -p "$tmp/push"
+  mv "$tmp/stage/vm" "$tmp/push/files"
+  cp "$tmp/vm-write" "$tmp/vm-delete" "$tmp/expected.sha256" "$tmp/expected-absent" "$tmp/push/"
+  write_apply_script "$tmp/push/apply.sh"
+  tar -C "$tmp/push" -cf - --no-xattrs --no-mac-metadata --no-fflags . |
+    ssh "$HOST" "s=\$(mktemp -d ~/.devbox-sync-stage.XXXXXX) && trap 'rm -rf \"\$s\"' EXIT &&
+      tar -C \"\$s\" -xf - && bash \"\$s/apply.sh\" '$remote' \"\$s\"" || rc=$?
+  case "$rc" in
+    0) incomplete="box updated, laptop apply incomplete" ;;
+    3)
+      echo "devbox sync: the box changed during sync; nothing applied; rerun devbox sync" >&2
+      exit 1
+      ;;
+    *)
+      echo "devbox sync: push to the box failed (exit $rc); laptop and baseline untouched, the box may be partly updated; rerun devbox sync" >&2
+      exit 1
+      ;;
+  esac
+}
+
+laptop_unchanged() {
+  if [ -f "$tmp/L/$1" ]; then
+    [ ! -L "$root/$1" ] && [ -f "$root/$1" ] && cmp -s "$tmp/L/$1" "$root/$1"
+  else
+    [ ! -e "$root/$1" ] && [ ! -L "$root/$1" ]
+  fi
+}
+
+# Leaves a laptop file that moved mid-run alone and keeps its old baseline entry, so
+# the next run merges against the right base instead of overwriting the box's edit.
+skip_laptop() {
+  note moved "$1"
+  rm -f "$tmp/next-base/$1"
+  if [ -f "$state/remote" ] && [ -f "$state/base/$1" ]; then stage_base "$1" "$state/base/$1"; fi
+}
+
+apply_laptop() {
+  local p
+  [ -n "$incomplete" ] || incomplete="laptop apply incomplete"
+  : >"$tmp/out/moved"
+  while IFS= read -r -d '' p; do
+    if [ -e "$root/$p" ] || [ -L "$root/$p" ]; then trash_put mv "$root/$p" "$p"; fi
+  done <"$tmp/laptop-trash-extra"
+  while IFS= read -r -d '' p; do
+    if laptop_unchanged "$p"; then
+      mkdir -p "$(dirname "$root/$p")"
+      cp "$tmp/stage/laptop/$p" "$root/$p"
+    else
+      skip_laptop "$p"
+    fi
+  done <"$tmp/laptop-write"
+  while IFS= read -r -d '' p; do
+    cp "$tmp/stage/laptop/$p" "$root/$p"
+  done <"$tmp/vm-copy-write"
+  while IFS= read -r -d '' p; do
+    if laptop_unchanged "$p"; then trash_put mv "$root/$p" "$p"; else skip_laptop "$p"; fi
+  done <"$tmp/laptop-delete"
+  incomplete=""
+}
+
+# A crash leaves either base or base.old in place; open_state restores base.old.
+swap_base() {
+  rm -rf "$state/base.new" "$state/base.old"
+  cp -R "$tmp/next-base" "$state/base.new"
+  mv "$state/base" "$state/base.old"
+  mv "$state/base.new" "$state/base"
+  rm -rf "$state/base.old"
+}
+
+summary_line() { printf '  %-10s %s%s\n' "$1" "$2" "${3:+ $3}"; }
+
+summarize() {
+  local p g f any="" total parts=""
+  local -A skip=() to_box=() unres=() count=()
+  local -A label=([pulled]=pulled [pushed]=pushed [merged]=merged [conflict]=conflicted
+    [unresolved]=unresolved [deleted-laptop]="deleted on laptop" [deleted-vm]="deleted on box"
+    [restored]=restored [vm-copy]="saved as .vm" [moved]=skipped)
+  total=$(($(find "$state/base" -type f | wc -l)))
+  for f in "$tmp"/out/*; do [ ! -s "$f" ] || any=1; done
+  if [ -z "$any" ] && [ "${#skipped[@]}" -eq 0 ]; then
+    echo "devbox sync: in sync ($total files)"
+    return
+  fi
+  while IFS= read -r -d '' p; do skip[$p]=1; done <"$tmp/out/moved"
+  while IFS= read -r -d '' p; do to_box[$p]=1; done <"$tmp/vm-write"
+  while IFS= read -r -d '' p; do unres[$p]=1; done <"$tmp/out/unresolved"
+
+  for g in pulled pushed merged conflict unresolved deleted-laptop deleted-vm restored vm-copy moved; do
+    count[$g]=0
+    while IFS= read -r -d '' p; do
+      [ "$g" = moved ] || [ -z "${skip[$p]:-}" ] || continue
+      [ "$g" != vm-copy ] || [ -z "${unres[$p]:-}" ] || continue
+      case "$g" in
+        pulled | pushed | merged) summary_line "$g" "$p" ;;
+        conflict) summary_line CONFLICT "$p" "(conflict markers on both sides)" ;;
+        unresolved) summary_line UNRESOLVED "$p" "(still had conflict markers; box copy at $p.vm)" ;;
+        deleted-laptop) summary_line deleted "$p" "(on laptop, as on the box)" ;;
+        deleted-vm) summary_line deleted "$p" "(on box, as on the laptop)" ;;
+        restored)
+          if [ -n "${to_box[$p]:-}" ]; then
+            summary_line restored "$p" "(to box: edited here, deleted there)"
+          else
+            summary_line restored "$p" "(to laptop: edited there, deleted here)"
+          fi
+          ;;
+        vm-copy) summary_line .vm "$p" "(kept laptop copy; box copy at $p.vm)" ;;
+        moved) summary_line skipped "$p" "(laptop file changed during sync; left alone — rerun)" ;;
+      esac
+      count[$g]=$((count[$g] + 1))
+    done <"$tmp/out/$g"
+  done
+  for p in "${skipped[@]}"; do
+    summary_line skipped "$(printf '%q' "$p")" "(name contains a newline)"
+    count[moved]=$((count[moved] + 1))
+  done
+
+  for g in pulled pushed merged conflict unresolved deleted-laptop deleted-vm restored vm-copy moved; do
+    [ "${count[$g]}" -eq 0 ] || parts+="${parts:+, }${count[$g]} ${label[$g]}"
+  done
+  echo "devbox sync: $parts; $total files in sync"
+  if [ "${count[conflict]}" -gt 0 ]; then
+    echo "devbox sync: resolve CONFLICT files by hand: edit out the '<<<<<<< laptop' / '>>>>>>> vm' markers on either side; the next sync carries the fix across"
+  fi
+  if [ $((count[unresolved] + count[vm-copy])) -gt 0 ]; then
+    echo "devbox sync: merge each <file>.vm into <file> by hand, then delete the .vm (it never syncs)"
+  fi
+  if [ -d "$trash" ]; then echo "devbox sync: deleted and replaced files saved in $trash"; fi
+}
 
 vm_status() {
   gcloud compute instances describe "$INSTANCE" \
@@ -55,23 +481,20 @@ case "$cmd" in
     ;;
   sync)
     ensure_running
-    root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
-      echo "devbox sync: run from inside a git repo" >&2
-      exit 1
-    }
-    [ -d "$root/docs" ] || {
-      echo "devbox sync: no docs/ in $root" >&2
-      exit 1
-    }
-    repo="$(basename "$root")"
-    remote="$(ssh "$HOST" "ls -d ~/'$repo' ~/Projects/'$repo' ~/Misc/'$repo' 2>/dev/null | head -1")"
-    [ -n "$remote" ] || {
-      echo "devbox sync: no '$repo' checkout found on the box" >&2
-      exit 1
-    }
-    tar --no-xattrs --no-mac-metadata --no-fflags -C "$root" -cf - docs |
-      ssh "$HOST" "tar -C '$remote' -xf -"
-    echo "synced $root/docs → $HOST:$remote/docs"
+    resolve_repo
+    open_state
+    export COPYFILE_DISABLE=1
+    tmp="$(mktemp -d)"
+    trash="$state/trash/$(date +%Y%m%d-%H%M%S)"
+    collect
+    classify
+    # Before the push: once the box deletes a file, the baseline copy is its only one.
+    while IFS= read -r -d '' p; do trash_put cp "$state/base/$p" "$p"; done <"$tmp/base-trash"
+    push_vm
+    apply_laptop
+    swap_base
+    [ -f "$state/remote" ] || printf '%s\n' "$remote" >"$state/remote"
+    summarize
     ;;
   cc)
     ensure_running
