@@ -10,7 +10,7 @@
 #   devbox kill <name>  kill a tmux session
 #   devbox up|down      start / stop the VM
 #   devbox status       VM state (RUNNING / TERMINATED / ...)
-#   devbox sync         copy the current repo's docs/ to the same repo on the box
+#   devbox sync         two-way sync of the repo's gitignored docs/ files with the box
 set -euo pipefail
 
 PROJECT="app-dev-464512"
@@ -18,7 +18,74 @@ ZONE="us-central1-a"
 INSTANCE="ro-dev-devbox-hfritz"
 HOST="ro-devbox" # ~/.ssh/config entry (IAP ProxyCommand)
 
+STATE_ROOT="$HOME/.devbox-sync"
+
 usage() { sed -n '3,13p' "$0"; }
+
+tmp=""
+lock_held=""
+
+cleanup() {
+  if [ -n "$tmp" ]; then rm -rf "$tmp"; fi
+  if [ -n "$lock_held" ]; then rm -rf "$state/lock"; fi
+}
+
+# Sets $root and $remote for the primary checkout of the current repo, or exits.
+resolve_repo() {
+  local common repo
+  common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || {
+    echo "devbox sync: run from inside a git repo" >&2
+    exit 1
+  }
+  root="$(dirname "$common")"
+  [ -d "$root/docs" ] || {
+    echo "devbox sync: no docs/ in $root" >&2
+    exit 1
+  }
+  repo="$(basename "$root")"
+  remote="$(ssh "$HOST" "ls -d ~/'$repo' ~/Projects/'$repo' ~/Misc/'$repo' 2>/dev/null | head -1")"
+  [ -n "$remote" ] || {
+    echo "devbox sync: no '$repo' checkout found on the box" >&2
+    exit 1
+  }
+}
+
+# Sets $state, takes its lock, and checks it belongs to $remote, or exits.
+open_state() {
+  local lock pid recorded
+  state="$STATE_ROOT/$(basename "$root")"
+  lock="$state/lock"
+  mkdir -p "$state"
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM HUP
+  if ! mkdir "$lock" 2>/dev/null; then
+    pid="$(cat "$lock/pid" 2>/dev/null || true)"
+    if [ -z "$pid" ] || kill -0 "$pid" 2>/dev/null; then
+      echo "devbox sync: another sync (pid ${pid:-unknown}) holds $lock" >&2
+      exit 1
+    fi
+    echo "devbox sync: reclaiming stale lock from dead pid $pid" >&2
+    rm -rf "$lock"
+    mkdir "$lock" 2>/dev/null || {
+      echo "devbox sync: another sync holds $lock" >&2
+      exit 1
+    }
+  fi
+  lock_held=1
+  echo $$ >"$lock/pid"
+  if [ ! -d "$state/base" ] && [ -d "$state/base.old" ]; then
+    mv "$state/base.old" "$state/base"
+  fi
+  mkdir -p "$state/base" "$state/trash"
+  if [ -f "$state/remote" ]; then
+    recorded="$(cat "$state/remote")"
+    [ "$recorded" = "$remote" ] || {
+      echo "devbox sync: $state was synced with $recorded, but the box checkout is now $remote; remove $state to start over" >&2
+      exit 1
+    }
+  fi
+}
 
 vm_status() {
   gcloud compute instances describe "$INSTANCE" \
@@ -55,23 +122,10 @@ case "$cmd" in
     ;;
   sync)
     ensure_running
-    root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
-      echo "devbox sync: run from inside a git repo" >&2
-      exit 1
-    }
-    [ -d "$root/docs" ] || {
-      echo "devbox sync: no docs/ in $root" >&2
-      exit 1
-    }
-    repo="$(basename "$root")"
-    remote="$(ssh "$HOST" "ls -d ~/'$repo' ~/Projects/'$repo' ~/Misc/'$repo' 2>/dev/null | head -1")"
-    [ -n "$remote" ] || {
-      echo "devbox sync: no '$repo' checkout found on the box" >&2
-      exit 1
-    }
-    tar --no-xattrs --no-mac-metadata --no-fflags -C "$root" -cf - docs |
-      ssh "$HOST" "tar -C '$remote' -xf -"
-    echo "synced $root/docs → $HOST:$remote/docs"
+    resolve_repo
+    open_state
+    echo "devbox sync: not yet implemented" >&2
+    exit 1
     ;;
   cc)
     ensure_running
