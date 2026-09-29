@@ -138,6 +138,150 @@ collect() {
   rm -rf "$tmp/raw"
 }
 
+note() { printf '%s\0' "$2" >>"$tmp/out/$1"; }
+
+stage_copy() {
+  mkdir -p "$(dirname "$1/$2")"
+  cp "$3" "$1/$2"
+}
+
+stage_base() { stage_copy "$tmp/next-base" "$1" "$2"; }
+
+stage_laptop_write() {
+  stage_copy "$tmp/stage/laptop" "$1" "$2"
+  printf '%s\0' "$1" >>"$tmp/laptop-write"
+}
+
+stage_vm_write() {
+  stage_copy "$tmp/stage/vm" "$1" "$2"
+  printf '%s\0' "$1" >>"$tmp/vm-write"
+  if [ -f "$tmp/V/$1" ]; then expect_vm_hash "$1"; else printf '%s\0' "$1" >>"$tmp/expected-absent"; fi
+}
+
+expect_vm_hash() {
+  local hex
+  read -r hex _ < <(shasum -a 256 <"$tmp/V/$1")
+  printf '%s  %s\n' "$hex" "$1" >>"$tmp/expected.sha256"
+}
+
+# Laptop copy wins on both sides; the VM copy lands beside it on the laptop as <p>.vm.
+stage_vm_fallback() {
+  local p="$1"
+  stage_vm_write "$p" "$tmp/L/$p"
+  if [ -e "$root/$p.vm" ] || [ -L "$root/$p.vm" ]; then printf '%s\0' "$p.vm" >>"$tmp/laptop-trash-extra"; fi
+  stage_copy "$tmp/stage/laptop" "$p.vm" "$tmp/V/$p"
+  printf '%s\0' "$p.vm" >>"$tmp/vm-copy-write"
+  stage_base "$p" "$tmp/L/$p"
+  note vm-copy "$p"
+}
+
+stage_both() {
+  local p="$1" f="$2"
+  cmp -s "$f" "$tmp/L/$p" || stage_laptop_write "$p" "$f"
+  cmp -s "$f" "$tmp/V/$p" || stage_vm_write "$p" "$f"
+  stage_base "$p" "$f"
+}
+
+has_markers() { grep -q '^<<<<<<< laptop' "$1"; }
+
+# Classifies every path in $tmp/paths against laptop ($tmp/L), VM ($tmp/V) and
+# baseline ($state/base) and stages the outcome under $tmp without applying it.
+classify() {
+  local p l v b n first="" rc n_l=0 n_v=0 n_b=0 work
+  local L B V
+  [ -f "$state/remote" ] || first=1
+  mkdir -p "$tmp/stage/vm" "$tmp/stage/laptop" "$tmp/next-base" "$tmp/out" "$tmp/merge"
+  : >"$tmp/vm-write" >"$tmp/vm-delete" >"$tmp/laptop-write" >"$tmp/laptop-delete" \
+    >"$tmp/laptop-trash-extra" >"$tmp/vm-copy-write" >"$tmp/base-trash" \
+    >"$tmp/expected.sha256" >"$tmp/expected-absent"
+  for n in pulled pushed merged conflict unresolved deleted-laptop deleted-vm restored vm-copy; do
+    : >"$tmp/out/$n"
+  done
+
+  if [ -z "$first" ]; then
+    while IFS= read -r -d '' p; do
+      [ ! -f "$tmp/L/$p" ] || n_l=$((n_l + 1))
+      [ ! -f "$tmp/V/$p" ] || n_v=$((n_v + 1))
+      [ ! -f "$state/base/$p" ] || n_b=$((n_b + 1))
+    done <"$tmp/paths"
+    if [ "$n_b" -gt 0 ] && { [ "$n_l" -eq 0 ] || [ "$n_v" -eq 0 ]; }; then
+      if [ "$n_l" -eq 0 ]; then l="laptop ($root)"; else l="box ($remote)"; fi
+      echo "devbox sync: the $l has no synced docs/ files but the last sync had $n_b; refusing to delete them all. Remove $state to force a fresh first run" >&2
+      exit 1
+    fi
+  fi
+
+  while IFS= read -r -d '' p; do
+    L="$tmp/L/$p" V="$tmp/V/$p" B="$state/base/$p"
+    l="" v="" b=""
+    [ ! -f "$L" ] || l=1
+    [ ! -f "$V" ] || v=1
+    [ -n "$first" ] || [ ! -f "$B" ] || b=1
+
+    if [ -n "$l" ] && [ -n "$v" ] && cmp -s "$L" "$V"; then
+      stage_base "$p" "$L"
+    elif [ -n "$l" ] && [ -n "$v" ] && [ -z "$b" ]; then
+      stage_vm_fallback "$p"
+    elif [ -n "$l" ] && [ -n "$v" ]; then
+      if cmp -s "$L" "$B"; then
+        stage_laptop_write "$p" "$V"
+        stage_base "$p" "$V"
+        note pulled "$p"
+      elif cmp -s "$V" "$B"; then
+        stage_vm_write "$p" "$L"
+        stage_base "$p" "$L"
+        note pushed "$p"
+      elif has_markers "$L" || has_markers "$V"; then
+        stage_vm_fallback "$p"
+        note unresolved "$p"
+      else
+        work="$tmp/merge/$p"
+        mkdir -p "$(dirname "$work")"
+        cp "$L" "$work"
+        rc=0
+        git merge-file -q -L laptop -L base -L vm "$work" "$B" "$V" || rc=$?
+        if [ "$rc" -eq 0 ]; then
+          stage_both "$p" "$work"
+          note merged "$p"
+        elif [ "$rc" -le 127 ]; then
+          stage_both "$p" "$work"
+          note conflict "$p"
+        else
+          stage_vm_fallback "$p"
+        fi
+      fi
+    elif [ -n "$l" ] && [ -z "$b" ]; then
+      stage_vm_write "$p" "$L"
+      stage_base "$p" "$L"
+      note pushed "$p"
+    elif [ -n "$v" ] && [ -z "$b" ]; then
+      stage_laptop_write "$p" "$V"
+      stage_base "$p" "$V"
+      note pulled "$p"
+    elif [ -n "$l" ]; then
+      if cmp -s "$L" "$B"; then
+        printf '%s\0' "$p" >>"$tmp/laptop-delete"
+        note deleted-laptop "$p"
+      else
+        stage_vm_write "$p" "$L"
+        stage_base "$p" "$L"
+        note restored "$p"
+      fi
+    elif [ -n "$v" ]; then
+      if cmp -s "$V" "$B"; then
+        expect_vm_hash "$p"
+        printf '%s\0' "$p" >>"$tmp/vm-delete"
+        printf '%s\0' "$p" >>"$tmp/base-trash"
+        note deleted-vm "$p"
+      else
+        stage_laptop_write "$p" "$V"
+        stage_base "$p" "$V"
+        note restored "$p"
+      fi
+    fi
+  done <"$tmp/paths"
+}
+
 vm_status() {
   gcloud compute instances describe "$INSTANCE" \
     --project="$PROJECT" --zone="$ZONE" --format='value(status)'
@@ -178,6 +322,7 @@ case "$cmd" in
     export COPYFILE_DISABLE=1
     tmp="$(mktemp -d)"
     collect
+    classify
     echo "devbox sync: not yet implemented" >&2
     exit 1
     ;;
