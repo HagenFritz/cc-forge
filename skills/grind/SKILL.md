@@ -240,89 +240,74 @@ A recorded run that is not `complete` re-enters here, whatever its run value —
 
 **Every card stays `open`** — grind acts on none of them and never uses [the reply verbs](../work-protocol/SKILL.md#reply-verbs).
 
-### Phase 6: Review the PR
+### Review
 
-30. **Budget gate** (review, 25m), then load the roster: read `cc-forge.local.md` in the project root — `review_agents` from its frontmatter, its markdown body as extra review context for every agent. No file → the default set: `forge:review:correctness-auditor`, `forge:review:reliability-engineer`, `forge:review:test-coverage-reviewer`, `forge:research:learnings-researcher`; add `forge:review:adversarial-reviewer` when the diff is ≥50 lines or touches shared state, concurrency, auth, or value-bearing operations; always add `forge:review:code-simplicity-reviewer`.
+20. **Budget gate** (review, 25m), then set the run line to `reviewing` and load the roster. `cc-forge.local.md` in the project root → `review_agents` from its frontmatter, and its markdown body as the local review context. No file → [`/deep-review`'s default set](../deep-review/SKILL.md#load-review-agents) plus [its conditional agents](../deep-review/SKILL.md#conditional-agents-run-if-applicable), and always `forge:review:code-simplicity-reviewer`. Either way, **never dispatch `forge:review:test-coverage-reviewer`**, even when `cc-forge.local.md` names it: the run's test plan owns coverage, and the stamp says it was skipped.
 
-31. **Dispatch the fleet.** Parallel by default; run serially when 6+ agents are configured (note the switch in the run log — there is no user to inform). Each agent's brief: the PR diff via `gh pr diff <N>` (the review is of the PR, not a working tree), the verbatim plan units this PR implements, the repo's `CLAUDE.md` conventions as the house bar, and the return contract — a structured findings list (severity `P1`/`P2`/`P3`, file:line, one-sentence description) plus an overall verdict; an empty list is a valid result. A roster agent that fails or returns nothing: proceed with partial coverage and name it in the `pr-reviewed` stamp — a missing lens is reportable, not fatal.
+21. **Dispatch the fleet.** Parallel by default; serially when 6+ agents are configured. Each agent's brief:
+    - The branch diff, `git -C <worktree> diff origin/<default-branch>...HEAD` — no PR exists yet.
+    - The verbatim plan units this phase owns, and only those.
+    - The repo's `CLAUDE.md` conventions as the house bar, plus the local review context when present.
+    - Verbatim: "Ignore test files and test coverage. Report no missing-test, weak-assertion, or test-quality findings — this run's test plan owns them."
+    - The return contract: a structured findings list (severity `P1`/`P2`/`P3`, file:line, one-sentence description) plus an overall verdict; an empty list is a valid result.
 
-32. **Persist raw findings** before synthesis: each agent's returned findings verbatim to `docs/reviews/.raw/<sanitized-slug>/<agent>.md` (slug from the branch name, the review protocol's sanitization: lowercase, non-`[a-z0-9-]` → `-`, collapse repeats). The worktree's `docs/` is a symlink, so these land in the primary checkout and survive anything short of disk loss.
+    A roster agent that fails or returns nothing: proceed with partial coverage and name it in the report — a missing lens is reportable, not fatal.
 
-33. **Dispatch `forge:review:review-synthesizer`** with every required input named in [the review-protocol spec](../review-protocol/SKILL.md#dispatching-the-synthesizer): the findings of every agent this run dispatched, PR metadata + the branch slug, the protected-artifacts paths (`docs/brainstorms/*-requirements.md`, `docs/plans/*.md`, `docs/solutions/*.md`), the **absolute path of the primary checkout's** `docs/reviews/` directory, and today's date. Pass the `cc-forge.local.md` review context too when present; that input is optional and its absence never stops the synthesizer. It writes `docs/reviews/YYYY-MM-DD-NNN-<slug>-review.md` and returns the doc path, per-tier counts, and summary rows — or a clean-review marker.
+22. **Synthesize** per [the review-protocol spec](../review-protocol/SKILL.md): persist every agent's findings to [the scratch path](../review-protocol/SKILL.md#the-raw-findings-scratch-contract), [dispatch the synthesizer](../review-protocol/SKILL.md#dispatching-the-synthesizer), and run [its count check](../review-protocol/SKILL.md#sanity-checking-the-returned-counts). Grind's values: the PR metadata is the branch form — the branch name, the base SHA (`git -C <worktree> merge-base origin/<default-branch> HEAD`), and the PR title from step 10, with no PR number — so the doc's `target:` is the branch; the slug is the branch; the reviews directory is the **primary checkout's** absolute `docs/reviews/` (the worktree's `docs/` is a symlink to it).
 
-34. **Clean review:** post a one-line PR comment ("Automated review found no issues — <n> agents, 0 findings"), post the `pr-reviewed` stamp with 0/0/0 counts, and jump to Phase 8.
+23. **Verify the doc** per [the spec](../review-protocol/SKILL.md#verifying-the-review-document), falling through to [its inline fallback](../review-protocol/SKILL.md#inline-fallback); the spec owns the retry split and the scratch deletion. Record the outcome as the `**Review:**` line under the run line:
+    - **Clean review** → `**Review:** clean (<n> agents)`. Nothing to triage: continue to Write the test plan.
+    - **A verified doc** — the synthesizer's or the inline one → `**Review:** <doc path>`.
+    - **Raw fallback** (no rules file resolved, so no doc) → there is no user to present to and no PR to comment on: keep `docs/reviews/.raw/<slug>/` as the record, write `**Review:** none — degraded review, raw findings at docs/reviews/.raw/<slug>/`, and triage from the raw lists, carrying every verdict and its reason into the report since there is no doc to hold them.
 
-35. **Verify the doc** rather than trusting the return: the path exists; it greps for `## Groups` and at least one `### P<X>-<N>:` with `**Status:**` below it; frontmatter `target:` matches this PR/branch and `date:` is today. On dispatch failure instead: a **model-pin rejection** (the model pinned in `review-synthesizer.md` is not allowlisted) is deterministic — never retry it; any other failure retries once. When no verified doc can be produced, degrade in order, never halting while raw findings exist on disk:
-    1. **Inline synthesis:** read the raw findings from `.raw/<slug>/` and produce the review doc yourself, following the synthesizer's own rules file (`agents/review/review-synthesizer.md`, or `${CLAUDE_PLUGIN_ROOT}` copy) — then continue as verified, but flag `synthesized inline` in the stamp.
-    2. **Raw fallback:** post the findings grouped by severity as the PR review comment, triage directly from the raw lists, and flag `degraded review — no doc` in the stamp.
+24. **Stamp the review on the issue** when the synthesizer's doc verified — [the spec](../review-protocol/SKILL.md#the-review-written-stamp) owns when it fires, the body below the heading, and the posting. Grind's filled template:
 
-36. **Post the review to the PR** — `gh pr review <N> --comment --body-file <temp-file>`: the doc's Summary table and Groups (or the degraded content), with the review-doc path referenced for full detail. Stay under the comment cap by truncating detail, never structure. Never `--approve`, never `--request-changes` — a blocking review state from a subagent can deadlock the unattended merge, and `/grind` owns the triage.
-
-37. **Stamp the review on the issue:**
     ```markdown
-    <!-- cc-forge-log v1: {"skill":"grind","event":"pr-reviewed","pr":<N>,"paths":["<plan file path>"]} -->
+    <!-- cc-forge-log v1: {"skill":"grind","event":"review-written","paths":["docs/reviews/<filename>","<plan file path>"]} -->
 
-    ### 🔍 /grind — PR #<N> reviewed
-
-    **Findings:** <n> P1, <n> P2, <n> P3
-    **Verdict:** <one line>
-    **Coverage:** <"full roster" | "did not complete: <agents>" | "synthesized inline" | "degraded review — no doc">
+    ### 🔍 /grind — review written (test-coverage-reviewer skipped)
     ```
 
-38. **Delete this slice's scratch** — `rm -rf docs/reviews/.raw/<slug>/` — only after the PR comment posted and only on the verified-doc (or inline-synthesis) path. The raw fallback keeps its scratch; it *is* the record.
+### Triage and fix
 
-### Phase 7: Triage and address
+25. **Budget gate** (triage + fix, 25m), then **record the fix checkpoint** — `git -C <worktree> rev-parse origin/<branch>` written as `**Reviewed at:** <sha>` under the run line, before any verdict. [Resume](#resume) reads commits past it as fixes that landed.
 
-39. **Budget gate** (triage + fix, 25m), then **triage the findings yourself** — from the review doc (from the raw lists only in the degraded case). This is `/grind`'s judgment call and it does not delegate it. For each finding decide **accept**, **reject**, or **defer**:
+    Then **triage the findings yourself** — from the review doc, or the raw lists in the degraded case. This is `/grind`'s judgment call and it does not delegate it. For each finding decide **accept**, **reject**, or **defer**:
 
-    **Accept is the default verdict.** A finding that is real and fixable within this slice's files gets accepted, whatever its priority — the fix agent is already being dispatched, and a small P3 costs nothing extra to fold in. Reject and defer are the exceptions and each needs a stated reason.
+    **Accept is the default verdict.** A finding that is real and fixable within this phase's files gets accepted, whatever its priority — the fix agent is already being dispatched, and a small P3 costs nothing extra to fold in. Reject and defer are the exceptions and each needs a stated reason.
 
     | Verdict | Use when |
     |---------|----------|
-    | **Accept** | The finding is correct and touchable from this slice's diff. All P1s that survive scrutiny are accepted — a real correctness or security bug is never deferred past merge. P2s and P3s are accepted too unless a reject or defer condition below actually applies. |
+    | **Accept** | The finding is correct and touchable from this phase's diff. All P1s that survive scrutiny are accepted — a real correctness or security bug is never deferred past the PR. P2s and P3s are accepted too unless a reject or defer condition below actually applies. |
     | **Reject** | The reviewer misread the code, the "bug" is intentional per the plan, or the suggestion contradicts the plan's Key Technical Decisions or Scope Boundaries. Not for "low priority" or "nice to have" — those are accepts. |
-    | **Defer** | The fix would touch units this slice does not own, or is large enough to need its own plan. "Outside this slice" means the code lives elsewhere — not merely that the finding is minor. |
+    | **Defer** | The fix would touch units this phase does not own, or is large enough to need its own plan. "Outside this phase" means the code lives elsewhere — not merely that the finding is minor. |
 
     Read the actual code before accepting or rejecting a P1. A reviewer agent working from a diff can misjudge context the surrounding file makes obvious; equally, do not reject or defer a finding merely because acting on it is inconvenient. When a verdict is genuinely borderline, accept it.
 
-40. **Record the triage durably, then announce it — both before any fix is dispatched:**
+26. **Record the triage durably — before any fix is dispatched:**
     - Write each verdict into the review doc as its `Status:` line, using `/review-walk`'s vocabulary: accepted → `in-progress`, rejected → `wont-fix` (with a `Skip reason:`), deferred → `deferred` (with a `Defer reason:`). Reason lines follow [`/review-walk`'s Skip reason format](../review-walk/SKILL.md), which owns the `<code> — <free text>` shape, the `Skip reason:` code list, and the neutralization rule — grind restates none of it, so a code added or renamed there applies here without a second edit. The `Defer reason:` codes are grind's own, because grind is their only writer (`/review-walk` files an issue on defer and records a `Tracking:` line instead): `bigger-than-scoped` (the real fix is larger than the finding describes), `blocked-on` (waits on another change, a migration, a release, or an external party), `needs-decision` (someone has to decide something first), `follow-up-pr` (real and wanted, but belongs in its own change). Writing the same codes the user writes is what lets a later analysis read grind's reasons and theirs on one axis.
 
-      **On a P1, grind may use only a subset of those codes** — this restriction is grind's own, not part of the shared vocabulary, because step 39 forbids exactly what most of the codes say. Rejecting a P1 admits `misread` and `by-design` only; deferring one admits `bigger-than-scoped` only. Every other reject code is a cost or scope judgment step 39 reserves for a human, and the remaining defer codes describe waiting on someone an unattended run cannot wait for — a P1 carrying either is a P1 that merged unfixed. **A P1 that fits none of the admissible codes is accepted.** P2 and P3 take the full lists. The doc is now the durable triage record — a killed process resumes from these lines without re-reviewing.
-    - **Sign every verdict.** Directly under each triaged finding's `Status:` line, before any reason line, write `**Grind:** <accepted | rejected | deferred | fixed> — <one line why>`. This is grind's counterpart to [`/review-sweep`'s `Sweep:` line](../review-sweep/SKILL.md), which owns the signature convention and why it exists. Triage writes one of the first three values; step 43 rewrites an accepted finding's line to `fixed` when the fix lands. Exactly one per finding, ever — always a rewrite, never a second line.
-    - Post the verdicts as a PR comment: each finding as "**P<X>-<N> <title>** — accepted / rejected: <why> / deferred: <why>". A rejection's reason should survive someone reading the PR later.
+      **On a P1, grind may use only a subset of those codes** — this restriction is grind's own, not part of the shared vocabulary, because step 25 forbids exactly what most of the codes say. Rejecting a P1 admits `misread` and `by-design` only; deferring one admits `bigger-than-scoped` only. Every other reject code is a cost or scope judgment step 25 reserves for a human, and the remaining defer codes describe waiting on someone an unattended run cannot wait for — a P1 carrying either is a P1 that ships unfixed. **A P1 that fits none of the admissible codes is accepted.** P2 and P3 take the full lists. The doc is now the durable triage record — a killed process resumes from these lines without re-reviewing.
+    - **Sign every verdict.** Directly under each triaged finding's `Status:` line, before any reason line, write `**Grind:** <accepted | rejected | deferred | fixed> — <one line why>`. This is grind's counterpart to [`/review-sweep`'s `Sweep:` line](../review-sweep/SKILL.md), which owns the signature convention and why it exists. Triage writes one of the first three values; step 29 rewrites an accepted finding's line when the fix lands. Exactly one per finding, ever — always a rewrite, never a second line.
 
-41. **If nothing was accepted**, the verdict comment already records the outcome — go to Phase 8.
+27. **If nothing was accepted**, continue to Write the test plan.
 
-42. **If anything was accepted**, set the row to `addressing` and **dispatch the fix subagent** — `Agent` with `model: "opus"` and `subagent_type: "general-purpose"`. Wait for its completion notification before proceeding.
+28. **If anything was accepted**, set the run line to `addressing` and **dispatch the fix subagent** — `Agent` with `model: "opus"` and `subagent_type: "general-purpose"`. Wait for its completion notification before proceeding.
 
     The brief:
     - The absolute worktree path — the branch is still checked out there.
     - The accepted findings verbatim, each with its file:line, and explicitly **only** those. Rejected and deferred findings must not appear in the brief at all; a fix agent handed the full list will quietly fix everything.
-    - The instruction to commit and push to the PR branch when done, and to leave the test suite green.
-    - The same prohibitions as the build agent: no merge, no `main`, no `git add -A`, no `--no-verify`, no force-push.
-    - **Its return value:** what it changed per finding, and any finding it could not address with the reason.
+    - The instruction to commit and push to the branch when done, and to run no test suite — a regression surfaces in CI when you land the PR.
+    - The same prohibitions as the build agent: no merge, no PR, no `main`, no `git add -A`, no `--no-verify`, no force-push.
+    - **Its return value:** per finding, what it changed and why the fix was applied — the reasoning, not a restatement of the finding — and any finding it could not address with the reason.
 
-43. **Verify the fixes landed** — `git -C <worktree> log origin/<branch>..HEAD` should be empty (everything pushed) and `gh pr view <N> --json commits` should show the new commits. If the agent reported success but nothing was pushed, retry once with a brief noting exactly what was missing; if the retry also fails, mark the row `blocked` and halt. On success, flip each fixed finding's `Status:` to `done` in the review doc **and rewrite its `**Grind:**` line to `**Grind:** fixed — <one line what changed>`** in the same edit — replacing the `accepted` line, not appending to it. A `done` finding still claiming `accepted` records a verdict where it should record an outcome, and says nothing about what landed.
+29. **Verify the fixes landed** — `git -C <worktree> log origin/<branch>..HEAD` is empty (everything pushed) and `git -C <worktree> log <reviewed-at>..origin/<branch>` shows the new commits. If the agent reported success but nothing was pushed, retry once with a brief noting exactly what was missing; if the retry also fails, halt per Halting. On success, in one edit per finding:
+    - **Fixed** → flip `Status:` to `done` and rewrite its `**Grind:**` line to `**Grind:** fixed — <what changed>; why: <why the fix was applied>`, replacing the `accepted` line. A `done` finding still claiming `accepted` records a verdict where it should record an outcome.
+    - **Not addressed** → leave `Status:` at `in-progress` and rewrite its line to `**Grind:** accepted — not fixed: <reason>`, so `/review-walk` presents it as left by an unattended run. The report lists it.
 
-44. **Report the outcomes on the PR** — `/review-push`'s comment shape, built from the doc's `Status:` lines:
-    ```markdown
-    ## Review pass — <N> fixed, <M> deferred, <K> skipped
+30. **Never file a GitHub issue for a deferred finding.** Deferred findings live in the review doc's `Status: deferred` lines — that is the whole record. Do not call `/side-quest`, do not open a tracking issue, do not create one at the end of the run. Surfacing them in the report is how the user learns about them and decides what to file.
 
-    ### Fixed
-    - **P1-2 <title>** — <one-line what-changed> (`<file>`)
-
-    ### Deferred
-    - **P2-1 <title>** — <defer reason> (`<file>`)
-
-    ### Skipped (won't fix)
-    - **P3-4 <title>** — <skip reason> (`<file>`)
-    ```
-    Omit empty sections. Describe fixes in plain what-changed terms drawn from the fix agent's report and the diff, not the reviewer's problem statement.
-
-45. **Never file a GitHub issue for a deferred finding.** Deferred findings live in the review doc's `Status: deferred` lines and in the PR comment from step 44 — that is the whole record. Do not call `/side-quest`, do not open a tracking issue, do not create one at the end of the run. Surfacing them in the final report (Phase 11, step 46) is how the user learns about them and decides what to file.
-
-46. **Do not re-review.** One review pass per PR. Reviewing the fixes with a fresh fleet invites an unbounded loop; the final look in Phase 8 is the backstop.
+31. **Do not re-review.** One review pass per run; reviewing the fixes with a fresh fleet invites an unbounded loop. Continue to Write the test plan.
 
 ### Phase 8: Look, verify, merge
 
