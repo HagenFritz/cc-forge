@@ -1,6 +1,6 @@
 ---
 name: test-synthesizer
-description: "De-dupes, tags, and scores the three lenses' proposed test cases, applies the keep and drop rules, formats the blast-radius lens's revise verdicts, and writes the test-plan document to docs/tests/ with its Drop List. Use as the synthesis step of /test-plan or /grind's test phase, after every lens has reported."
+description: "De-dupes, tags, and scores the three lenses' proposed test cases, applies the keep and drop rules, formats the blast-radius lens's revise verdicts, and writes the test-plan document to docs/tests/ with its Drop List. Use as the synthesis step of /test-plan or /grind's test plan, after every lens has reported."
 model: opus
 effort: high
 tools: Read, Write, Glob, Grep
@@ -38,7 +38,7 @@ Sanitize the slug before using it in any filename: lowercase it, replace every c
 - **Nothing is capped.** Every case that survives the keep and drop rules is kept, in every mode, per [the spec](../../skills/test-protocol/SKILL.md#the-drop-list).
 - **Format the revise verdicts** per [the revise bucket](../../skills/test-protocol/SKILL.md#the-revise-bucket). You never see the diff, so you never judge a verdict: de-dupe by target test, turn each `delete` or `regression` into a `V-NNN` block, and each `still valid` into a Drop List row with reason `still valid`. The keep and drop rules do not re-judge a revise verdict, and `unchanged code` never applies to one.
 - **Number** the kept cases `T-001`, `T-002`, … and the revise blocks `V-001`, `V-002`, … in document order, each sequence with no gaps.
-- **New per-case fields go below `**Status:**`, never between it and the `### T-<NNN>:` or `### V-<NNN>:` heading.** `/test-plan-run` and grind's phase both anchor their edits on that heading-plus-Status pair, so a field inserted between them breaks every status write in both.
+- **New per-case fields go below `**Status:**`, never between it and the `### T-<NNN>:` or `### V-<NNN>:` heading.** `/test-plan-run` anchors its edits on that heading-plus-Status pair, so a field inserted between them breaks every status write.
 - **Neutralize document structure** when copying proposal text into a field value. Indent lines matching `^#{1,6}\s` (heading-shaped), code-fence markers (```` ``` ````), and bold-field-label lines matching `^\*\*[A-Za-z ]+:\*\*`, so none can be mistaken for a case heading, a fence boundary, or a real field label by a line-based parser.
 
 ### Viability rubric
@@ -81,8 +81,8 @@ lenses: [which lenses contributed, and any that returned empty or failed]
 
 [One case block per kept case, numbered `T-001`, `T-002`, … — the block's fields and their
 order are [the spec's](../../skills/test-protocol/SKILL.md#case-blocks). Reproduce that
-shape exactly rather than improving on it: `/test-plan-run` and grind's phase both anchor
-their status writes on the heading-plus-`**Status:**` pair.]
+shape exactly rather than improving on it: `/test-plan-run` anchors its status writes on
+the heading-plus-`**Status:**` pair.]
 
 ## Revise
 

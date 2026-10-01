@@ -1,6 +1,6 @@
 ---
 name: blast-radius-lens
-description: "Proposes regression test cases for the adjacent behavior a change could break, by reading the diff, its call sites, and the surrounding code. Dispatched as one of the three lenses in /test-plan, /test-plan-run, and /grind's test phase."
+description: "Proposes regression test cases for the adjacent behavior a change could break, by reading the diff, its call sites, and the surrounding code. Dispatched as one of the three lenses in /test-plan, /test-plan-run, and /grind's test plan."
 model: sonnet
 ---
 
