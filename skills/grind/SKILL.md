@@ -23,11 +23,11 @@ The plan document is the durable state. `/grind` writes a `## Grind` section int
 
 What that means, stated plainly:
 
-1. **`/grind` never merges and never watches CI.** It ends at an open, ready PR. Nothing reaches the default branch until you merge it.
-2. **The stop conditions are the safety net.** Because there is no human gate, the halt rules are load-bearing. When `/grind` cannot make progress, it **stops the run** and leaves the branch and worktree in place — it never skips a blocked slice, since later slices build on earlier ones.
-3. **The clock is part of the contract.** With the timer on, `/grind` will decline to start a phase it cannot finish before the stop threshold, and will end the run cleanly instead. `--no-timer` removes that guard for unbounded local runs.
-4. **`/grind` never force-pushes, never pushes to `main`, never uses `--no-verify`, and never uses `git add -A`.** These do not become acceptable because the run is autonomous — for `/grind` or any subagent it dispatches.
-5. **Interrupting is always safe.** State lives in the plan's `## Grind` section, the work, review, and test docs, and on GitHub. Ctrl-C or a hard kill at any point leaves a world [Resume](#resume) can re-enter.
+- **`/grind` never merges and never watches CI.** It ends at an open, ready PR. Nothing reaches the default branch until you merge it.
+- **The stop conditions are the safety net.** Because there is no human gate, the halt rules are load-bearing. When `/grind` cannot make progress, it **stops the run** and leaves the branch and worktree in place — it never skips a blocked slice, since later slices build on earlier ones.
+- **The clock is part of the contract.** With the timer on, `/grind` will decline to start a phase it cannot finish before the stop threshold, and will end the run cleanly instead. `--no-timer` removes that guard for unbounded local runs.
+- **`/grind` never force-pushes, never pushes to `main`, never uses `--no-verify`, and never uses `git add -A`.** These do not become acceptable because the run is autonomous — for `/grind` or any subagent it dispatches.
+- **Interrupting is always safe.** State lives in the plan's `## Grind` section, the work, review, and test docs, and on GitHub. Ctrl-C or a hard kill at any point leaves a world [Resume](#resume) can re-enter.
 
 The user has to opt into this. A slash command or a plain-English ask ("grind this plan", "just run the whole thing") both count as opting in; a plan that merely looks ready does not. Never start `/grind` on your own initiative or from inside another skill.
 
@@ -68,18 +68,17 @@ The VM's process lease is ~2 hours; the disk survives, the process does not. The
 
   That integer is `elapsed` in minutes. Use the number it printed. If the anchor file is missing or unreadable (a compaction lost the scratchpad, say), treat the timer as **expired** and go to the stop flow — never fall back to guessing.
 - **Stop threshold:** 90m elapsed. Nothing stops before it.
-- **Budget gates:** before starting each phase of each slice, read the clock, then: if `elapsed < 90`, **proceed** — no other check. If `elapsed ≥ 90`, the run may still finish work that fits: proceed only when `elapsed + budget ≤ 115`, otherwise go to the stop flow (Phase 10).
+- **Budget gates:** before each slice and each run-level phase, read the clock, then: if `elapsed < 90`, **proceed** — no other check. If `elapsed ≥ 90`, the run may still finish work that fits: proceed only when `elapsed + budget ≤ 115`, otherwise go to the stop flow ([Timer stop](#timer-stop-healthy--resume-continues)).
 
 | Phase | Budget to start |
 |-------|-----------------|
 | Build | 30m per slice (the last slice's covers the wrap-up) |
-| Test | 25m |
 | Review | 25m |
 | Triage + fix | 25m |
-| Merge | 25m (the CI watch alone is capped at 20m) |
+| Test plan | 15m |
+| PR open | 5m |
 
 - Budgets bound the **gate arithmetic**, not the subagents — a dispatched agent is never clocked, interrupted, or cut off mid-phase. The gate's only question is whether there is room to begin.
-- **No gate between merge success and the end of cleanup** — that boundary is atomic (Phase 8).
 - `--no-timer` disables every gate; nothing else changes — no anchor is written and no clock is read.
 
 ### Select the phase
@@ -171,15 +170,15 @@ A recorded run that is not `complete` re-enters here, whatever its run value —
 
 - **Rung 1 — slices built.** The evidence per slice is `git log origin/<branch>` plus `unit-complete` stamps on the issue, fetched per [the issue-log reader contract](../issue-log/SKILL.md#reader-contract) and counted only when the marker's `paths` holds this plan's file path **and** its `branch` is this run's branch; a grind event the spec lists as [retired](../issue-log/SKILL.md#event-registry) never counts. A slice whose units are all committed and stamped is built — if its row is not `built`, run its verify-and-record step from `docs/work/.raw/<slug>/build-<n>.md`; without that file, take each committed unit's range from `git log <base>..origin/<branch>` yourself (never passing messages to the observer), fill every `Reason:` with `none given`, and record no stale tests. A slice with partial state → the build subagent continues from the first unfinished unit, never redoing a stamped one. Nothing → build it from scratch.
 - **Rung 2 — work doc complete.** The run's work doc is at `status: complete`. Otherwise the wrap-up never finished: run it.
-- **Rung 3 — review ran.** A review doc in `docs/reviews/` passes the Review section's verification — `target:` is this branch, `date:` is current, and the structural greps hold — or the subsection carries a `**Review:**` line of `clean` or `none — <reason>`. Then **never re-dispatch the fleet**. A doc that fails any check is a leftover from an earlier attempt: ignore it. A `clean` review has nothing to triage; skip to rung 6.
+- **Rung 3 — review ran.** A review doc in `docs/reviews/` passes the Review section's verification — `target:` is this branch, `date:` is current, and the structural greps hold — or the subsection carries a `**Review:**` line starting `clean` or `none — `. Then **never re-dispatch the fleet**. A doc that fails any check is a leftover from an earlier attempt: ignore it. A `clean` review has nothing to triage; skip to rung 6.
 - **Rung 4 — triage done.** **Every** `### P<X>-<N>:` heading carries a non-`open` `Status:`. Some is not enough: triage writes one finding at a time, so a kill mid-loop leaves a mixed doc. Any `open` finding → re-enter triage on the `open` findings alone, skipping every finding that already carries a `**Grind:**` line. When no finding is accepted — every one `wont-fix` or `deferred` — no fix agent was dispatched and none is owed: skip to rung 6.
-- **Rung 5 — fixes landed.** No finding is `in-progress`, or `git log <reviewed-at>..origin/<branch>` shows commits past the subsection's `**Reviewed at:**` SHA. In the second case the fixes landed but their record did not: rebuild each accepted finding's `done` status and its `**Grind:** fixed — <what changed>; why: <why the fix was applied>` line from those commits — **never re-dispatch the fix agent**. Otherwise re-derive the fix brief from the `in-progress` findings.
+- **Rung 5 — fixes landed.** No finding is `in-progress`, or `git log <reviewed-at>..origin/<branch>` shows commits past the subsection's `**Reviewed at:**` SHA. In the second case the fixes landed but their record did not: rebuild each accepted finding's `done` status and its `**Grind:** fixed — <what changed>; why: <why the fix was applied>` line from those commits, skipping any finding already signed `**Grind:** accepted — not fixed` — **never re-dispatch the fix agent**. Otherwise re-derive the fix brief from the `in-progress` findings.
 - **Rung 6 — test plan written.** A `docs/tests/*.md` document verifies for this branch per [the test-protocol spec's resume](../test-protocol/SKILL.md#resume), or the subsection carries a `**Test plan:** none — <reason>` line.
 - **Rung 7 — PR open.** `gh pr list --head <branch> --state all --json number,state,url`. A PR exists → only the bookkeeping after the open remains: verify it, post the `pr-created` stamp (a duplicate is harmless — the reader dedupes), and finish the run. None → open it.
 
 ### Build the slices
 
-15. **Create the worktree and the work doc** — once per run; a resume reuses both. The branch is step 10's, and the worktree follows `/tree`'s convention at `../{repo-name}-worktrees/{branch-name}/`:
+15. **Create the worktree and the work doc** — once per run; a resume reuses both. The branch is the one Select the phase named, and the worktree follows `/tree`'s convention at `../{repo-name}-worktrees/{branch-name}/`:
     ```bash
     git fetch origin <default-branch>
     git worktree add -b <branch-name> ../<repo>-worktrees/<branch-name> origin/<default-branch>
@@ -188,7 +187,7 @@ A recorded run that is not `complete` re-enters here, whatever its run value —
 
     Then **create the run's work doc** per [the work-protocol spec](../work-protocol/SKILL.md#the-document) — its filename, frontmatter, four sections, and empty-section placeholders are the spec's. Grind's values: `target:` is the run's branch and `base:` is `git -C <worktree> rev-parse HEAD` now. Seed `## Decisions` per [the spec's lifecycle](../work-protocol/SKILL.md#lifecycle). Set the run line to `building`.
 
-    Then run steps 16–18 for each slice in table order, and step 19 once after the last.
+    Then run the budget gate, the dispatch, and the verify-and-record below for each slice in table order, and the wrap-up once after the last.
 
 16. **Budget gate** (build, 30m — one per slice), then **update the row** to `building` in the plan doc.
 
@@ -253,7 +252,7 @@ A recorded run that is not `complete` re-enters here, whatever its run value —
 
     A roster agent that fails or returns nothing: proceed with partial coverage and name it in the report — a missing lens is reportable, not fatal.
 
-22. **Synthesize** per [the review-protocol spec](../review-protocol/SKILL.md): persist every agent's findings to [the scratch path](../review-protocol/SKILL.md#the-raw-findings-scratch-contract), [dispatch the synthesizer](../review-protocol/SKILL.md#dispatching-the-synthesizer), and run [its count check](../review-protocol/SKILL.md#sanity-checking-the-returned-counts). Grind's values: the PR metadata is the branch form — the branch name, the base SHA (`git -C <worktree> merge-base origin/<default-branch> HEAD`), and the PR title from step 10, with no PR number — so the doc's `target:` is the branch; the slug is the branch; the reviews directory is the **primary checkout's** absolute `docs/reviews/` (the worktree's `docs/` is a symlink to it).
+22. **Synthesize** per [the review-protocol spec](../review-protocol/SKILL.md): persist every agent's findings to [the scratch path](../review-protocol/SKILL.md#the-raw-findings-scratch-contract), [dispatch the synthesizer](../review-protocol/SKILL.md#dispatching-the-synthesizer), and run [its count check](../review-protocol/SKILL.md#sanity-checking-the-returned-counts). Grind's values: the PR metadata is the branch form — the branch name, the base SHA (`git -C <worktree> merge-base origin/<default-branch> HEAD`), and the PR title from Select the phase, with no PR number — so the doc's `target:` is the branch; the slug is the branch; the reviews directory is the **primary checkout's** absolute `docs/reviews/` (the worktree's `docs/` is a symlink to it).
 
 23. **Verify the doc** per [the spec](../review-protocol/SKILL.md#verifying-the-review-document), falling through to [its inline fallback](../review-protocol/SKILL.md#inline-fallback); the spec owns the retry split and the scratch deletion. Record the outcome as the `**Review:**` line under the run line:
     - **Clean review** → `**Review:** clean (<n> agents)`. Nothing to triage: continue to Write the test plan.
@@ -285,10 +284,10 @@ A recorded run that is not `complete` re-enters here, whatever its run value —
     Read the actual code before accepting or rejecting a P1. A reviewer agent working from a diff can misjudge context the surrounding file makes obvious; equally, do not reject or defer a finding merely because acting on it is inconvenient. When a verdict is genuinely borderline, accept it.
 
 26. **Record the triage durably — before any fix is dispatched:**
-    - Write each verdict into the review doc as its `Status:` line, using `/review-walk`'s vocabulary: accepted → `in-progress`, rejected → `wont-fix` (with a `Skip reason:`), deferred → `deferred` (with a `Defer reason:`). Reason lines follow [`/review-walk`'s Skip reason format](../review-walk/SKILL.md), which owns the `<code> — <free text>` shape, the `Skip reason:` code list, and the neutralization rule — grind restates none of it, so a code added or renamed there applies here without a second edit. The `Defer reason:` codes are grind's own, because grind is their only writer (`/review-walk` files an issue on defer and records a `Tracking:` line instead): `bigger-than-scoped` (the real fix is larger than the finding describes), `blocked-on` (waits on another change, a migration, a release, or an external party), `needs-decision` (someone has to decide something first), `follow-up-pr` (real and wanted, but belongs in its own change). Writing the same codes the user writes is what lets a later analysis read grind's reasons and theirs on one axis.
+    - Write each verdict into the review doc as its `Status:` line, using `/review-walk`'s vocabulary: accepted → `in-progress`, rejected → `wont-fix` (with a `Skip reason:`), deferred → `deferred` (with a `Defer reason:`). Reason lines follow [`/review-walk`'s Skip reason format](../review-walk/SKILL.md#skip-reason-format), which owns the `<code> — <free text>` shape, the `Skip reason:` code list, and the neutralization rule — grind restates none of it, so a code added or renamed there applies here without a second edit. The `Defer reason:` codes are grind's own, because grind is their only writer (`/review-walk` files an issue on defer and records a `Tracking:` line instead): `bigger-than-scoped` (the real fix is larger than the finding describes), `blocked-on` (waits on another change, a migration, a release, or an external party), `needs-decision` (someone has to decide something first), `follow-up-pr` (real and wanted, but belongs in its own change). Writing the same codes the user writes is what lets a later analysis read grind's reasons and theirs on one axis.
 
-      **On a P1, grind may use only a subset of those codes** — this restriction is grind's own, not part of the shared vocabulary, because step 25 forbids exactly what most of the codes say. Rejecting a P1 admits `misread` and `by-design` only; deferring one admits `bigger-than-scoped` only. Every other reject code is a cost or scope judgment step 25 reserves for a human, and the remaining defer codes describe waiting on someone an unattended run cannot wait for — a P1 carrying either is a P1 that ships unfixed. **A P1 that fits none of the admissible codes is accepted.** P2 and P3 take the full lists. The doc is now the durable triage record — a killed process resumes from these lines without re-reviewing.
-    - **Sign every verdict.** Directly under each triaged finding's `Status:` line, before any reason line, write `**Grind:** <accepted | rejected | deferred | fixed> — <one line why>`. This is grind's counterpart to [`/review-sweep`'s `Sweep:` line](../review-sweep/SKILL.md), which owns the signature convention and why it exists. Triage writes one of the first three values; step 29 rewrites an accepted finding's line when the fix lands. Exactly one per finding, ever — always a rewrite, never a second line.
+      **On a P1, grind may use only a subset of those codes** — this restriction is grind's own, not part of the shared vocabulary, because the triage table forbids exactly what most of the codes say. Rejecting a P1 admits `misread` and `by-design` only; deferring one admits `bigger-than-scoped` only. Every other reject code is a cost or scope judgment the triage table reserves for a human, and the remaining defer codes describe waiting on someone an unattended run cannot wait for — a P1 carrying either is a P1 that ships unfixed. **A P1 that fits none of the admissible codes is accepted.** P2 and P3 take the full lists. The doc is now the durable triage record — a killed process resumes from these lines without re-reviewing.
+    - **Sign every verdict.** Directly under each triaged finding's `Status:` line, before any reason line, write `**Grind:** <accepted | rejected | deferred | fixed> — <one line why>`. This is grind's counterpart to [`/review-sweep`'s `Sweep:` line](../review-sweep/SKILL.md), which owns the signature convention and why it exists. Triage writes one of the first three values; verifying the fixes rewrites an accepted finding's line when the fix lands. Exactly one per finding, ever — always a rewrite, never a second line.
 
 27. **If nothing was accepted**, continue to Write the test plan.
 
@@ -309,117 +308,143 @@ A recorded run that is not `complete` re-enters here, whatever its run value —
 
 31. **Do not re-review.** One review pass per run; reviewing the fixes with a fresh fleet invites an unbounded loop. Continue to Write the test plan.
 
-### Phase 8: Look, verify, merge
+### Write the test plan
 
-47. **Budget gate** (merge, 25m), then **give the PR a final look.** This is not a review — it's the check a person does before hitting merge. Read `gh pr diff <N>` end to end and confirm:
-    - The diff does what the slice's units said it would. Their `Verification` lines were already checked by step 18's wrap-up; what reaches this look is the slice doc's `open` `D1` cards — read each one as input, and a card the diff confirms is a real gap fails the look like any other miss. **Never change a card's `Status:`** — every card stays `open`.
-    - Nothing accepted in Phase 7 is still unfixed.
-    - No debugging leftovers, no commented-out blocks, no stray files, no secrets.
-    - The change is confined to the slice's scope — nothing from a later slice snuck in.
+This mirrors `/test-plan` from its context through its verified document, in the worktree, and stops there: no writer, no assurance filters, no test file, no commit. Writing and running the tests is `/test-plan-run`, your step after review.
 
-    **If the look fails**, mark the row `blocked` with the reason and halt. Do not dispatch another fix round — two failed passes on the same PR means the slice needs a human.
+32. **Budget gate** (test plan, 15m), then set the run line to `test-plan`.
 
-48. **Set the row to `merging`, then wait on CI** — `gh pr checks <N> --watch`. If `gh` lacks `--watch`, poll every 30s capped at 20 minutes, then halt if unresolved.
-    - **"No checks reported"** means the repo has no CI on this branch — the local suite becomes the gate: run the test command detected in Phase 0 in the worktree; red halts. (If Phase 0 found no test command either, note in the final report that this slice merged ungated.)
-    - **When checks exist, `/grind` runs nothing locally** — the suite already ran in CI; running it twice buys nothing and, on expensive suites, costs real money.
+33. **Resolve the intent.** The document's `target:` and slug are the run's branch, the diff base is `origin/<default-branch>`, and the origin documents are this plan and the brainstorm its `origin:` names. Descend [the spec-lens input ladder](../test-protocol/SKILL.md#spec-lens-input-ladder), bounded to the phase's units per [the brief-is-bounded rule](../test-protocol/SKILL.md#the-brief-is-bounded). The ladder's last rung is not a halt here: write `**Test plan:** none — no intent source` under the run line and continue to Open the PR.
 
-49. **Red CI halts the run.** No fix rounds, no re-pushes, and never a masked failure — deleting a failing test, loosening an assertion, adding a skip, or bumping a timeout to force green is prohibited; CI is the only automated gate protecting an unattended merge. The Autonomy Contract's one carve-out — a `delete` of a `V-` case recorded in the verified test document before the PR opens is not masking — never reaches this step. Mark the row `blocked` with the failing check named in `Notes`, pull the failing log (`gh run view <run-id> --log-failed`) into the halt report, and halt per Phase 9.
+34. **Build the surface digest and the conventions** in the worktree, as `/test-plan`'s [Build the surface digest](../test-plan/SKILL.md#3-build-the-surface-digest) and [Discover the test conventions](../test-plan/SKILL.md#4-discover-the-test-conventions) do, per [the spec's surface digest](../test-protocol/SKILL.md#the-surface-digest).
 
-50. **Merge** — `gh pr merge <N> --squash --delete-branch`. **Verify it actually merged** (`gh pr view <N> --json state,mergedAt`); a failed merge (branch protection, required reviews, conflicts) is a halt, not a retry. Required-reviews protection in particular means the repo does not permit unattended merges — say that plainly rather than trying to work around it.
+35. **Dispatch the three lenses** in one parallel batch — [the spec's roster](../test-protocol/SKILL.md#the-roster) and [three lenses](../test-protocol/SKILL.md#the-three-lenses), briefed as `/test-plan`'s [Dispatch the three lenses](../test-plan/SKILL.md#5-dispatch-the-three-lenses) briefs them. The blast-radius lens gets the run's work doc, per [the work-protocol readers rule](../work-protocol/SKILL.md#readers). Empty or failed lenses follow [the lens-failure posture](../test-protocol/SKILL.md#lens-failure-posture); when all three come back empty or failed, write `**Test plan:** none — lenses returned nothing` and continue to Open the PR.
 
-51. **Clean up — atomically with the merge.** No budget gate, no stop, and no interruption point between merge success and the end of this step; a resume that finds a merged PR with any of this missing completes it (Phase 2). From the primary checkout: `git worktree remove ../<repo>-worktrees/<branch-name>`, `git fetch origin <default-branch>:<default-branch>` (the fetch form — other worktrees may hold the branch), check the plan's implementation-unit checkboxes for the slice, update the row to `merged`, and stamp:
+36. **Persist, synthesize, and verify** as `/test-plan`'s [Persist and synthesize](../test-plan/SKILL.md#6-persist-and-synthesize) and [Verify the document](../test-plan/SKILL.md#7-verify-the-document) do: [the raw scratch contract](../test-protocol/SKILL.md#the-raw-scratch-contract), [the synthesizer dispatch](../test-protocol/SKILL.md#dispatching-the-synthesizer), [the count check](../test-protocol/SKILL.md#the-count-check), [verification](../test-protocol/SKILL.md#verifying-the-document), and [the inline fallback](../test-protocol/SKILL.md#inline-fallback). The tests directory is the **primary checkout's** absolute `docs/tests/`. Record `**Test plan:** <doc path>` under the run line. No completion report prints here — the run's Report carries the doc.
+
+37. **Stamp the test plan on the issue** when the synthesizer's doc verified — [the spec's `test-plan-written`](../test-protocol/SKILL.md#test-plan-written) owns when it fires and the body below the heading. Grind's filled template:
+
     ```markdown
-    <!-- cc-forge-log v1: {"skill":"grind","event":"pr-merged","pr":<N>,"paths":["<plan file path>"]} -->
+    <!-- cc-forge-log v1: {"skill":"grind","event":"test-plan-written","paths":["docs/tests/<filename>","<plan file path>"]} -->
 
-    ### ✅ /grind — PR #<N> merged (slice <i> of <count>)
-
-    **Slice:** <slice name>
-    **Landed:** <one to two sentences on what shipped>
+    ### 🧪 /grind — test plan written
     ```
-    Then move to the next slice.
 
-### Phase 9: Halting (blocked — needs a human)
+### Open the PR
 
-52. **Halting stops the entire run, not just the slice.** Later slices are built on the assumption that earlier ones merged; continuing past a blocked slice produces PRs that don't apply. Never skip ahead.
+38. **Budget gate** (PR open, 5m), then set the run line to `pr-open`.
 
-    On halt:
-    - Set the row to `blocked` with a one-clause reason in `Notes`.
-    - Leave the PR (when one was opened) **open** and the worktree **in place** — both are the user's material for taking over.
-    - Set every remaining row's `Notes` to `not started`.
-    - Stamp the issue. A halt in the build, test, or PR-open phase fires **before any PR exists** — grind opens the PR in Phase 5, after the tests — so the stamp branches on whether there is a PR — never invent a number or url for one that was never opened:
+39. **Compose the body** from [`/ship`'s PR template](../ship/pr-template.md), verbatim in structure, with exactly two grind-specific fills:
+    - **`Related to #<issue>`** at the top when `<issue>` is set — never a closing keyword. Merging is yours, and the issue may span later phases.
+    - **`### Grind Docs`**, appended after `### Related Changes` (after `### Primary Changes` when there are none) — the template's only addition:
+
       ```markdown
-      <!-- cc-forge-log v1: {"skill":"grind","event":"grind-blocked","pr":<N>,"paths":["<plan file path>"]} -->
-
-      ### 🛑 /grind — halted at slice <i> of <count>
-
-      **Blocked:** <what stopped it>
-      **PR:** <url> (open)
-      **Worktree:** <absolute path>
-      **Remaining:** <count> slices not started
+      ### Grind Docs
+      - **Work:** `<work doc path>`
+      - **Review:** `<review doc path>` | clean | degraded — raw findings at `docs/reviews/.raw/<slug>/`
+      - **Test plan:** `<test doc path>` | none — <reason>
+      - **Review tally:** <n> findings — <n> fixed, <n> deferred, <n> rejected<, <n> not fixed>
       ```
-      With no PR, drop the `pr` key from the marker and the `**PR:**` line from the body, and say where the work actually is:
+
+    Under **Pre-merge Tests**, when a test doc exists, add the plain item `Run /test-plan-run <test doc path> and commit the tests` — no backticks, so `/land` reports it as manual rather than running it. Deviations never appear in the body, per [the work-protocol spec's terminal one-liners](../work-protocol/SKILL.md#terminal-one-liners). The title is the conventional-commit title from Select the phase.
+
+40. **Open it ready, not draft** — write the body to a temp file with the Write tool, then from the worktree:
+
+    ```bash
+    gh pr create --base <default-branch> --head <branch> --title "<title>" --body-file <temp-file>
+    ```
+
+    **Verify it** with `gh pr view <N> --json number,state,url,headRefName,mergeable`: `state` is `OPEN` and `headRefName` is the run's branch, or halt per Halting. Keep `mergeable` for the report. Grind posts no PR comment, ever — the per-finding outcome comment is `/review-push`'s, after your walk.
+
+41. **Stamp the PR on the issue:**
+
+    ```markdown
+    <!-- cc-forge-log v1: {"skill":"grind","event":"pr-created","pr":<N>,"paths":["<plan file path>"]} -->
+
+    ### 🚀 /grind — PR #<N> opened (phase <n> of <m>)
+
+    **PR:** <url>
+    **Summary:** <one line on what the PR delivers>
+    ```
+
+42. **Close the run.** Set the run line to `complete` with the PR number as a link. When this is the plan's final phase, set the frontmatter `status: active` → `status: completed`; an earlier phase leaves it `active` so the next run finds it. Then Report.
+
+### Halting (blocked — needs a human)
+
+43. **Halting stops the entire run.** Later slices build on earlier ones, so a blocked slice is never skipped. On halt:
+    - Set the run line to `blocked`, and the row — when the halt is in a slice — to `blocked`, with a one-clause reason in `Notes`.
+    - Leave the branch, the worktree, and any PR **in place** — they are your material for taking over. Set every remaining row's `Notes` to `not started`.
+    - Stamp the issue. A halt almost always fires before the PR exists, so the default form carries no `pr` and says where the work is:
       ```markdown
       <!-- cc-forge-log v1: {"skill":"grind","event":"grind-blocked","paths":["<plan file path>"]} -->
 
-      ### 🛑 /grind — halted at slice <i> of <count>
+      ### 🛑 /grind — halted at <slice i of count | review | triage/fix | test plan | PR open>
 
       **Blocked:** <what stopped it>
-      **Branch:** `<branch-name>` (pushed, no PR — <n> of <m> units built)
+      **Branch:** `<branch>` (pushed, no PR — <n> of <m> units built)
       **Worktree:** <absolute path>
       **Remaining:** <count> slices not started
       ```
-    - Send the notification (see Notification below).
-    - Report to the user: what merged, what's open and where, what the failure was with the real output, and the concrete next step.
+      Only when the PR is already open does the marker gain `"pr":<N>` and the body a `**PR:** <url> (open)` line in place of `**Branch:**`. Never invent a number or url.
+    - Notify, then report: what was built, where the branch and worktree are, the failure with its real output, and the concrete next step.
 
-    **Blocked is not stopped.** Blocked means the run cannot proceed without a human (red CI, failed look, blocked unit, failed merge). A timer stop (Phase 10) is a healthy run out of clock — resume continues it; a blocked run waits for you.
+    **Blocked is not stopped.** Blocked waits for you (a blocked unit, a build or fix that did not push, a PR that did not verify). A timer stop is a healthy run out of clock, and a resume continues it.
 
-### Phase 10: Timer stop (healthy — resume continues)
+### Timer stop (healthy — resume continues)
 
 44. When a budget gate fails, end the run cleanly, **durable writes first, email last**:
-    1. **Plan table:** the current row keeps its in-flight status; write `stopped by timer at <phase>` into its `Notes`.
+    1. **Plan state:** set the run line to `stopped`. In a slice, the row keeps its in-flight status and its `Notes` reads `stopped by timer at <phase>`.
     2. **Stamp the issue:**
        ```markdown
        <!-- cc-forge-log v1: {"skill":"grind","event":"grind-stopped","paths":["<plan file path>"]} -->
 
-       ### ⏸️ /grind — stopped by timer at slice <i> of <count>
+       ### ⏸️ /grind — stopped by timer before <slice i of count | review | triage/fix | test plan | PR open>
 
-       **Stopped before:** <phase> of slice <i> (<slice name>)
-       **Done so far:** <n> slices merged<, current slice state in one clause>
+       **Done so far:** <n> of <count> slices built<, review/fix/test-plan state in one clause>
        **Remaining:** <what remains, one line>
        **Resume:** re-run `/grind <plan path>` — reconciliation picks up from here
        ```
-    3. **Send the notification** — push always, email if configured, one attempt per channel (see Notification); never retry on a stop, the buffer is for exiting cleanly.
+    3. **Notify** — one attempt per channel, never a retry; the buffer is for exiting cleanly.
     4. Report the same summary to the terminal and exit.
 
-### Phase 11: Report (complete)
+### Report
 
-45. When every slice is merged, set the plan's frontmatter `status: active` → `status: completed`.
+45. When the PR is open, print the final summary:
+    - The PR link and its `mergeable` state.
+    - The three doc paths — work, review (or `clean` / the raw path), test plan (or `none — <reason>`).
+    - `/work`'s deviation one-liner, per [the work-protocol spec](../work-protocol/SKILL.md#terminal-one-liners).
+    - Phase <n> of <m> built; when phases remain: "After this PR merges, re-run `/grind <plan path>` for phase <n+1>."
+    - Every deferred finding inline — title, `Defer reason:`, and the review doc — **not** filed as issues; you decide what to file. Then every `**Grind:** accepted — not fixed` finding, every verdict from a degraded review (no doc holds them), and every roster agent or lens that did not complete.
+    - Every `Requirements Trace` item this phase's units claim that nothing built covers. This matters most — a phase can grind to completion with a requirement quietly unimplemented, and this is the only place it surfaces.
+    - The **Next** block, verbatim with the absolute worktree path filled in:
 
-46. Print the final table:
+      ```
+      Next — review in a new session in the worktree:
+        cd <worktree> && claude
+        /review-walk  →  /review-push  →  /test-plan-run <test doc>  →  /ship  →  /land
+      Run these from the worktree; from the primary checkout they act on main.
+      ```
 
-    | # | Slice | PR | Review findings | Result |
-    |---|-------|----|-----------------|--------|
-    | 1 | Add token refresh | [#61](url) | 1 P1, 2 P2 (1 deferred) | merged |
+      `/ship` is there because it commits the tests `/test-plan-run` leaves uncommitted and pushes them to the open PR. With no test doc, drop `/test-plan-run` and `/ship` from the chain.
 
-    Follow it with: total PRs merged, total commits, the deviations one-liner (see Notification), every deferred finding listed inline (title, reason, and the review doc it lives in — **not** filed as issues; the user decides what to file), any slice that merged ungated (no CI, no test command), and anything from the plan's `Requirements Trace` that no merged slice covers. That last one matters most — a plan can grind to completion with a requirement quietly unimplemented, and this is the only place it surfaces.
-
-47. Stamp the run's completion, then send the notification:
+46. **Stamp the completion**, then notify:
     ```markdown
-    <!-- cc-forge-log v1: {"skill":"grind","event":"grind-complete","paths":["<plan file path>"],"merged":<count>} -->
+    <!-- cc-forge-log v1: {"skill":"grind","event":"grind-complete","pr":<N>,"phase":<n>,"phases":<m>,"paths":["<plan file path>","<work doc path>","<review doc path>","<test doc path>"]} -->
 
-    ### 🏁 /grind — plan complete
+    ### 🏁 /grind — phase <n> of <m> ready for review
 
-    **Plan:** <plan file path>
-    **Merged:** <count> PRs — <comma-separated PR links>
-    **Deferred findings:** <count, or "none"> — see the review docs; not filed as issues
+    **PR:** <url>
+    **Docs:** work `<path>` · review `<path | clean | raw path>` · test plan `<path | none>`
+    **Deferred findings:** <count, or "none"> — in the review doc; not filed as issues
     ```
+    `paths` holds only the docs that exist.
 
 ### Notification
 
-Every terminal outcome — `grind-complete`, `grind-stopped`, `grind-blocked` — notifies on **two independent channels** after its stamp is posted. The stamp is the durable record; the channels are the reach. They are not fallbacks for each other: push always fires, whether or not the email succeeded, because the two land in different places (terminal and phone vs. inbox) and an unattended run should reach whichever one you're near. A blocked run emails too — the process can be cut off before you ever see the terminal, and the inbox is what survives that.
+Every terminal outcome — `grind-complete`, `grind-stopped`, `grind-blocked` — notifies on **two independent channels** after its stamp is posted. The stamp is the durable record; the channels are the reach. Neither is a fallback for the other: push always fires, whether or not the email succeeded, because they land in different places (terminal and phone vs. inbox). A blocked run emails too — the process can be cut off before you ever see the terminal.
 
-- **Push — always.** Call `PushNotification` with a one-line message under 200 characters: outcome, plan title, the number that matters, and the deviation count alone — `N deviations across M slices`, no paths, which the email and terminal report carry (`grind complete: auth-refresh — 4 PRs merged, 3 deviations across 4 slices` / `grind stopped: auth-refresh — 2 of 5 slices, resume to continue` / `grind blocked: auth-refresh — red CI on #61`). No markdown. Fire it on every terminal outcome, including one where the email already went out, and including a timer stop. A skipped push (you're at the terminal, so it would be redundant) is a normal result, not a failure.
-- **Email — when configured.** `SENDGRID_API_KEY` set → one `POST https://api.sendgrid.com/v3/mail/send` with a hard timeout (`curl --max-time 30`), the key passed only as an `Authorization: Bearer` header and the body via `--data @<file>`, so the key never lands in process listings and the body never lands in shell history. Unset, or the call fails → report one line, "couldn't send notification: <reason>", and continue. Exactly one attempt, never a retry, and never any retry during a timer stop.
+- **Push — always.** `PushNotification` with one line under 200 characters, no markdown: outcome, plan title, the number that matters, and the deviation count alone — no paths (`grind complete: auth-refresh — PR #61 ready for review, 3 deviations` / `grind stopped: auth-refresh — 2 of 5 slices, resume to continue` / `grind blocked: auth-refresh — unit 4 blocked`). Fire it on every terminal outcome, including a timer stop. A skipped push (you're at the terminal) is a normal result, not a failure.
+- **Email — when configured.** `SENDGRID_API_KEY` set → one `POST https://api.sendgrid.com/v3/mail/send` with a hard timeout (`curl --max-time 30`), the key passed only as an `Authorization: Bearer` header and the body via `--data @<file>`, so the key never lands in process listings and the body never lands in shell history. Unset, or the call fails → report one line, "couldn't send notification: <reason>", and continue. Exactly one attempt, never a retry.
 - **From:** `hfritz@r-o.com` (name `Hagen Fritz`) — a verified SendGrid sender; an unverified `From:` is rejected with a 403. **Recipient:** hfritz@r-o.com. **Subject:** `[grind] <plan title>: <complete | stopped | blocked>`.
 - **Body — the resume block is mandatory.** Every email, on every outcome, ends with both commands on their own lines, verbatim:
 
@@ -428,25 +453,24 @@ Every terminal outcome — `grind-complete`, `grind-stopped`, `grind-blocked` �
   /grind <plan path>
   ```
 
-  `<session-id>` is the one captured in Preflight's run-metadata step. **Do not paraphrase, summarize, or drop these lines** — they are the reason the email exists, and an email that arrives without them has failed at its job even if it sent successfully. If Preflight captured no session id, print the `claude --resume` line as `claude --resume <no session id captured>` rather than omitting it, so the gap is visible instead of silent. Above the resume block: the outcome in one sentence, the per-slice table (merged PRs as links), [the work-protocol spec's grind one-liner](../work-protocol/SKILL.md#terminal-one-liners) — `N deviations across M slices — see <paths>.` over every slice doc this run wrote — what remains (for stopped/blocked), and the blocking reason with its PR link (for blocked). The terminal report of every outcome carries the same one-liner. It appears nowhere else: never in a PR body, a PR comment, or a stamp.
+  `<session-id>` is the one captured in Preflight's run-metadata step. **Do not paraphrase, summarize, or drop these lines** — they are the reason the email exists, and an email that arrives without them has failed at its job even if it sent successfully. If Preflight captured no session id, print `claude --resume <no session id captured>` rather than omitting it. Above the resume block: the outcome in one sentence, the slice table, [the work-protocol spec's one-liner](../work-protocol/SKILL.md#terminal-one-liners), what remains (stopped/blocked), the blocking reason (blocked), and the Next block (complete).
 - A notification failure on either channel is never fatal, never blocks the other channel, and never blocks the exit path it rides on.
 
 ## Rules
 
-- **User-invoked only** — by slash command or plain-English ask ("grind this plan", "run the whole thing"), either one. Never start `/grind` on your own initiative, never from inside another skill, never wired to a git or CI hook, and never because a plan happens to look ready. An ambiguous or implied approval ("looks good to me") is not an ask — when in doubt, ask.
-- **One confirmation, then unattended.** The PR breakdown is confirmed; nothing after it is. Do not add prompts mid-run, and do not silently degrade to asking — if the run can't proceed autonomously, halt and say why.
-- **Serial.** Slice N is merged before slice N+1 starts. No parallel slices, no starting the next build while a PR is in review.
-- **One worktree per PR**, created off `origin/<default-branch>`, removed on merge. `/grind` runs from the primary checkout and never checks out a feature branch there.
+- **User-invoked only** — by slash command or plain-English ask ("grind this plan", "run the whole thing"). Never on your own initiative, never from inside another skill, never wired to a git or CI hook, and never because a plan looks ready. An implied approval ("looks good to me") is not an ask — when in doubt, ask.
+- **One confirmation, then unattended.** The phase and its slices are confirmed; nothing after is. Never add prompts mid-run or silently degrade to asking — if the run can't proceed autonomously, halt and say why.
+- **One phase, one branch, one worktree, one PR per run.** The worktree is created off `origin/<default-branch>` and left in place for your review; `/grind` runs from the primary checkout and never checks out a feature branch there.
 - **Halt, don't skip; stop, don't die.** A blocked slice stops the run for a human. A failed budget gate stops it for the clock — cleanly, at a phase boundary, resumable. The two are distinct states with distinct stamps.
-- **Red CI halts.** `/grind` pushes no CI-fix commits and never masks a failure — no deleted tests, loosened assertions, skips, or timeout bumps. The one carve-out is the Autonomy Contract's: a `delete` of a `V-` case recorded in the verified test document before the PR opens is not masking; it never answers red CI. With CI present, no local suite runs; with no CI, the local suite is the gate.
-- **Every durable write precedes the notification it announces.** Table note, then stamp, then one send attempt per channel.
+- **Never merges, never watches CI, never repairs CI.** The run ends at an open, ready PR; landing it is yours.
+- **Every durable write precedes the notification it announces.** Plan state, then stamp, then one send attempt per channel.
 - **Verify every subagent claim** against `gh` or `git` before acting on it. A returned "done" is a hypothesis.
-- **The reviewer fleet posts comments, never `--approve` or `--request-changes`.** `/grind` owns the triage decision; a blocking review state from a subagent can deadlock the merge.
-- **Triage is `/grind`'s own judgment**, never delegated, and it is recorded in the review doc's `Status:` lines and on the PR **before** the fix agent is dispatched. The fix agent receives accepted findings only.
-- **One review pass per PR.** Synthesis failures degrade (inline synthesis, then raw findings) — they never halt the run while raw findings exist, and they never trigger a second fleet.
-- **The test phase cites the spec and owns the tests.** Grind's mirrored phase runs the roster, the filters, and the writer defined in [the test-protocol spec](../test-protocol/SKILL.md) and restates none of them; the build subagent never writes a test or runs the suite, and a discarded test whose writer said the code under test is wrong is carried verbatim into the stamp and the report rather than dropped.
-- **One work doc per slice, governed by [the work-protocol spec](../work-protocol/SKILL.md).** `forge:workflow:scope-observer` flags and never blocks; grind records every card `open`, acts on none, and restates none of the spec.
-- **The timer is measured, never estimated.** Every gate reads the scratchpad anchor with a real `date` call and lets the shell do the arithmetic. Never judge elapsed time from how much work has happened — that guess is not an input to any gate. The anchor is per-invocation: the grind-started stamp's `**Started:**` line is log, not clock, and a resume writes a fresh anchor. A missing anchor means stop, not guess. No gate sits between merge success and the end of cleanup.
+- **The reviewer fleet returns findings only** — it never posts comments, `--approve`, or `--request-changes`, and grind posts no PR comment of its own.
+- **Triage is `/grind`'s own judgment**, never delegated, recorded in the review doc's `Status:` and `Grind:` lines **before** the fix agent is dispatched. The fix agent receives accepted findings only.
+- **One review pass per run.** Synthesis failures degrade (inline synthesis, then raw findings) — they never halt the run while raw findings exist, and they never trigger a second fleet.
+- **The test plan cites [the test-protocol spec](../test-protocol/SKILL.md)** and restates none of it. Grind writes no test and runs no suite — not in the build, the fix, or the test plan.
+- **One work doc per run, governed by [the work-protocol spec](../work-protocol/SKILL.md).** The scope observer flags and never blocks; grind records every card `open`, acts on none, and restates none of the spec.
+- **The timer is measured, never estimated.** Every gate reads the scratchpad anchor with a real `date` call and lets the shell do the arithmetic. A missing anchor means stop, not guess.
 - **No force-push, no pushes to `main`, no `--no-verify`, no `git add -A`** — for `/grind` or any subagent it dispatches.
-- **The plan doc is the state; GitHub and the review doc are the checkpoints.** Update the row at every transition; on resume, reconcile against `gh` and the disk rather than trusting the table.
-- **Report the real outcome.** Only claim "merged" after `gh pr view` confirms it. Red is red.
+- **The plan's `## Grind` section is the state; git, GitHub, and the docs are the checkpoints.** Update it at every transition; on resume, reconcile against them rather than trusting the table.
+- **Report the real outcome.** Only claim the PR is open after `gh pr view` confirms it.
