@@ -358,7 +358,7 @@ For sufficiently large, risky, or cross-cutting work, add the sections that genu
 - **Success Metrics**
 - **Dependencies / Prerequisites**
 - **Risk Analysis & Mitigation**
-- **Phased Delivery**
+- **Phased Delivery** — each phase is one PR's worth of work, every non-retired unit belongs to exactly one phase via its `**Units:**` line, and `/grind` builds one phase per run
 - **Documentation Plan**
 - **Operational / Rollout Notes**
 - **Future Considerations** only when they materially affect current design
@@ -509,9 +509,11 @@ For larger `Deep` plans, extend the core template only when useful with sections
 ## Phased Delivery
 
 ### Phase 1
+**Units:** [Unit ordinals, e.g. 1, 2]
 - [What lands first and why]
 
 ### Phase 2
+**Units:** [Unit ordinals, e.g. 3, 4]
 - [What follows and why]
 
 ## Documentation Plan
