@@ -285,7 +285,7 @@ the code.
 
 - **Skip reason codes** — the won't-fix list above.
 - **Defer reason codes** — the walk writes none (it records a `Tracking:` line instead);
-  `/grind` is their only writer and [defines them](../grind/SKILL.md).
+  `/grind` is their only writer and [defines them](../grind/SKILL.md#triage-and-fix).
 - **The code** is the one the user's number names. Then ` — ` and the user's note, kept
   **verbatim**, if they added one; if none, the line is the code alone. Never rewrite,
   shorten, or "improve" what they typed, and never invent a note they did not give.

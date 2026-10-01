@@ -92,7 +92,7 @@ Optional keys:
 | grind | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
 | grind | `grind-stopped` | ⏸️ | Phase the timer stopped at (a slice, review, triage/fix, test plan, or PR open), remaining slice count, resume pointer |
 | grind | `grind-blocked` | 🛑 | What halted the run, worktree path, remaining slice count; `pr` and the PR url only when a PR is open |
-| grind | `grind-complete` | 🏁 | PR link (`pr`), work/review/test-plan doc paths, phase built of phases total (`phase`, `phases`), follow-up tracking issues |
+| grind | `grind-complete` | 🏁 | PR link (`pr`), work/review/test-plan doc paths, phase built of phases total (`phase`, `phases`) |
 
 **Renamed events.** `review-walk`'s event was `walk-complete` before it was renamed to
 `review-walk-complete` for consistency with its two sibling walks. Stamps already posted
