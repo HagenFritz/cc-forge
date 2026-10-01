@@ -730,8 +730,7 @@ Zero is never an error.
 
 ## Resume
 
-`/test-plan-run` enters here. Grind's resume is narrower: a verified document whose
-`target:` matches the current branch skips the lenses; otherwise it produces one.
+`/test-plan-run` enters here.
 
 ### Where a run enters
 

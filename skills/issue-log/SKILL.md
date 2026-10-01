@@ -90,7 +90,6 @@ Optional keys:
 | grind | `review-written` | 🔍 | Same shape as deep-review's row; no `pr`, since the review runs before the PR opens |
 | grind | `test-plan-written` | 🧪 | Same shape as test-plan's row |
 | grind | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
-| grind | `grind-stopped` | ⏸️ | Phase the timer stopped at (a slice, review, triage/fix, test plan, or PR open), remaining slice count, resume pointer |
 | grind | `grind-blocked` | 🛑 | What halted the run, worktree path, remaining slice count; `pr` and the PR url only when a PR is open |
 | grind | `grind-complete` | 🏁 | PR link (`pr`), work/review/test-plan doc paths, phase built of phases total (`phase`, `phases`) |
 
@@ -102,10 +101,10 @@ No other event has been renamed; `plan-deepened` and `blueprint-walk-complete` k
 names through the skill renames precisely so history stays readable.
 
 **Retired events.** When `/grind` moved from a sequence of merged PRs to one ready PR per
-run, it stopped emitting `tests-run`, `pr-reviewed`, and `pr-merged`, and stopped writing
-the `merged` key. Stamps already posted to GitHub carry them and are not rewritten. They
+run, it stopped emitting `tests-run`, `pr-reviewed`, `pr-merged`, and `grind-stopped`, and
+stopped writing the `merged` key. Stamps already posted to GitHub carry them and are not rewritten. They
 are history only: a reader may render them, but never counts a `"skill":"grind"`
-`tests-run`, `pr-reviewed`, or `pr-merged` stamp as evidence for a current run.
+`tests-run`, `pr-reviewed`, `pr-merged`, or `grind-stopped` stamp as evidence for a current run.
 
 Event names are these exact strings. New events join this table before any skill emits them.
 

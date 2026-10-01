@@ -347,10 +347,6 @@ committed unit with no marker, which resume repairs.
   observed in `unit` mode against its commit range, then recorded, before any new work.
 - **Numbering continues** per severity at the highest existing `n` + 1.
 - **Changes is recomputed** from `git diff --numstat <base>..HEAD` — never from memory.
-- **Grind's raw build returns.** Grind persists each slice's raw build return to
-  `docs/work/.raw/<slug>/build-<n>.md`, `<n>` the slice number, **before** processing it,
-  so a kill mid-processing loses no ranges, reasons, stale tests, or decisions.
-  `.raw/<slug>/` is deleted once the doc reaches `status: complete`.
 
 ## Reply verbs
 
@@ -392,7 +388,8 @@ branch.
 - **`/work`** ends with the change table — which may truncate in the terminal — followed
   by exactly: `N deviations — see <doc path>.`, the absolute doc path in backticks, `N`
   the number of cards in the doc.
-- **grind**'s terminal notification and email carry the same line, exactly.
+- **grind**'s terminal report and email carry the same line, exactly; its push
+  notification carries the count only.
 
 No other surface — PR body, stamp, PR comment — mentions deviations.
 
