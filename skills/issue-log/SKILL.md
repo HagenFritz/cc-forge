@@ -52,11 +52,13 @@ Optional keys:
 | `blocked_by` | array | Refs gating a follow-up, each `owner/repo#N` |
 | `paths` | array | Local doc/worktree paths this event produced or relies on. `unit-complete`/`unit-blocked` stamps always include the plan path (scopes `unit` dedupe across plans). |
 | `pr` | number | PR number for pr events |
-| `slices` | number | PR slice count in a `grind-started` event |
-| `merged` | number | PRs merged in a completed `/grind` run |
+| `slices` | number | Slices confirmed for this grind run, in a `grind-started` event |
+| `phase` | number | The `## Phased Delivery` phase a grind run builds (`1` for a plan without phases) |
+| `phases` | number | Total phases in the plan a grind run builds from |
+| `merged` | number | Retired. PRs merged in a completed multi-PR `/grind` run; no current skill writes it |
 | `tracking` | string | `owner/repo#N` of a tracking issue this event created |
-| `scope` | string | The mode a `tests-run` event covered: `auto`, `browser`, or `manual`. Written by `/test-plan-run` only; grind's test phase omits it. |
-| `branch` | string | The branch a per-slice event belongs to. Grind's `tests-run` carries it, because every slice of one plan writes the same `paths` and the branch is what tells them apart. |
+| `scope` | string | The mode a `tests-run` event covered: `auto`, `browser`, or `manual`. Written by `/test-plan-run` only. |
+| `branch` | string | The branch a grind `unit-complete`/`unit-blocked` stamp was built on. Every run of one plan writes the same `paths`, so the branch is what keeps an abandoned run's stamps from counting. |
 
 **Versioning:** additive-only within v1 — new optional keys, new event names, and new skills never bump the version. A **v2** is required only when an existing key's meaning or read type changes (e.g. `tracking` string → array). Readers skip unknown versions with a warning.
 
@@ -82,16 +84,15 @@ Optional keys:
 | side-quest | `side-quest-filed` | 🧭 | What was found, tracking-issue link (`tracking`, `followup:true`) |
 | ship | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
 | land | `pr-merged` | ✅ | 2-3 sentence summary of what landed + follow-ups (`pr`) |
-| grind | `grind-started` | ⚙️ | Plan path, start time, session resume command, slice count (`slices`), one line per slice |
-| grind | `unit-complete` | 🔨 | Same shape as work's row: **Did** (always), **Solved** (only when a problem was solved) |
-| grind | `unit-blocked` | ⚠️ | **Blocked:** reason; optional `blocked_by` |
-| grind | `tests-run` | 🧪 | Same shape as test-plan-run's row, minus `scope` (grind's phase runs `auto` only) |
+| grind | `grind-started` | ⚙️ | Plan path, start time, session resume command, phase line (`phase` of `phases`), slice count (`slices`), one line per slice |
+| grind | `unit-complete` | 🔨 | Same shape as work's row: **Did** (always), **Solved** (only when a problem was solved); `branch` in the marker |
+| grind | `unit-blocked` | ⚠️ | **Blocked:** reason; optional `blocked_by`; `branch` in the marker |
+| grind | `review-written` | 🔍 | Same shape as deep-review's row; no `pr`, since the review runs before the PR opens |
+| grind | `test-plan-written` | 🧪 | Same shape as test-plan's row |
 | grind | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
-| grind | `pr-reviewed` | 🔍 | Severity counts from the review fleet (`pr`), one-line verdict; names any roster agent that did not complete |
-| grind | `pr-merged` | ✅ | Slice name + 1-2 sentences on what landed (`pr`) |
-| grind | `grind-stopped` | ⏸️ | Phase the timer stopped at, remaining slice count, resume pointer |
-| grind | `grind-blocked` | 🛑 | What halted the run, open PR url, worktree path, remaining slice count |
-| grind | `grind-complete` | 🏁 | Merged PR count (`merged`) + links, follow-up tracking issues |
+| grind | `grind-stopped` | ⏸️ | Phase the timer stopped at (a slice, review, triage/fix, test plan, or PR open), remaining slice count, resume pointer |
+| grind | `grind-blocked` | 🛑 | What halted the run, worktree path, remaining slice count; `pr` and the PR url only when a PR is open |
+| grind | `grind-complete` | 🏁 | PR link (`pr`), work/review/test-plan doc paths, phase built of phases total (`phase`, `phases`), follow-up tracking issues |
 
 **Renamed events.** `review-walk`'s event was `walk-complete` before it was renamed to
 `review-walk-complete` for consistency with its two sibling walks. Stamps already posted
@@ -100,9 +101,15 @@ to GitHub carry the old name and are not rewritten — a reader encountering
 No other event has been renamed; `plan-deepened` and `blueprint-walk-complete` kept their
 names through the skill renames precisely so history stays readable.
 
+**Retired events.** When `/grind` moved from a sequence of merged PRs to one ready PR per
+run, it stopped emitting `tests-run`, `pr-reviewed`, and `pr-merged`, and stopped writing
+the `merged` key. Stamps already posted to GitHub carry them and are not rewritten. They
+are history only: a reader may render them, but never counts a `"skill":"grind"`
+`tests-run`, `pr-reviewed`, or `pr-merged` stamp as evidence for a current run.
+
 Event names are these exact strings. New events join this table before any skill emits them.
 
-Document-producing skills (brainstorm, blueprint, blueprint-deepen, deep-review, side-quest, review-sweep, test-plan) start the human body with a `**Doc:**` field holding the repo-relative doc path, and carry the same path in the marker's `paths`.
+Document-producing skills (brainstorm, blueprint, blueprint-deepen, deep-review, side-quest, review-sweep, test-plan, and grind's `review-written` and `test-plan-written`) start the human body with a `**Doc:**` field holding the repo-relative doc path, and carry the same path in the marker's `paths`.
 
 Grind's `unit-complete`/`unit-blocked` stamps are posted by its build subagent mid-build (grind blocks on that agent, so only the agent can stamp in real time). The subagent authenticates as the same `gh` login, so the reader contract's author check is unaffected; grind embeds the filled templates and encoding rules in the agent's brief rather than assuming it reads this spec.
 
