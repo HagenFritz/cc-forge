@@ -72,7 +72,7 @@ The VM's process lease is ~2 hours; the disk survives, the process does not. The
 
 | Phase | Budget to start |
 |-------|-----------------|
-| Build | 30m |
+| Build | 30m per slice (the last slice's covers the wrap-up) |
 | Test | 25m |
 | Review | 25m |
 | Triage + fix | 25m |
@@ -177,20 +177,22 @@ A recorded run that is not `complete` re-enters here, whatever its run value —
 - **Rung 6 — test plan written.** A `docs/tests/*.md` document verifies for this branch per [the test-protocol spec's resume](../test-protocol/SKILL.md#resume), or the subsection carries a `**Test plan:** none — <reason>` line.
 - **Rung 7 — PR open.** `gh pr list --head <branch> --state all --json number,state,url`. A PR exists → only the bookkeeping after the open remains: verify it, post the `pr-created` stamp (a duplicate is harmless — the reader dedupes), and finish the run. None → open it.
 
-### Phase 3: Build the PR
+### Build the slices
 
-15. **Budget gate** (build, 30m), then **update the row** to `building` in the plan doc.
-
-16. **Create the worktree.** Follow the same convention as `/tree` — branch `{prefix}/{issue}/{short-description}` (drop the `{issue}` segment when there's no linked issue), worktree at `../{repo-name}-worktrees/{branch-name}/`:
+15. **Create the worktree and the work doc** — once per run; a resume reuses both. The branch is step 10's, and the worktree follows `/tree`'s convention at `../{repo-name}-worktrees/{branch-name}/`:
     ```bash
     git fetch origin <default-branch>
     git worktree add -b <branch-name> ../<repo>-worktrees/<branch-name> origin/<default-branch>
     ```
-    Branching off `origin/<default-branch>` is what makes serial execution work: slice N+1's worktree contains slice N's merged code. Then symlink `docs/` from the primary checkout into the worktree (as `/tree` does), since it's gitignored and the plan lives there.
+    Then symlink `docs/` from the primary checkout into the worktree (as `/tree` does), since it's gitignored and the plan lives there.
 
-    Then **create the slice's work doc** per [the work-protocol spec](../work-protocol/SKILL.md#the-document) — its filename, frontmatter, four sections, and empty-section placeholders are the spec's. Grind's values: `target:` is this slice's branch, `slice:` is its row number, and `base:` is `git -C <worktree> rev-parse HEAD` now. Seed `## Decisions` per [the spec's lifecycle](../work-protocol/SKILL.md#lifecycle). One doc per slice; a resume continues it and never creates a second.
+    Then **create the run's work doc** per [the work-protocol spec](../work-protocol/SKILL.md#the-document) — its filename, frontmatter, four sections, and empty-section placeholders are the spec's. Grind's values: `target:` is the run's branch and `base:` is `git -C <worktree> rev-parse HEAD` now. Seed `## Decisions` per [the spec's lifecycle](../work-protocol/SKILL.md#lifecycle). Set the run line to `building`.
 
-17. **Dispatch the build subagent** — `Agent` with `model: "opus"` and `subagent_type: "general-purpose"`. Dispatch is asynchronous: wait for the subagent's completion notification before doing anything else, since there is nothing to interleave in a serial run. Subagents are never clocked — the phase budget gated the *start*, and once dispatched the agent runs to completion. The next clock reading happens at the following gate, on real elapsed time, whatever that turns out to be.
+    Then run steps 16–18 for each slice in table order, and step 19 once after the last.
+
+16. **Budget gate** (build, 30m — one per slice), then **update the row** to `building` in the plan doc.
+
+17. **Dispatch the build subagent** — `Agent` with `model: "opus"` and `subagent_type: "general-purpose"`. Dispatch is asynchronous: wait for the subagent's completion notification before doing anything else, since there is nothing to interleave in a serial run. Subagents are never clocked — the slice's budget gated the *start*, and once dispatched the agent runs to completion. The next clock reading happens at the following gate, on real elapsed time, whatever that turns out to be.
 
     The brief must contain, and nothing may be left implicit:
     - The absolute worktree path, and the instruction to do **all** work there — never in the primary checkout.
@@ -201,10 +203,10 @@ A recorded run that is not `complete` re-enters here, whatever its run value —
     - The instruction never to edit the plan file; grind owns it.
     - The instruction to follow the repo's `CLAUDE.md` conventions.
     - **The per-unit cadence:** implement the slice's units in plan order. After each unit: stage only that unit's files, commit with a scoped conventional message (`/work`'s incremental-commit heuristics), **push**, and post the unit's issue stamp. The push is the point — a killed process must never cost more than the unit in flight.
-    - **The embedded stamp templates**, fully filled: the `unit-complete` and `unit-blocked` blocks below with `<issue>`, the repo, and the plan path substituted, plus these three posting rules verbatim (the agent does not read the spec): write the body to a temp file and post with `gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>`; the marker line must never contain `--` — replace every occurrence in serialized titles (`---` → `- - -`); a failed or skipped stamp is one report line, never a stop. Skip all stamps when `<issue>` is empty.
+    - **The embedded stamp templates**, fully filled: the `unit-complete` and `unit-blocked` blocks below with `<issue>`, the repo, the plan path, and the branch substituted, plus these three posting rules verbatim (the agent does not read the spec): write the body to a temp file and post with `gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>`; the marker line must never contain `--` — replace every occurrence in serialized titles (`---` → `- - -`); a failed or skipped stamp is one report line, never a stop. Skip all stamps when `<issue>` is empty.
 
       ```markdown
-      <!-- cc-forge-log v1: {"skill":"grind","event":"unit-complete","unit":"<ordinal>: <title from plan checkbox heading>","paths":["<plan file path>"]} -->
+      <!-- cc-forge-log v1: {"skill":"grind","event":"unit-complete","unit":"<ordinal>: <title from plan checkbox heading>","paths":["<plan file path>"],"branch":"<branch>"} -->
 
       ### 🔨 /grind — unit <ordinal>: <title>
 
@@ -213,93 +215,30 @@ A recorded run that is not `complete` re-enters here, whatever its run value —
       ```
 
       ```markdown
-      <!-- cc-forge-log v1: {"skill":"grind","event":"unit-blocked","unit":"<ordinal>: <title from plan checkbox heading>","paths":["<plan file path>"]} -->
+      <!-- cc-forge-log v1: {"skill":"grind","event":"unit-blocked","unit":"<ordinal>: <title from plan checkbox heading>","paths":["<plan file path>"],"branch":"<branch>"} -->
 
       ### ⚠️ /grind — unit <ordinal> blocked: <title>
 
       **Blocked:** <one-liner: what gates the unit>
       ```
       When concrete refs gate the blocked unit, add `"blocked_by":["<owner>/<repo>#<n>"]` to its marker; drop the key otherwise (same rule as `/work`'s stamp).
-    - **The blocked-unit rule:** a unit it cannot complete stops the build — post the `unit-blocked` stamp, push what is committed, and return the partial state (which units landed, what blocked, the branch name). A partial-slice PR would violate "every slice leaves `main` green," and grind opens no PR for a slice that halted here.
-    - **Its deliverable:** commits on the branch, pushed per unit, and **no PR** — grind opens the PR itself after the test phase, so exactly one `pull_request` CI run fires, on the code and its tests together. It must not open or merge a PR, must not touch `main`, must not `git add -A`, must not `--no-verify`, and must not create a worktree of its own.
+    - **The blocked-unit rule:** a unit it cannot complete stops the build — post the `unit-blocked` stamp, push what is committed, and return the partial state (which units landed, what blocked, the branch name). Later units and slices build on it, so nothing continues past it.
+    - **Its deliverable:** commits on the branch, pushed per unit, and **no PR** — grind opens the run's one PR itself, after the last slice, the review, and the test plan. It must not open or merge a PR, must not touch `main`, must not `git add -A`, must not `--no-verify`, and must not create a worktree of its own.
     - **Its return value:** the branch name, a one-line summary, and per unit: its status; its commit range as `<base>..<head>` SHAs; what changed per file, one line each; any deviation from the unit's Approach with its reason; decisions made and patterns established; and **stale tests** — existing tests the unit may have made stale, each as its path (optionally `::<test name>`) plus one sentence on why, found by grepping the test directories for the symbols and modules the unit changed, renamed, or removed and then judging each hit, erring broad. A unit it could not complete carries the reason instead of a range.
 
-18. **Persist, verify, and record the slice.** Before reading anything out of the return, write it verbatim to `docs/work/.raw/<slug>/build.md` per [the work-protocol spec's resume](../work-protocol/SKILL.md#resume) (`<slug>` is the doc's).
+18. **Verify and record the slice.** This is the step [Resume](#resume) re-runs for a slice whose units all landed. Before reading anything out of the return, write it verbatim to `docs/work/.raw/<slug>/build-<n>.md` per [the work-protocol spec's resume](../work-protocol/SKILL.md#resume) (`<slug>` is the doc's, `<n>` the slice number).
 
-    **Verify the subagent's claim.** Never take the return value on faith — confirm the remote branch holds the per-unit commits (`git -C <worktree> log origin/<branch> --oneline`), that every returned range resolves in that log, and that the returned per-unit statuses account for every unit in the slice. There is no PR to check yet; grind opens it in Phase 5. If the pushed commits do not cover the slice's units: if the agent reported a blocked unit, mark the row `blocked` with the reason and halt per Phase 9 — after recording its committed units below, with no wrap-up, so the doc stays `in-progress` for the resume; otherwise the build failed regardless of what the agent reported — same halt.
+    **Verify the subagent's claim.** Never take the return value on faith — confirm the remote branch holds the per-unit commits (`git -C <worktree> log origin/<branch> --oneline`), that every returned range resolves in that log, and that the returned per-unit statuses account for every unit in the slice. If the pushed commits do not cover the slice's units: if the agent reported a blocked unit, mark the row `blocked` with the reason and halt per Halting — after recording its committed units below, with no wrap-up, so the doc stays `in-progress` for the resume; otherwise the build failed regardless of what the agent reported — same halt.
 
-    **Record the slice's work doc**, per [the work-protocol spec](../work-protocol/SKILL.md), recorded one unit at a time in plan order:
+    **Record the slice in the run's work doc**, per [the work-protocol spec](../work-protocol/SKILL.md), one unit at a time in plan order:
     - Dispatch `forge:workflow:scope-observer` in [`unit` mode](../work-protocol/SKILL.md#unit-mode) with the inputs the spec names — the absolute plan path, the ordinal, that unit's verified range, and the absolute worktree path as the working directory; grind's addenda list is always empty. The brief carries nothing from the build return — no summaries, deviations, reasons, or commit messages; [what the observer sees](../work-protocol/SKILL.md#what-the-observer-sees) says where grind's wall is only instructed. The per-unit dispatches may go in one parallel batch; record them in plan order.
     - Update the doc per [the spec's lifecycle](../work-protocol/SKILL.md#lifecycle), from the persisted return: Changes from git and the per-file lines, the stale tests into Tests to Revisit, Decisions from the returned decisions, the observer's cards numbered and their `Reason:` filled per [the spec's `Reason:` rule](../work-protocol/SKILL.md#reason) — including a card for every returned deviation the observer missed — and the unit's [observed marker](../work-protocol/SKILL.md#the-observed-marker). A failed dispatch follows [the spec's failure rule](../work-protocol/SKILL.md#failure); it never blocks the slice.
-    - Then dispatch the observer once in [`wrap-up` mode](../work-protocol/SKILL.md#wrap-up-mode) over the slice's committed units, with the same working directory; record its cards and marker, set `status: complete`, and delete `docs/work/.raw/<slug>/`.
 
-    **Every card stays `open`** — grind acts on none of them and never uses [the reply verbs](../work-protocol/SKILL.md#reply-verbs). Its open `D1` cards are input to step 47's final look.
+    Then tick the slice's unit checkboxes in the plan and mark the row `built`.
 
-### Phase 4: Write the tests
+19. **Wrap up after the last slice** — inside the last slice's build budget, with no gate of its own. Dispatch the observer once in [`wrap-up` mode](../work-protocol/SKILL.md#wrap-up-mode) over the phase's committed units, with the worktree as the working directory; record its cards and marker, set `status: complete`, and delete `docs/work/.raw/<slug>/`. Then continue to Review.
 
-The build subagent wrote none. This phase mirrors `/test-plan` and `/test-plan-run auto` inline, between the last build unit and the PR open, and it is governed entirely by [the test-protocol spec](../test-protocol/SKILL.md) — the roster, what each lens may see, the keep and drop rules, the revise bucket, the scratch contract, the count check, document verification, the assurance filters, and the receipts all live there and are **cited, never restated**. A rule that reads differently here than it does in the spec is a bug in this file.
-
-**There is no document-review step.** `/test-plan` stops so a human can read the document; an unattended run has no one to stop for, so grind produces the document and consumes it in the same phase. Because of that, it may carry the surface digest, the test conventions, and the live-service markers it derived in step 20 forward into the writer and the filters rather than re-deriving them — the tree has not moved between them.
-
-19. **Budget gate** (test, 25m), then **update the row** to `testing` in the plan doc.
-
-20. **Resolve the run's context, in the worktree.** The branch is the document's `target:` and the unsanitized slug. Resolve the intent by [the spec's spec-lens input ladder](../test-protocol/SKILL.md#spec-lens-input-ladder) over this slice's plan units — bounded to those units per [the brief-is-bounded rule](../test-protocol/SKILL.md#the-brief-is-bounded), never the whole plan. The ladder's last rung is a stop for `/test-plan`; here it is a **skip**: with nothing describing the intended behavior, note it, post no `tests-run` stamp, and go to Phase 5 — an unattended run does not halt a merged-ready slice over a missing intent source.
-
-    Then build the surface digest and discover the test conventions the way `/test-plan` builds them — [its step 3](../test-plan/SKILL.md) owns the per-language extraction and [its step 4](../test-plan/SKILL.md) owns the conventions pass (test directories, runner, live-service markers, existing test file names), with [the spec](../test-protocol/SKILL.md#the-surface-digest) owning what each file class contributes and the empty-digest case. No runner and no test directory → the synthesizer tags zero cases `auto`, so this phase writes nothing; note it and go to Phase 5.
-
-21. **Dispatch the three lenses** in one parallel batch, per [the spec's three lenses](../test-protocol/SKILL.md#the-three-lenses), from [the spec's roster](../test-protocol/SKILL.md#the-roster) — never add, substitute, or skip one, and never re-enumerate them here. The briefs are the three lens `Task forge:test-plan:<agent>(...)` blocks in [`/test-plan`'s step 5](../test-plan/SKILL.md) — the synthesizer's is step 22's; pass exactly the values each lens's `## Inputs` section names. The blast-radius lens's work doc is this slice's, created in step 16 — grind knows its path and needs no discovery; [the work-protocol spec's readers rule](../work-protocol/SKILL.md#readers) says which lens receives it and which never does. Never tell a lens to "read X" in place of putting X in its brief. Handle an empty or failed lens by [the spec's lens-failure posture](../test-protocol/SKILL.md#lens-failure-posture) — partial coverage proceeds and names the lens; all three empty writes no document, which is a note and a jump to Phase 5, not a halt.
-
-22. **Persist and synthesize.** Write each lens's raw output per [the spec's raw scratch contract](../test-protocol/SKILL.md#the-raw-scratch-contract) **before** dispatching, then [dispatch the synthesizer](../test-protocol/SKILL.md#dispatching-the-synthesizer) with the values its `## Inputs` section names. The worktree's `docs/` is a symlink, so `docs/tests/.raw/<slug>/` lands in the primary checkout and survives anything short of disk loss — the same property Phase 6's review scratch relies on. Run [the count check](../test-protocol/SKILL.md#the-count-check) on what comes back, summing the raw total the way [`/test-plan`'s step 6](../test-plan/SKILL.md) does — the blast-radius lens's `Revise:` line included — then follow [the spec's verification section](../test-protocol/SKILL.md#verifying-the-document), which owns the structural and freshness checks and gates the scratch deletion on them. A failed dispatch or a failed check goes to [the spec's inline fallback](../test-protocol/SKILL.md#inline-fallback).
-
-23. **Dispatch the writer** — `forge:test-plan:test-writer` — with exactly the five values its [`## Inputs` section](../../agents/test-plan/test-writer.md) names: the selected `auto` cases verbatim (a within-file `delete` `V-NNN` case with its `**Target test:**`), the surface digest, the repo's test conventions, **the test directories it may read named explicitly**, and the existing fixture names. Select the cases by [the spec's re-run semantics](../test-protocol/SKILL.md#what-a-re-run-does), grepping the test directories for each case's `T-NNN` ID: a `T-NNN` case whose ID is already in a test file on disk is re-verified, never rewritten, and a `V-NNN` case is selected by that section's revise line. Zero `auto` cases is success per [the spec](../test-protocol/SKILL.md#zero-cases-in-a-mode-is-success) — note it and go to step 26.
-
-    **Before the writer, run the revise cases' own steps** per [executing revise cases](../test-protocol/SKILL.md#executing-revise-cases), starting with the unreviewed-run conversion in [the revise bucket](../test-protocol/SKILL.md#the-revise-bucket) — this phase has no doc-review step, so every `delete` whose `**Why:**` cites neither removed code nor a plan Requirement or unit becomes `regression`. Then [the gate](../test-protocol/SKILL.md#the-gate) on every selected `V-NNN` case (a `regression` or a gate pass is recorded then and never reaches the writer), and every whole-file [delete](../test-protocol/SKILL.md#delete) yourself. After the writer returns, confirm each within-file delete — restoring any that fails — per that section.
-
-24. **Run the assurance filters yourself** — [the spec's filters](../test-protocol/SKILL.md#the-assurance-filters) own the three steps, their order, the collect-failure classification and its [one fix round](../test-protocol/SKILL.md#classifying-a-collect-failure-and-the-one-fix-round), and [the live-service rule](../test-protocol/SKILL.md#live-service-tests); the rerun count and the wall clock are the optional `cc-forge.local.md` keys in [the spec's prerequisites](../test-protocol/SKILL.md#prerequisites), which state their defaults. The writer holds no `Bash` and runs nothing; grind runs every command. Only the new tests are run — never the suite. **Re-read the clock between tests**, not only at the phase gate, per [the spec's time limits](../test-protocol/SKILL.md#time-limits); grind's own phase budget running out mid-loop is handled exactly as `test_run_timeout` expiring, and that section owns what happens to every test not yet decided — including the `discarded — slow` and `discarded — timeout` IDs the report names.
-
-    **When a second failure deletes a test and the writer's fix round said it believes the code under test is wrong, carry that sentence verbatim** into the `tests-run` stamp and into the halt or final report. A discarded test whose author thought the code was broken is the most useful line in the run, and an unattended run that swallows it ships the bug.
-
-    Record the outcome per case in the document — a `Status:` from [the spec's five](../test-protocol/SKILL.md#the-five-status-values) and a `**Filter:**` line in [its grammar](../test-protocol/SKILL.md#the-filter-line) directly under it — and append this run's block to `## Receipts` per [the receipts](../test-protocol/SKILL.md#the-receipts). **Append only**, and never the sentence "tests pass" on its own. Once every revise outcome is recorded, delete the snapshot per [delete](../test-protocol/SKILL.md#delete).
-
-25. **Commit the kept tests and push.** Stage by explicit path: one `git add -- <path>` per file carrying a kept new test or a within-file delete, and one `git rm --quiet -- <path>` per whole-file delete. **Check every path — deleted ones included — against the directory list passed to the writer in step 23 before staging it**. A path outside that list is never staged: delete the file (restore it with `git -C <worktree> checkout HEAD -- <path>` when the run deleted it), name it and its case in the report, and halt the phase per Phase 9 — the writer's return is a claim about what it wrote, and this is the only place an unattended run can check it against what it was allowed to write. Then commit with a `test:` conventional message naming the slice, and push to the branch.
-
-    **Verify the push landed**, the way step 18 verifies the build subagent's: `git -C <worktree> log origin/<branch> --oneline -1` must show the test commit. A push failure here is plausibly transient — a network blip, an expired token — so **retry once**. If the second push also fails, **halt per Phase 9 without posting the `tests-run` stamp**: the commits and the worktree are intact, the row stays `testing`, and a resumed run pushes them in seconds. Stamping an unpushed phase is what makes a later resume open the PR on code with no tests in it. Discarded tests are deleted, not committed. This is the push CI fires on once the PR opens in Phase 5 — the manual chain leaves the tests uncommitted for `/ship`, but nobody else will commit them in a grind run. Same prohibitions as everywhere: no `git add -A`, no `--no-verify`, no force-push, no push to `main`.
-
-26. **Stamp the tests on the issue**, per [the spec's `tests-run` section](../test-protocol/SKILL.md#tests-run). Grind's marker carries no `scope` key — this phase runs `auto` only, and [the issue-log spec](../issue-log/SKILL.md) records that omission. Post it inside the phase, so an interruption after the tests are pushed leaves a durable marker to resume from. On partial coverage, name the lens that was empty or failed on the `**Lenses:**` line.
-    ```markdown
-    <!-- cc-forge-log v1: {"skill":"grind","event":"tests-run","paths":["<plan file path>"],"branch":"<branch>"} -->
-
-    ### 🧪 /grind — tests written and run
-
-    **Doc:** `docs/tests/<filename>`
-    **Scope:** auto
-    **Result:** <n> pass / <n> fail / <n> blocked / <n> skip
-    **Revised:** <n> deleted / <n> still valid / <n> regression
-    **Receipts:** `<command>` → exit <code>, <n> passed
-    **Discarded:** <n> (<case id: filter>, …)
-    **Lenses:** <which contributed; any empty or failed>
-    ```
-    Write the body to a temp file and post with `gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>`; skip silently when `<issue>` is empty. **Every terminal outcome of this phase stamps**, including one that wrote nothing or found zero `auto` cases — except the two skips in step 20, where no run happened.
-
-    **No next-steps block.** [The spec](../test-protocol/SKILL.md#the-next-steps-block) says grind's phase appends nothing; it continues to Phase 5.
-
-### Phase 5: Open the PR
-
-Grind opens the PR itself, after the tests are committed and pushed. Opening it before them would fire `pull_request` on code alone — a CI run that predates the tests it is meant to gate, polluting the check history Phase 8's merge watch reads — and then `synchronize` again when the tests land. Opening it here means **exactly one CI run, on the code and its tests together.** Phase 8's 20-minute CI watch is deliberately unchanged: the payload grew by the tests, the cap did not, and a suite that outgrows 20 minutes is a halt worth seeing.
-
-27. **Open the PR and verify it.** Use the PR body format from [ship's pr-template.md](../ship/pr-template.md), **verbatim** — including the template's `Related to #<issue>` line when there's a linked issue. That line is the **only** issue reference a PR body may carry — never a GitHub closing keyword, which would auto-close the tracking issue mid-run; issue resolution rides the branch name. Then verify rather than trusting the create call: `gh pr view <N> --json number,state,url,headRefName`. **If no PR exists, or its `headRefName` doesn't match the branch, halt per Phase 9** with the row marked `blocked` — the open failed regardless of what the command printed.
-
-28. **Post the `pr-created` stamp** (grind posts this one itself, after verification):
-    ```markdown
-    <!-- cc-forge-log v1: {"skill":"grind","event":"pr-created","pr":<N>,"paths":["<plan file path>"]} -->
-
-    ### 🚀 /grind — PR created
-
-    **PR:** <pr-url>
-    **Summary:** <one-line summary of the slice>
-    ```
-
-29. **Update the row** — PR number/link, status `reviewing`.
+**Every card stays `open`** — grind acts on none of them and never uses [the reply verbs](../work-protocol/SKILL.md#reply-verbs).
 
 ### Phase 6: Review the PR
 
