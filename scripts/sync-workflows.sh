@@ -11,8 +11,14 @@ for skill_file in skills/*/SKILL.md; do
     echo "Skipped ${skill} (user-invocable: false)"
     continue
   fi
-  # Extract description, remove quotes if present
-  desc=$(grep -m 1 "^description:" "$skill_file" | sed 's/^description: *//' | sed 's/^"//;s/"$//' | sed "s/^'//;s/'$//")
+  # Extract description (single-line or a folded/literal block), remove quotes if present
+  desc=$(awk '
+    /^description:/ { v = $0; sub(/^description: */, "", v)
+                      if (v ~ /^[>|][-+]?$/) { block = 1; v = ""; next }
+                      print v; exit }
+    block && /^[ \t]/ { line = $0; sub(/^[ \t]+/, "", line); v = (v == "" ? line : v " " line); next }
+    block { print v; exit }
+  ' "$skill_file" | sed 's/^"//;s/"$//' | sed "s/^'//;s/'$//")
   
   cat <<DOC > ".devin/workflows/${skill}.md"
 ---

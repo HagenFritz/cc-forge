@@ -20,8 +20,8 @@ it.
 | Caller | Does | With the doc |
 |---|---|---|
 | [`work`](../work/SKILL.md) | builds a plan unit by unit, confirm-gated | writes it, one per run; acts on deviations when the user replies |
-| [`grind`](../grind/SKILL.md) | builds each slice unattended | writes it, one per slice; leaves every deviation `open` |
-| [`test-plan`](../test-plan/SKILL.md), [`test-plan-run`](../test-plan-run/SKILL.md), grind's test phase | produce and run the test plan | read `## Tests to Revisit` only, per [readers](#readers) |
+| [`grind`](../grind/SKILL.md) | builds one phase slice by slice, unattended | writes it, one per run; leaves every deviation `open` |
+| [`test-plan`](../test-plan/SKILL.md), [`test-plan-run`](../test-plan-run/SKILL.md), grind's test plan | produce and run the test plan | read `## Tests to Revisit` only, per [readers](#readers) |
 
 This file is the single source of truth for every rule that applies to more than one of
 them. Callers embed only their own prose — where in their loop each step fires, their own
@@ -30,7 +30,7 @@ spec for everything below. **Never restate a rule from this file inside a caller
 even paraphrased.
 
 Every rule here is written so both writers can execute it: `/work`'s orchestrator, which
-dispatches one worker per unit and commits after each, and grind's slice, where one build
+dispatches one worker per unit and commits after each, and grind, where each slice's build
 agent commits every unit itself. A rule only one of them could run does not belong here.
 
 Throughout, **the orchestrator** means whichever writer is running — it holds `Bash`, runs
@@ -62,7 +62,7 @@ every command, and is the **sole writer of the doc**; **the observer** means
 
 ## The document
 
-One file per `/work` run, and one per grind slice, at:
+One file per run, `/work`'s or grind's, at:
 
 ```
 docs/work/YYYY-MM-DD-NNN-<slug>-work.md
@@ -81,9 +81,8 @@ title: <one line naming the plan or run>
 target: <branch name>
 date: YYYY-MM-DD
 plan: <repo-relative path of the plan, or of the spec or todo file when there is no plan>
-base: <SHA HEAD pointed at when the run or slice started>
+base: <SHA HEAD pointed at when the run started>
 status: in-progress   # in-progress | complete
-slice: <n>            # grind only
 ---
 ```
 
@@ -96,15 +95,16 @@ slice: <n>            # grind only
 ### Lifecycle
 
 - **Created once the run is approved to start** — `/work` at the end of its Phase 1, grind
-  at the start of a slice — with frontmatter, empty sections, and `## Decisions` seeded
-  from any resolved `Deferred to Implementation` questions. A blocked first unit or a kill
-  still leaves a doc.
+  at run start, before its first slice — with frontmatter, empty sections, and
+  `## Decisions` seeded from any resolved `Deferred to Implementation` questions. A blocked
+  first unit or a kill still leaves a doc.
 - **Updated after every unit's commit**: `## Changes` rewritten, `## Tests to Revisit`
   merged, `## Decisions` rewritten, new cards appended, and the unit's
   [observed marker](#the-observed-marker) written. The doc is written incrementally, never
   only at the end, so a compaction or a kill loses at most one unit's record — and resume
   rebuilds that from git.
-- **Closed at wrap-up**: wrap-up cards written, then `status: complete`.
+- **Closed at wrap-up**: wrap-up cards written, then `status: complete`. Grind has one
+  wrap-up, after its last slice.
 
 ### Sections
 
@@ -159,9 +159,9 @@ contract; the orchestrator records them. One entry per test:
 
 The run's digest: resolved `Deferred to Implementation` questions and the patterns and
 constraints the run established. Bullets, **rewritten wholesale** from the orchestrator's
-digest (in grind, from the build agent's returned decisions) on every update, so the doc
-always holds the consolidated digest rather than a log of every revision of it. None:
-`_None recorded._`
+digest (in grind, every slice's returned decisions merged in slice order) on every update,
+so the doc always holds the consolidated digest rather than a log of every revision of it.
+None: `_None recorded._`
 
 ## Deviations
 
@@ -265,7 +265,7 @@ Audits one unit's diff against that unit's plan fields.
 | Caller | When | The diff |
 |---|---|---|
 | `/work` | after the orchestrator's conformance review, **before** the unit's commit | the uncommitted working tree: `git diff HEAD` plus the untracked files `git status --porcelain` lists, which `git diff` never shows |
-| grind | after the build agent returns, once per unit | that unit's commit range, `git diff <base>..<head>`, from the build agent's return verified against `git log` |
+| grind | after each slice's build agent returns, once for each of its units | that unit's commit range, `git diff <base>..<head>`, from the build agent's return verified against `git log` |
 
 **Inputs:** the absolute plan path, the unit ordinal, the diff or range, the
 orchestrator's addenda list (empty when there are none), and optionally the working
@@ -278,7 +278,8 @@ orchestrator's words, not the worker's return, so passing them does not breach t
 ### `wrap-up` mode
 
 Runs once, after the last unit, over every unit the run committed — units reported blocked
-and units the plan marks `retired` are not checked.
+and units the plan marks `retired` are not checked. Grind's pass is bounded to the units of
+the phase being built.
 
 **Inputs:** the absolute plan path, the unit ordinals to check, and optionally the working
 directory, as in [`unit` mode](#unit-mode). It checks each unit's `Verification`
@@ -339,15 +340,13 @@ committed unit with no marker, which resume repairs.
 
 - **Which doc.** An existing doc whose `target:` matches the current branch and whose
   `plan:` matches the plan being run is continued, never replaced; with several, the
-  newest by the filename convention. `base:` is kept as written.
+  newest by the filename convention. `base:` is kept as written. A later grind phase runs
+  on its own `-p<n>` branch, so it never matches the earlier phase's doc even though
+  `plan:` is identical — that is intended, not a bug to fix.
 - **Committed but unobserved units go first.** Each committed unit with no marker is
   observed in `unit` mode against its commit range, then recorded, before any new work.
 - **Numbering continues** per severity at the highest existing `n` + 1.
 - **Changes is recomputed** from `git diff --numstat <base>..HEAD` — never from memory.
-- **Grind's raw build return.** Grind persists the build agent's raw return to
-  `docs/work/.raw/<slug>/build.md` **before** processing it, so a kill mid-processing loses
-  no ranges, reasons, stale tests, or decisions. `.raw/<slug>/` is deleted once that
-  slice's doc reaches `status: complete`.
 
 ## Reply verbs
 
@@ -389,8 +388,8 @@ branch.
 - **`/work`** ends with the change table — which may truncate in the terminal — followed
   by exactly: `N deviations — see <doc path>.`, the absolute doc path in backticks, `N`
   the number of cards in the doc.
-- **grind**'s terminal notification and email carry exactly: `N deviations across M
-  slices — see <paths>.`, every slice doc's absolute path in backticks, comma-separated.
+- **grind**'s terminal report and email carry the same line, exactly; its push
+  notification carries the count only.
 
 No other surface — PR body, stamp, PR comment — mentions deviations.
 

@@ -1,6 +1,6 @@
 ---
 name: test-writer
-description: "Writes the auto test files for a reviewed test plan's cases, from the case text and the public surface alone, without reading the diff or the implementation. Never runs anything — the orchestrator runs every filter. Dispatched by /test-plan-run auto and /grind's test phase."
+description: "Writes the auto test files for a reviewed test plan's cases, from the case text and the public surface alone, without reading the diff or the implementation. Never runs anything — the orchestrator runs every filter. Dispatched by /test-plan-run auto."
 model: opus
 effort: high
 tools: Read, Write, Glob, Grep

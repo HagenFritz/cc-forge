@@ -39,7 +39,7 @@ Typical flow: `/deep-review` → `/review-sweep` → `/review-walk` over what th
    `**Sweep:**` reason. No finding may be left `in-progress` when the loop ends.
 3. **Read the code before any verdict.** A reviewer working from a diff misjudges context the
    surrounding file makes obvious — the same rule `/grind`'s triage runs under (see
-   [grind step 30](../grind/SKILL.md)). Only an affirmative "the code does not have this
+   [grind's triage](../grind/SKILL.md#5-triage-and-fix)). Only an affirmative "the code does not have this
    problem" becomes `wont-fix`; uncertainty surfaces.
 4. **When in doubt, surface.** A missed quick win costs one line in the report. A wrong
    unattended edit costs the user's trust in the working tree.
@@ -108,12 +108,13 @@ a skill that edits code unattended has no safe way to proceed on a broken premis
    Report these at the top of the run, and count them as **surfaced this run** — the `Sweep:` line
    is this run's, so loop condition 2 exempts them rather than counting them already swept.
 
-   `/grind` also writes `in-progress` to mean "accepted, fix pending". The `target:` check in step
-   2 is the guard: a grind doc targets a PR on its own branch, so a sweep run from elsewhere stops
-   before it can misread those lines.
+   `/grind` also leaves `in-progress` on an accepted finding its fix agent did not address,
+   signed `**Grind:** accepted — not fixed: <reason>`. A grind doc targets grind's run branch, so
+   a sweep run in the grind worktree passes the `target:` check in step 2 and handles those lines
+   as interrupted — they surface as `open`, left for a human as grind intended.
 
-5. **Unsigned terminal findings.** Any finding at `Status: done` carrying neither a `**Sweep:**`
-   nor an `**Applied:**` line is unattributable — the signature convention reads it as the user's,
+5. **Unsigned terminal findings.** Any finding at `Status: done` carrying none of a `**Sweep:**`,
+   `**Grind:**`, or `**Applied:**` line is unattributable — the signature convention reads it as the user's,
    and no later run can tell whether a fix actually landed. Never edit it and never re-open it:
    triage condition 1 skips it as a prior decision, which is correct. Report it at the top of the
    run as an anomaly with its id, so the user can check the working tree against the doc.

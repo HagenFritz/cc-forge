@@ -2,7 +2,7 @@
 name: test-protocol
 description: >
   Shared specification for the test skills — test-plan, test-plan-run, and grind's
-  mirrored test phase. Owns the rules all three obey identically: the three lenses and
+  test plan. Owns the rules all three obey identically: the three lenses and
   what each may see, the surface digest, the tag vocabulary, the keep and drop rules, the
   Drop List, the revise bucket, the scratch contract, the synthesizer dispatch and count
   check, the document shape, the assurance filters and revise execution, the re-run
@@ -15,14 +15,14 @@ disable-model-invocation: true
 
 # Test Protocol Specification (v1)
 
-Three callers produce and consume one test-plan document: a producer that proposes cases,
-a consumer that acts on them, and an autonomous path that mirrors both inline.
+Three callers produce and consume one test-plan document: two producers that propose cases
+— one stopping for review, one autonomous — and a consumer that acts on them.
 
 | Caller | Does | Produces |
 |---|---|---|
 | [`test-plan`](../test-plan/SKILL.md) | dispatches the three lenses and the synthesizer, stops for review | `docs/tests/*.md` |
 | [`test-plan-run`](../test-plan-run/SKILL.md) | runs one scope (`auto`, `browser`, or `manual`) over an existing doc | `Status:`, `**Filter:**`, `## Receipts` in that doc; test files on disk |
-| [`grind`](../grind/SKILL.md)'s test phase | mirrors both inline, between the last build unit and the PR open, with no doc-review step | the doc, the tests, and a commit carrying them |
+| [`grind`](../grind/SKILL.md)'s test plan | dispatches the three lenses and the synthesizer after its review and fixes, before the PR opens; writes no tests and commits nothing | `docs/tests/*.md` |
 
 This file is the single source of truth for every rule that applies to more than one of
 them. Test skills embed only their own prose — origin discovery, how they build the
@@ -49,7 +49,7 @@ document; **a revise case** means a `V-NNN` block, per [the revise bucket](#the-
 - **The two document families never read each other.** Test docs and review docs anchor
   the same way (`### <ID>:` with a status field below) by convention, not for
   cross-consumption. `/review-walk`, `/review-sweep`, and `/review-push` never read
-  `docs/tests/*.md`; `/test-plan-run` and grind's test phase never read
+  `docs/tests/*.md`; `/test-plan-run` and grind's test plan never read
   `docs/reviews/*.md`.
 - **Work docs are a third family, read one way.** `docs/work/*.md` belongs to
   [`work-protocol`](../work-protocol/SKILL.md), which owns its discovery and target match
@@ -101,6 +101,7 @@ test roster and it lives here, so grind can cite it rather than re-enumerate it.
 
 **The synthesizer and the writer are always-run infrastructure** — never list either in a
 caller's lens roster and never count either among the lenses whose output is synthesized.
+The writer is dispatched only by `/test-plan-run auto`; the producers never dispatch it.
 
 **No caller adds, substitutes, or skips a roster agent.** A lens that fails is handled by
 [the lens-failure posture](#lens-failure-posture), not replaced.
@@ -146,9 +147,9 @@ The completion report names the rung that fed the lens.
 
 #### The brief is bounded
 
-The brief carries only the requirements and plan fields for **the units this diff or slice
-touches**, never the whole plan. A fourteen-unit plan must not produce a fourteen-unit
-brief. The lens's output is judged case by case under
+The brief carries only the requirements and plan fields for **the units this diff touches**
+— for grind, the units of the phase it built — never the whole plan. A fourteen-unit plan
+must not produce a fourteen-unit brief. The lens's output is judged case by case under
 [the keep and drop rules](#keep-and-drop-rules); this rule bounds only what goes in.
 
 ### Blast-radius lens
@@ -204,7 +205,7 @@ the spec lens still runs as long as a requirements source exists — the intent 
 tests against, not the surface. The blast-radius lens also still runs; it reads the diff
 directly.
 
-`/test-plan-run` and grind's phase **regenerate the digest from the current tree** and
+`/test-plan-run` **regenerates the digest from the current tree** and
 report a one-line warning when it differs from the one the document was written against.
 A drift warning never stops the run.
 
@@ -302,9 +303,6 @@ Existing tests the change made stale. They are not new cases, so they live apart
   per entry. The synthesizer never sees the diff, so it de-dupes the verdicts by target
   and formats them, and never judges one: a `delete` or `regression` becomes a `V-NNN`
   block; a `still valid` becomes a Drop List row with reason `still valid`.
-- **Unreviewed runs.** Where no human reviews the document before the run — grind's test
-  phase — the orchestrator converts every `delete` whose `**Why:**` cites neither removed
-  code nor a plan Requirement or unit into `regression`, before [the gate](#the-gate).
 - **The keep and drop rules do not re-judge a revise verdict.** `unchanged code` never
   applies — a revise target is by definition existing test code.
 - **Uncapped**, like every other mode.
@@ -652,8 +650,7 @@ behind it.
   `**Filter:** discarded — timeout`. No never-run test is ever kept or shipped.
 
 **The report names every `discarded — slow` and `discarded — timeout` case ID**, so the
-slow tests are the first thing a reader sees. A caller that is itself clocked re-reads its
-own budget between tests rather than only before the phase.
+slow tests are the first thing a reader sees.
 
 ### Live-service tests
 
@@ -733,7 +730,7 @@ Zero is never an error.
 
 ## Resume
 
-Both `/test-plan-run` and grind's `testing` rung enter here.
+`/test-plan-run` enters here.
 
 ### Where a run enters
 
@@ -874,8 +871,7 @@ Each caller ends at a different place, and each states only its own:
 
 - `/test-plan` → "review the document, then `/test-plan-run`."
 - `/test-plan-run` → `/ship`.
-- grind's test phase → **nothing.** It continues to its own next phase; a next-steps block
-  in an unattended run is noise.
+- grind → its own terminal report owns its next steps.
 
 A caller may **append** its own follow-on offer after this block; it never rewrites the
 line above it.
@@ -890,8 +886,9 @@ that spec's writer-fills-its-own-template convention.
 
 ### `test-plan-written`
 
-One writer: `/test-plan`. Posted once the document has passed every verification check —
-the same gate that deleted the scratch. A **fallback-produced document posts no stamp**;
+Two writers: `/test-plan` and grind's test plan, on the `unit-complete` two-writers
+precedent. Posted once the document has passed every verification check — the same gate
+that deleted the scratch. A **fallback-produced document posts no stamp**;
 the stamp attests to a verified document.
 
 It is a document-producing event, so the body starts with `**Doc:**` and the marker
@@ -906,12 +903,8 @@ carries `paths`. The body below the marker heading:
 
 ### `tests-run`
 
-Two writers: `/test-plan-run` and `/grind`'s test phase, on the `unit-complete`
-two-writers precedent. `/test-plan-run`'s marker additionally carries `scope` (the mode it
-ran). Grind posts it inside the test phase, so an interruption mid-phase leaves a durable
-marker to resume from.
-
-The body is the same in both, and nothing else belongs in it:
+One writer: `/test-plan-run`. Its marker additionally carries `scope` (the mode it ran).
+The body below the marker heading, and nothing else belongs in it:
 
 ```markdown
 **Doc:** `docs/tests/<filename>`

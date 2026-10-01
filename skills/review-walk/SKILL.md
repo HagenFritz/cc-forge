@@ -48,8 +48,8 @@ plain-text numbered list the user answers with a number.
 
 ## Step 2: Read the Doc and Find the Resume Point
 
-Read the full review doc. Ignore the `## Groups` section entirely — the sweep and grind
-still read it; the walk does not. Walk order is `P1-* → P2-* → P3-*` in numeric order,
+Read the full review doc. Ignore the `## Groups` section entirely — the sweep still reads
+it; the walk does not. Walk order is `P1-* → P2-* → P3-*` in numeric order,
 always.
 
 Parse every finding's `Status:` line:
@@ -285,7 +285,7 @@ the code.
 
 - **Skip reason codes** — the won't-fix list above.
 - **Defer reason codes** — the walk writes none (it records a `Tracking:` line instead);
-  `/grind` is their only writer and [defines them](../grind/SKILL.md).
+  `/grind` is their only writer and [defines them](../grind/SKILL.md#5-triage-and-fix).
 - **The code** is the one the user's number names. Then ` — ` and the user's note, kept
   **verbatim**, if they added one; if none, the line is the code alone. Never rewrite,
   shorten, or "improve" what they typed, and never invent a note they did not give.

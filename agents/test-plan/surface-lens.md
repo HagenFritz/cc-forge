@@ -1,6 +1,6 @@
 ---
 name: surface-lens
-description: "Proposes browser-drivable flows and manual UX checks for the UI paths a change touches, and returns an explicit empty result on a backend-only diff. Dispatched as one of the three lenses in /test-plan, /test-plan-run, and /grind's test phase."
+description: "Proposes browser-drivable flows and manual UX checks for the UI paths a change touches, and returns an explicit empty result on a backend-only diff. Dispatched as one of the three lenses in /test-plan, /test-plan-run, and /grind's test plan."
 model: sonnet
 tools: Read, Glob, Grep, Bash
 ---

@@ -84,7 +84,7 @@ date: YYYY-MM-DD
 ## Groups
 
 <!--
-Clusters of related issues that span P-levels. /review-sweep and /grind read this
+Clusters of related issues that span P-levels. /review-sweep reads this
 section; /review-walk does not. If no groups were formed,
 write a single line: `_None — issues are independent._`
 -->

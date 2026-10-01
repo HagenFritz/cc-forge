@@ -1,6 +1,6 @@
 ---
 name: spec-lens
-description: "Proposes black-box behavior test cases from the stated intent alone — requirements, plan fields, the surface digest — without ever seeing the diff or the implementation. Dispatched as one of the three lenses in /test-plan, /test-plan-run, and /grind's test phase."
+description: "Proposes black-box behavior test cases from the stated intent alone — requirements, plan fields, the surface digest — without ever seeing the diff or the implementation. Dispatched as one of the three lenses in /test-plan, /test-plan-run, and /grind's test plan."
 model: sonnet
 disallowedTools: Read, Glob, Grep, Bash, Edit, Write, NotebookEdit, Agent, Skill, ToolSearch, WebFetch, WebSearch
 ---
