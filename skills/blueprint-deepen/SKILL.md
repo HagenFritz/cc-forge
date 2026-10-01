@@ -340,7 +340,7 @@ If artifact-backed mode was used:
 Allowed changes:
 - Clarify or strengthen decision rationale
 - Tighten requirements trace or origin fidelity
-- Reorder or split implementation units when sequencing is weak
+- Reorder or split implementation units when sequencing is weak — and when the plan has `Phased Delivery`, keep each `### Phase N`'s `**Units:**` line in sync, so every non-retired unit sits in exactly one phase
 - Add missing pattern references, file paths, or verification conformance checks
 - Expand system-wide impact, risks, or rollout treatment where justified
 - Reclassify open questions between `Resolved During Planning` and `Deferred to Implementation` when evidence supports the change
