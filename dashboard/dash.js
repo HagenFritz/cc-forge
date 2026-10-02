@@ -2191,29 +2191,39 @@ let vmPollFailures = 0
 // the footer only speaks after a run of failures, so one slow tunnel is not a
 // warning. A reply that does not parse is its own note: that is a changed
 // `claude agents --json` shape, not a network problem, and it needs a person.
+//
+// The poll only runs while an interactive `ssh ro-devbox` is open on this Mac.
+// The devbox's idle auto-stop counts any established SSH as activity, and a
+// 10 s poll riding the ControlPersist master kept the box up indefinitely.
 function refreshVmRows(state) {
   if (vmPollPending) return
   vmPollPending = true
-  try {
-    execFile('ssh', vmPollArgs(), { timeout: VM_POLL_TIMEOUT_MS, maxBuffer: VM_POLL_MAX_BYTES, encoding: 'utf8' }, (err, out) => {
+  withVmTty((tty) => {
+    if (tty === null) {
       vmPollPending = false
-      if (err) {
-        vmPollFailures += 1
-        if (vmPollFailures >= VM_POLL_FAILURES_MAX) state.vmPollNote = `${VM_HOST} unreachable — VM rows are from the last successful poll`
-        return
-      }
-      vmPollFailures = 0
-      const rows = parseVmPoll(out)
-      if (rows === null) {
-        state.vmPollNote = `${VM_HOST} poll returned an unexpected shape — VM rows are from the last successful poll`
-        return
-      }
-      state.vmPollNote = null
-      applyVmPoll(state, rows, Date.now())
-    })
-  } catch (e) {
-    vmPollPending = false
-  }
+      return
+    }
+    try {
+      execFile('ssh', vmPollArgs(), { timeout: VM_POLL_TIMEOUT_MS, maxBuffer: VM_POLL_MAX_BYTES, encoding: 'utf8' }, (err, out) => {
+        vmPollPending = false
+        if (err) {
+          vmPollFailures += 1
+          if (vmPollFailures >= VM_POLL_FAILURES_MAX) state.vmPollNote = `${VM_HOST} unreachable — VM rows are from the last successful poll`
+          return
+        }
+        vmPollFailures = 0
+        const rows = parseVmPoll(out)
+        if (rows === null) {
+          state.vmPollNote = `${VM_HOST} poll returned an unexpected shape — VM rows are from the last successful poll`
+          return
+        }
+        state.vmPollNote = null
+        applyVmPoll(state, rows, Date.now())
+      })
+    } catch (e) {
+      vmPollPending = false
+    }
+  })
 }
 
 // A rotated token is otherwise total, silent VM-row loss: the emitter exits 0
