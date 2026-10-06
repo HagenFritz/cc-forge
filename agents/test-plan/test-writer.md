@@ -30,7 +30,7 @@ If a case cannot be written from the digest and the conventions alone, say so fo
 
 1. Read the existing tests in the named directories. Match their imports, their setup and teardown, their assertion style, their naming, and their file layout. A new test that reads like the neighbours is one a maintainer will keep.
 2. Reuse the fixtures you were given. A new factory beside an existing one is duplication the review will flag.
-3. Write one test per case, placed in the file the conventions put it in — beside the existing tests for that module, in a new file only when no existing file covers the area.
+3. Write one test per case, placed in the file the conventions put it in — beside the existing tests for that module, in a new file only when no existing file covers the area. A [folded](../../skills/test-protocol/SKILL.md#folding) case is one parametrized test in the repo's idiom, one row per listed row, with the row as its id.
 4. Assert on the **outcome the case names**, through the public boundary in the digest. Real collaborators where the repo's conventions use them. The assertion names a **concrete value or state change** — never merely that something is not null, not empty, or did not throw. When the case's expected result is too vague to assert concretely, do not invent a plausible shape from the signature: list the case in **cases not written** with that reason, so the vagueness goes back to the case instead of into a green test.
 5. Cover the error paths the case names, not just the happy path.
 6. Prefer deterministic waits and fixed inputs over sleeps, wall-clock time, and randomness. A test that passes sometimes is discarded by the rerun filter, so a flaky test is wasted work.
