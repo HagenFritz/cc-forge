@@ -1,7 +1,7 @@
 ---
 name: grind
-description: "Build one phase of an implementation plan unattended on one branch and end at one ready PR for review: after one confirmation of the build slices, an Opus subagent builds each slice unit-by-unit (committing, pushing, and stamping the issue per unit) while grind records one work doc with the scope observer; then the deep-review fleet reviews the whole branch with tests ignored, grind triages and an Opus subagent fixes the accepted findings, grind writes one test plan, and opens the PR — never writing tests, watching CI, or merging. Any failure stops the run where it is. A plan with Phased Delivery phases builds one phase per run. Use when the user says 'grind this plan', 'grind it out', 'run the whole plan', or invokes /grind."
-argument-hint: "[plan file path]"
+description: "Build one phase of an implementation plan unattended on one branch and end at one ready PR for review: after one confirmation of the build slices, an Opus subagent builds each slice unit-by-unit (committing, pushing, and stamping the issue per unit) while grind records one work doc with the scope observer; then the deep-review fleet reviews the whole branch with tests ignored, grind triages and an Opus subagent fixes the accepted findings, grind writes one test plan, and opens the PR — never writing tests, watching CI, or merging. Any failure stops the run where it is, and a timer stops it cleanly at a step boundary once 90 minutes have passed (--no-timer to disable); re-running /grind on the same plan resumes from the docs the run already wrote. A plan with Phased Delivery phases builds one phase per run. Use when the user says 'grind this plan', 'grind it out', 'run the whole plan', or invokes /grind."
+argument-hint: "[plan file path] [--no-timer]"
 allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Agent, AskUserQuestion, PushNotification
 ---
 
@@ -11,13 +11,15 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Agent, AskUserQuestion, Push
 
 `/grind` builds one phase of a plan — the whole plan when it has no `## Phased Delivery` — on one branch in one worktree, and ends at one ready PR. It asks you once, then runs without prompting: build the slices, review the branch, triage and fix, write a test plan, open the PR, stop. It never merges and never watches CI. You review the PR and its three docs — work, review, test plan — in a new session in the worktree, and land it yourself.
 
-**If anything fails, the run stops.** Grind does not retry, resume, or work around a failure: it says what failed, leaves the branch and worktree as they are, and notifies you. Re-running starts a fresh run.
+**If anything fails, the run stops.** Grind does not retry or work around a failure: it says what failed, leaves the branch and worktree as they are, and notifies you. A **timer** also stops it cleanly once 90 minutes have passed, before the VM's ~2-hour wall. Either way, re-running `/grind` on the same plan picks up where the run stopped (Resume).
 
 Never start `/grind` on your own initiative or from inside another skill; the user has to ask for it.
 
 ## Input
 
 <input_document> #$ARGUMENTS </input_document>
+
+`--no-timer` anywhere in the argument turns the timer off; the rest is the plan path.
 
 No path → glob `docs/plans/*.md` with `status: active`, and ask via `AskUserQuestion` which of the newest 4 to grind. None → stop: "No active plan found. Write one with `/blueprint` first."
 
@@ -33,12 +35,25 @@ No path → glob `docs/plans/*.md` with `status: active`, and ask via `AskUserQu
 
 Any check failing → stop with what failed.
 
+### The timer
+
+**Before starting each step** — each slice's build, the wrap-up observer pass, the review, triage and fix, the test plan, and the PR open — read the clock with one shell call:
+
+```bash
+echo $(( ( $(date +%s) - $(cat <scratchpad>/grind-start) ) / 60 ))
+```
+
+Under 90 → start the step. 90 or more, or a missing anchor → stop the run (Stopping, timer). A step that started at 89 minutes runs to completion; nothing starts after it. Never estimate elapsed time from how much work has happened — the printed number is the only input. The anchor is per invocation; a resumed run writes a fresh one. `--no-timer` skips every gate.
+
 ### 2. Pick the units and confirm
 
+- **Resume check.** Look in the primary checkout's `docs/work/` for a work doc whose `plan:` is this plan and whose `target:` branch has no merged PR (`gh pr list --head <target> --state merged`). One found → this is a resume on that `target:`: skip the rest of this step, and go to Resume. With several, take the newest by filename.
 - **Units.** With a `## Phased Delivery` section, take the first `### Phase N` whose `**Units:**` line lists an unchecked unit, and build that phase's unchecked units. When the phase has no `**Units:**` line, infer its units from the phase's prose. With no `## Phased Delivery`, build every unchecked unit. Skip units marked `**Reviewed:** retired`.
 - **Slices.** Group the units into slices, in plan order: units that only make sense together share a slice; keep a slice under roughly 400 changed lines or ~6 files.
 - **Branch.** `/tree` convention — `{prefix}/{issue}/{short-description}`, dropping `{issue}` when there is none — with a `-p<n>` suffix when the plan has more than one phase. The prefix and description also make the PR title.
+- **Leftover branch.** If the derived branch already exists — locally, on `origin`, or as the worktree at `../<repo>-worktrees/<branch>` — an earlier run stopped before writing its work doc: treat it as a resume on that branch.
 - **Confirm once** with `AskUserQuestion`: "Grind phase <n> of <m> — <k> slices on `<branch>`, ending at one PR?" Put the slice list (slice, units) in a short `preview`. Options: **Grind it**, **Revise** (take the user's changes and re-confirm), **Cancel**. This is the only question in the run.
+- **Start the clock**, unless `--no-timer`: `date +%s > <scratchpad>/grind-start`. After the confirmation, so time spent answering it is not counted.
 - **Stamp the start** per [the issue-log spec](../issue-log/SKILL.md#posting):
 
   ```markdown
@@ -50,6 +65,20 @@ Any check failing → stop with what failed.
   **Branch:** `<branch>`
   **Slices:** <one line per slice: "N. <slice name> — units <list>">
   ```
+
+### Resume
+
+A resume continues the run step 2 found. It reads no state from the issue — stamps are skipped when there is no issue — or from the plan. The run's own docs are the record, each keyed by `target: <branch>` in the primary checkout's `docs/`. Doc checks here are `target:` plus the structural anchors only, never the `date:` check: a resume can land on a later day.
+
+- **Worktree.** It must exist at `../<repo>-worktrees/<branch>` with a clean tree; missing or dirty → stop (Stopping). Then start the clock as in step 2.
+- **Stamp** `grind-started` as in step 2, with `— resumed` in the heading.
+- **Build.** No work doc → the run stopped between the worktree and the doc, before anything was built: create the doc (skip `git worktree add` and the symlink) and build every unit from the first slice. Otherwise continue the doc per [the work-protocol spec's resume](../work-protocol/SKILL.md#resume): a unit with an `observed: <ordinal>` marker is done; group the rest into slices as step 2 does and continue step 3, telling each build agent its units may already have commits on the branch — build only what `git log` shows missing, and return a commit range for every unit it was given. All units observed but `status: in-progress` → run the wrap-up pass.
+- **Review.** A review doc whose `target:` is the branch and that carries the structural anchors in [verification](../review-protocol/SKILL.md#verifying-the-review-document) → done. None → step 4. A clean review writes no doc, so it re-runs.
+- **Triage and fix.** In that doc, a finding with no `**Grind:**` line → triage it. A finding whose line starts `**Grind:** accepted —` but not `**Grind:** accepted — not fixed:` has a pending fix: dispatch the fix agent for those findings with the doc's fix base, telling it some may already be committed — check `git log <fix base>..origin/<branch>` and skip what is already fixed.
+- **Test plan.** A test doc whose `target:` is the branch and that carries the structural anchors in [verification](../test-protocol/SKILL.md#verifying-the-document) → done. None → step 6; a run that legitimately wrote none re-runs it.
+- **PR.** `gh pr list --head <branch> --state open --json number,url`. One open → do step 7's plan tick, then step 8. None → step 7.
+
+Enter at the first step whose artifact is missing; every step after it runs normally, timer gates included.
 
 ### 3. Build the slices
 
@@ -82,7 +111,6 @@ For each slice, in order:
    - **Return:** per unit, its status, its commit range as `<base>..<head>`, one line per changed file, any deviation from the Approach with its reason, decisions made, and **stale tests** — existing tests the unit may have made stale, each as a path plus one sentence why.
 2. **Check it landed.** `git -C <worktree> log origin/<branch> --oneline` shows a commit range for every unit in the slice. If not — or the agent reported a blocked unit — stop the run (Stopping).
 3. **Record it** per [the work-protocol spec](../work-protocol/SKILL.md): dispatch `forge:workflow:scope-observer` in [`unit` mode](../work-protocol/SKILL.md#unit-mode) for each unit (plan path, ordinal, commit range, worktree as working directory, no addenda — and nothing from the build return), then update the work doc from git, the return, and the observer's cards. Every card stays `open`.
-4. **Tick** the slice's unit checkboxes in the plan.
 
 After the last slice, dispatch the observer once in [`wrap-up` mode](../work-protocol/SKILL.md#wrap-up-mode) over the units built, record its cards, and set the work doc `status: complete`.
 
@@ -111,7 +139,7 @@ After the last slice, dispatch the observer once in [`wrap-up` mode](../work-pro
 
 A P1 may be rejected only as `misread` or `by-design`, and deferred only as `bigger-than-scoped`; otherwise it is accepted. Directly under each finding's `Status:` line write `**Grind:** <accepted | rejected | deferred> — <one line why>`. Never file an issue for a deferred finding.
 
-**If anything was accepted**, note `git -C <worktree> rev-parse origin/<branch>` as the fix base, then dispatch one fix subagent (`Agent`, `model: "opus"`, `subagent_type: "general-purpose"`) with: the worktree path; the accepted findings verbatim, with file:line, and nothing else; edit only the files those findings cite, and never the plan or the review doc; commit and push with exactly `git push -u origin <branch>`; run no tests; the build agent's prohibitions; and **return** per finding what changed and why the fix was applied, or why it couldn't be. Then confirm `git -C <worktree> log origin/<branch>..HEAD` is empty (everything pushed) — otherwise stop the run. List any file in `git -C <worktree> diff --name-only <fix base>..origin/<branch>` that no accepted finding cites; those go in the report and the PR's `### Grind Docs` as outside the findings. In the review doc:
+**If anything was accepted**, record `git -C <worktree> rev-parse origin/<branch>` as the fix base — one line, `<!-- grind fix base: <sha> -->`, appended as the review doc's last line, so a resume can find it — then dispatch one fix subagent (`Agent`, `model: "opus"`, `subagent_type: "general-purpose"`) with: the worktree path; the accepted findings verbatim, with file:line, and nothing else; edit only the files those findings cite, and never the plan or the review doc; commit and push with exactly `git push -u origin <branch>`; run no tests; the build agent's prohibitions; and **return** per finding what changed and why the fix was applied, or why it couldn't be. Then confirm `git -C <worktree> log origin/<branch>..HEAD` is empty (everything pushed) — otherwise stop the run. List any file in `git -C <worktree> diff --name-only <fix base>..origin/<branch>` that no accepted finding cites; those go in the report and the PR's `### Grind Docs` as outside the findings. In the review doc:
 
 - **Fixed** → `Status: done`, and rewrite the `Grind:` line to `**Grind:** fixed — <what changed>; why: <why the fix was applied>`.
 - **Not fixed** → leave `Status: in-progress`, and rewrite the line to `**Grind:** accepted — not fixed: <reason>`.
@@ -149,7 +177,7 @@ When a test doc exists, add the plain Pre-merge item `Run /test-plan-run <test d
 gh pr create --base <default-branch> --head <branch> --title "$(cat <title-file>)" --body-file <body-file>
 ```
 
-Confirm it with `gh pr view <N> --json number,url,mergeable` — failure stops the run. Grind posts no PR comments. On the plan's final phase, set its frontmatter `status: completed`.
+Confirm it with `gh pr view <N> --json number,url,mergeable` — failure stops the run. Grind posts no PR comments. Then tick the checkboxes of every unit this phase built in the plan, and on the plan's final phase set its frontmatter `status: completed`. Ticking only here keeps a stopped phase's units unchecked, so a re-run picks the same phase and branch.
 
 ### 8. Report and notify
 
@@ -183,7 +211,7 @@ Then stamp the completion and notify:
 
 ### Stopping
 
-Any failure stops the run on the spot: a blocked unit, commits that did not land, a review with no verified doc, fixes that did not push, a PR that did not open. Leave the branch, worktree, docs, and any PR exactly as they are. Report what failed with its real output and where the work is, stamp, and notify:
+Any failure stops the run on the spot: a blocked unit, commits that did not land, a review with no verified doc, fixes that did not push, a PR that did not open, a missing or dirty worktree on resume. Leave the branch, worktree, docs, and any PR exactly as they are. Report what failed with its real output and where the work is, stamp, and notify:
 
 ```markdown
 <!-- cc-forge-log v1: {"skill":"grind","event":"grind-blocked","paths":["<plan file path>"]} -->
@@ -194,16 +222,27 @@ Any failure stops the run on the spot: a blocked unit, commits that did not land
 **Branch:** `<branch>` · **Worktree:** <absolute path>
 ```
 
+**A timer stop** is not a failure — the run is out of clock and resumes as-is. Leave everything in place, report the step it stopped before, stamp, and notify:
+
+```markdown
+<!-- cc-forge-log v1: {"skill":"grind","event":"grind-stopped","paths":["<plan file path>"],"branch":"<branch>"} -->
+
+### ⏸️ /grind — stopped by timer before <step>
+
+**Done:** <steps finished, one line>
+**Resume:** re-run `/grind <plan path>`
+```
+
 ### Notification
 
 On completion and on a stop, after the stamp:
 
-- **Push:** `PushNotification`, one line under 200 characters, no markdown — `grind complete: <plan> — PR #N ready for review, N deviations` or `grind stopped: <plan> — <what failed>`.
-- **Email**, only when `SENDGRID_API_KEY` is set: one `POST https://api.sendgrid.com/v3/mail/send` via `curl -sS --fail --max-time 30`, the `Authorization: Bearer` header read from a `chmod 600` temp file with `-H @<file>` (deleted after the call) so the key never appears on the command line, the body in a file passed with `--data @<file>`. From `hfritz@r-o.com` (Hagen Fritz) to `hfritz@r-o.com`, subject `[grind] <plan title>: <complete | stopped>`. The body is the report, ending with `claude --resume <session-id>` on its own line. One attempt; a failure is one reported line.
+- **Push:** `PushNotification`, one line under 200 characters, no markdown — `grind complete: <plan> — PR #N ready for review, N deviations` or `grind stopped: <plan> — <what failed>`, or on a timer stop `grind stopped: <plan> — out of time before <step>, re-run to resume`.
+- **Email**, only when `SENDGRID_API_KEY` is set: one `POST https://api.sendgrid.com/v3/mail/send` via `curl -sS --fail --max-time 30`, the `Authorization: Bearer` header read from a `chmod 600` temp file with `-H @<file>` (deleted after the call) so the key never appears on the command line, the body in a file passed with `--data @<file>`. From `hfritz@r-o.com` (Hagen Fritz) to `hfritz@r-o.com`, subject `[grind] <plan title>: <complete | stopped>`. The body is the report, ending with `claude --resume <session-id>` and `/grind <plan path>`, each on its own line. One attempt; a failure is one reported line.
 
 ## Rules
 
 - One confirmation, then no questions. Never merge, never watch CI, never write or run tests.
 - Push only with `git push -u origin <branch>`. Never push to `main`, force-push, use `--no-verify`, or `git add -A` — for grind or any subagent.
 - Check every subagent's claim against git before moving on.
-- Any failure stops the run. No retries, no recovery, no resume.
+- Any failure stops the run, with no retries inside it. Re-running `/grind` on the plan resumes from the run's docs.
