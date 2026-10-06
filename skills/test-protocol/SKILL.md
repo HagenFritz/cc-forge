@@ -259,12 +259,37 @@ holds:
 | `asserts a mock` | asserts that a mock was called, how often, or in what order |
 | `duplicates existing` | an existing test already covers it |
 | `jsdom focus/timing` | asserts focus, timing, or async rendering under jsdom |
-| `unchanged code` | tests code the diff did not touch — never applied to a revise proposal |
+| `unchanged code` | asserts only behavior of code the diff did not touch — see the adjacent-risk test below |
+| `framework behavior` | asserts what a library or framework guarantees rather than what the change decided — a query-param bound the framework enforces, a type the schema library rejects |
 | `still valid` | a revise proposal the blast-radius lens judged still valid |
+
+No drop reason re-judges a revise proposal; only `still valid` drops one.
+
+**The adjacent-risk test.** A blast-radius case that is not an invariant guard is kept only
+when its `**Why:**` names a changed line or branch and the call path by which the change
+reaches the asserted behavior — such a case exercises the change even when the assertion
+lands in code the diff left alone. "The change sits near X, so X still works" is
+`unchanged code`: it re-proves behavior the existing suite already owns.
 
 **The jsdom retag.** A focus, timing, or async-rendering case is **never** kept as `auto`.
 It is retagged `browser` when a real browser could drive it meaningfully, and dropped with
 reason `jsdom focus/timing` otherwise. Retag first, drop second.
+
+### Folding
+
+Cases that share one **shape** — the same setup, the same entry point family, the same
+assertion template — and differ only in **input and expected values** are folded into one
+case whose `**Steps:**` list the rows ("Rows: title → `title_changed`; due date →
+`due_changed`; …"). The writer turns a folded case into **one parametrized test**, one row
+per listed row, so a failure still names the row that broke.
+
+- Fold on shape, not on topic: "every field edit writes its event" folds; "an edit writes its
+  event" and "the timeline pages newest first" do not.
+- A row keeps every specific assertion its source case carried — folding never drops an
+  assertion, it only removes the per-case test scaffolding.
+- Fold after the keep and drop rules, within one `**Mode:**`, and never a revise case.
+- Folding is not capping. It changes the unit from one test per behavior to one test per
+  shape; every surviving behavior is still asserted.
 
 ### The Drop List
 
@@ -384,7 +409,7 @@ kept + dropped + merged  ≈  raw proposed
 ```
 
 Revise proposals count as proposed cases: a `V-NNN` block is kept, a `still valid` row is
-dropped.
+dropped. A case [folded](#folding) into another counts as merged.
 
 A large shortfall means the payload overflowed the synthesizer's context and cases were
 silently lost. On a shortfall, report it; a caller that can split the dispatch into
@@ -757,7 +782,8 @@ Case IDs are what tie a test on disk to its case, which is why
 
 ### Every test names its case
 
-The writer puts the case ID (`T-NNN`) in each test's name or docstring. That is how
+The writer puts the case ID (`T-NNN`) in each test's name or docstring; a folded case's
+parametrized test carries its one ID, with the rows as parameter ids. That is how
 receipts map a runner's output back to cases, how a re-run knows which cases already have
 a test on disk, and how the test-coverage reviewer tells a spec-sourced test from a
 diff-sourced one. A test with no case ID is not resumable.
