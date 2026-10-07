@@ -102,42 +102,36 @@ a skill that edits code unattended has no safe way to proceed on a broken premis
    `docs/reviews/` is gitignored in this repo, so the sweep's own `Status:` writes never appear in
    `git status`. The doc needs no exclusion from the baseline or from any later scope check.
 
-4. **Decision baseline.** Read every finding's `Status:` value and whether it carries a
-   `**Sweep:**` line, once, at this moment, before any step below writes to the doc. This is the
-   **decision baseline**: it is never re-read, and it is what tells a finding decided earlier in
-   this run from one decided before it. Triage conditions 0, 1, and 2 key on it.
-
-5. **Interrupted run.** Any finding at `Status: in-progress` is the residue of a killed run. Flip
+4. **Interrupted run.** Any finding at `Status: in-progress` is the residue of a killed run. Flip
    it to `open` and add `**Sweep:** interrupted`. Never auto-resume it and never auto-revert its
    edits — a half-applied fix in the working tree is indistinguishable from the user's own work.
-   Report these at the top of the run, and count them as **surfaced this run** — the flip changed
-   their state from the decision baseline, so loop condition 0 skips them as decided this run
-   rather than condition 2 counting them already swept.
+   Report these at the top of the run, and count them as **surfaced this run** — the `Sweep:` line
+   is this run's, so loop condition 2 skips them without counting them already swept.
 
    `/grind` also leaves `in-progress` on an accepted finding its fix agent did not address,
    signed `**Grind:** accepted — not fixed: <reason>`. A grind doc targets grind's run branch, so
    a sweep run in the grind worktree passes the `target:` check in step 2 and handles those lines
    as interrupted — they surface as `open`, left for a human as grind intended.
 
-6. **Unsigned terminal findings.** Any finding at `Status: done` carrying none of a `**Sweep:**`,
+5. **Unsigned terminal findings.** Any finding at `Status: done` carrying none of a `**Sweep:**`,
    `**Grind:**`, or `**Applied:**` line is unattributable — the signature convention reads it as the user's,
    and no later run can tell whether a fix actually landed. Never edit it and never re-open it:
    triage condition 1 skips it as a prior decision, which is correct. Report it at the top of the
    run as an anomaly with its id, so the user can check the working tree against the doc.
 
-7. **Dependencies.** Read every finding's `**Depends on:**` line and record the ids it names as
-   that finding's **prerequisites**. No line means no prerequisites. An id naming no finding in the
-   doc is ignored. Sharing a file or a theme is never a dependency — only this line is.
+6. **Dependencies.** Read every finding's `**Depends on:**` line. Take only the text before the
+   first ` — `; every `P<tier>-<n>` token in that span is a **prerequisite**, and the why text is
+   ignored. An id equal to the finding's own id is ignored. No line means no prerequisites.
 
-8. **Empty doc.** No `### P` issue headings at all → the run is a no-op. Report one line — "No
+7. **Empty doc.** No `### P` issue headings at all → the run is a no-op. Report one line — "No
    findings in `<absolute path>` — nothing to sweep." — and stop. No stamp is posted: a stamp for a
    doc with zero findings is noise. This is a successful terminal state, not an error.
 
 ## Step 3: The Triage Loop
 
 Walk the findings **in doc order** — the order they appear under `## Issues`, P1 through P3.
-Doc order is what guarantees a P1 is adjudicated before any later finding that shares its files.
-The one exception is a prerequisite, which condition 10 decides early.
+Doc order is what guarantees a P1 is adjudicated before any later finding that shares its files,
+and that a finding's prerequisites are decided before it.
 
 For each finding, evaluate the conditions below **in this exact order, first match wins.** A
 finding matching several conditions is reported under the first one that matched; the order is
@@ -145,9 +139,8 @@ cheapest-and-most-decisive first, so nothing reads code it did not have to.
 
 | # | Condition | Outcome |
 |---|-----------|---------|
-| 0 | Its `Status:` or `**Sweep:**` line differs from the decision baseline — this run already decided it | Skip. It is already counted under the outcome it got. |
-| 1 | Its baseline `Status:` is `done`, `deferred`, or `wont-fix` | Skip. Count as a **prior decision**, not this run's. |
-| 2 | Its baseline `Status:` is `open` and it carried a `**Sweep:**` line | Skip as **already swept**. Counted separately; no second `Sweep:` line is ever written. |
+| 1 | `Status:` is `done`, `deferred`, or `wont-fix` | Skip. Count as a **prior decision**, not this run's. |
+| 2 | `Status:` is `open` and it carries a `**Sweep:**` line | Skip. Count as **already swept** — unless this run's preflight wrote the line, which counts as surfaced this run. No second `Sweep:` line is ever written. |
 | 3 | The fix would delete or gitignore a protected artifact | `wont-fix` + `**Skip reason:** protected-artifact — <path>` (see step 4). |
 | 4 | `Confidence rationale:` is `not stated by reviewer`, or `Confidence:` is absent | Surface: `unrated confidence`. **Do not read the code.** |
 | 5 | `Confidence:` is `low` | Surface: `low confidence`. **Do not read the code.** |
@@ -155,7 +148,7 @@ cheapest-and-most-decisive first, so nothing reads code it did not have to.
 | 7 | Any cited path cannot be resolved, or resolves to a directory | Surface: `stale citation`. |
 | 8 | Any cited path is a **sensitive path** (see 3a) | Surface: `sensitive path: <path>`. **Do not read the code.** |
 | 9 | Any cited path is contested by a surfaced P1 | Surface: `overlaps surfaced P1-<N>`. |
-| 10 | A prerequisite did not end `done` | Surface: `depends on: <id>`, naming the first such prerequisite. |
+| 10 | A prerequisite id names no finding, or names one that did not end `done` | Surface: `depends on: <id>`, naming the first such prerequisite. |
 
 Condition 4 exists because a missing `Confidence:` is not the same as a low one.
 [The synthesizer](../../agents/review/review-synthesizer.md) fills an unstated confidence with
@@ -163,13 +156,6 @@ Condition 4 exists because a missing `Confidence:` is not the same as a low one.
 finding **no reviewer rated** would be indistinguishable from a verified pattern match and, at
 Small effort on P1 or P2, would be edited unattended. The rationale string is the only signal that
 distinguishes them, so the sweep reads it.
-
-Before evaluating condition 10, decide every prerequisite still undecided (unchanged since the
-baseline) by running it through this loop now, out of doc order, prerequisites of prerequisites first. A run of
-findings that depend on one another therefore lands whole when each one is eligible on its own: the
-prerequisite lands first, and the finding that needed it lands after. A prerequisite already `done`
-is satisfied whoever landed it; one `deferred`, `wont-fix`, or surfaced is not. A cycle — the
-synthesizer merges these, so it should never appear — surfaces every member in it.
 
 Only a finding that matches none of the conditions above reaches the code.
 
@@ -512,10 +498,9 @@ members.
    decide what to do next, and the reviewer's own plain-English line is better at that than any
    summary of it.
 
-6. **Prior and already-swept counts.** Two numbers with one line each, both counted from the
-   decision baseline rather than tallied per loop visit: findings that arrived with a terminal
-   status (prior decisions, not this run's) and findings already carrying a `Sweep:` line from an
-   earlier run.
+6. **Prior and already-swept counts.** Two numbers with one line each: findings that arrived with a
+   terminal status (prior decisions, not this run's) and findings already carrying a `Sweep:` line
+   from an earlier run.
 
 7. **Anything left unclean.** An untracked file the sweep could not remove during a revert, or any
    path a revert left in an unexpected state. Every one with an **absolute path** and the command
@@ -594,7 +579,6 @@ gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
   any other reason line following it. It is written on every finding the sweep decides, landed
   fixes included — it is the sweep's signature, and no other skill writes one.
 - **The doc is the source of truth and is re-read before each edit.** Never write from a cached read
-  of the doc, and never infer a finding's state from what the sweep remembers doing to it. The
-  decision baseline is not such a memory: it is a read of the doc, taken once in preflight.
+  of the doc, and never infer a finding's state from what the sweep remembers doing to it.
 - **Report the real state.** Only claim a fix landed after the scope self-check passed. Every
   failure gets its absolute path and its recovery command in the report, never a silent swallow.

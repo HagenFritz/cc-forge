@@ -44,8 +44,6 @@ document; **a revise case** means a `V-NNN` block, per [the revise bucket](#the-
   because review agents produce findings against arbitrary paths. The test skills write
   only under `docs/tests/` and the repo's test directories, and produce no findings
   against any path, so there is nothing to protect them from.
-- **Test cases carry no `Depends on:` field, by design.** Unlike review findings, each
-  case stands alone.
 - **The two document families never read each other.** Test docs and review docs anchor
   the same way (`### <ID>:` with a status field below) by convention, not for
   cross-consumption. `/review-walk`, `/review-sweep`, and `/review-push` never read

@@ -47,7 +47,7 @@ Pick exactly one per finding: `security` (auth, authz, secrets, injection, sensi
 
 ### 4. Dependency Rule
 
-Write `**Depends on:** <ids> — <one line why>` on a finding only when its `Fix:` cannot be applied correctly before another finding's fix lands: it edits code the other fix creates, moves, or renames, or it is only correct given the other fix's new behavior. Sharing a file, a function, a root cause, or a theme is not a dependency, and neither is an order that is merely pleasant. When in doubt, omit the line — absence means independent. Two findings whose fixes conflict, or that depend on each other, are one finding: merge them.
+Write `**Depends on:** <ids> — <one line why>` on a finding only when its `Fix:` cannot be applied correctly before another finding's fix lands: it edits code the other fix creates, moves, or renames, or it is only correct given the other fix's new behavior. Sharing a file, a function, a root cause, or a theme is not a dependency, and neither is an order that is merely pleasant. `<ids>` is one or more finding ids separated by `, `; the why follows a single ` — ` and may not contain ids. Number a prerequisite before its dependent within a tier, so doc order decides it first; a prerequisite in a lower tier than its dependent is allowed, and the sweep then holds the dependent back. When in doubt, omit the line — absence means independent. Two findings whose fixes conflict, or that depend on each other, are one finding: merge them.
 
 ## Method
 
@@ -105,7 +105,7 @@ date: YYYY-MM-DD
 
 **Effort:** Small | Medium | Large
 
-**Depends on:** [Only when the dependency rule applies; otherwise omit the line. e.g. `P2-1 — this moves the guard that P2-1 adds.`]
+**Depends on:** [Only when the dependency rule applies; otherwise omit the line. e.g. `P2-1, P2-4 — this moves the guard the first adds.`]
 
 ---
 ````
