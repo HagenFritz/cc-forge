@@ -34,8 +34,7 @@ walks.
 
 **Order is fixed and never negotiated.** Items are walked in document order, starting
 at the resume point. Never reorder, never renumber, and never ask the user which item
-or group to start from. A walk whose items are grouped runs the groups in document
-order and each group's members in the order the group names.
+to start from.
 
 **Every item is presented individually.** Each one gets its own render, its own teach
 moment where the walk has one, and its own action question. **Never offer to batch** —

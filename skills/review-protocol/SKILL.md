@@ -116,7 +116,7 @@ mean. The synthesizer owns the synthesis rules, the review-doc template, and the
 filename convention (`docs/reviews/YYYY-MM-DD-NNN-<slug>-review.md`); it sanitizes the
 slug (lowercase, non-`[a-z0-9-]` → `-`, collapse repeats), so a branch like `feat/foo`
 becomes `feat-foo`. It writes the document itself and returns: the doc path, per-tier
-counts, the P1/P2 summary rows, the group count, and how many findings it discarded
+counts, the P1/P2 summary rows, and how many findings it discarded
 under the protected-artifacts rule. When there are zero findings it writes nothing and
 returns a clean-review marker (still reporting any discarded count).
 
@@ -152,9 +152,8 @@ timeout.) On failure:
 On success, verify the doc rather than trusting the return message:
 
 - Confirm the returned path exists on disk.
-- Grep it for the structural anchors the consumers need: a `## Groups` heading (read by
-  `/review-sweep`), and at least one `### P<X>-<N>:` heading with `**Status:**`
-  on the line below it (read by every consumer). If missing,
+- Grep it for the structural anchor the consumers need: at least one `### P<X>-<N>:`
+  heading with `**Status:**` on the line below it (read by every consumer). If missing,
   treat as a failed dispatch.
 - Confirm the frontmatter `target:` matches this run's branch/PR and `date:` matches
   today — this guards against a stale same-path doc from an earlier run.

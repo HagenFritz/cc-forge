@@ -48,8 +48,7 @@ plain-text numbered list the user answers with a number.
 
 ## Step 2: Read the Doc and Find the Resume Point
 
-Read the full review doc. Ignore the `## Groups` section entirely — the sweep still reads
-it; the walk does not. Walk order is `P1-* → P2-* → P3-*` in numeric order,
+Read the full review doc. Walk order is `P1-* → P2-* → P3-*` in numeric order,
 always.
 
 Parse every finding's `Status:` line:

@@ -106,7 +106,7 @@ a skill that edits code unattended has no safe way to proceed on a broken premis
    it to `open` and add `**Sweep:** interrupted`. Never auto-resume it and never auto-revert its
    edits — a half-applied fix in the working tree is indistinguishable from the user's own work.
    Report these at the top of the run, and count them as **surfaced this run** — the `Sweep:` line
-   is this run's, so loop condition 2 exempts them rather than counting them already swept.
+   is this run's, so loop condition 2 skips them without counting them already swept.
 
    `/grind` also leaves `in-progress` on an accepted finding its fix agent did not address,
    signed `**Grind:** accepted — not fixed: <reason>`. A grind doc targets grind's run branch, so
@@ -119,17 +119,9 @@ a skill that edits code unattended has no safe way to proceed on a broken premis
    triage condition 1 skips it as a prior decision, which is correct. Report it at the top of the
    run as an anomaly with its id, so the user can check the working tree against the doc.
 
-6. **Cascade membership.** Read `## Groups`. Record, per finding, the group it belongs to and that
-   group's `Cascade:` text. A member of a group whose `Cascade:` states a **dependency** — a fix
-   that needs another to land first, or two fixes that conflict — is surfaced with `cascade`. The
-   sweep does not reorder and does not fix out of order.
-
-   **A suggested order is not a dependency.** A `Cascade:` that recommends a sequence and then says
-   the fixes do not conflict is advice about what is pleasant to do first, and the sweep treats its
-   members as independent. Read the text for the claim, not for the heading: the synthesizer's
-   `independent fixes — no ordering dependency.` is the explicit case, and a paragraph ending
-   "none of these conflicts with the others" is the same claim in prose. Surfacing on advice costs
-   a quick win for nothing.
+6. **Dependencies.** Read every finding's `**Depends on:**` line. Take only the text before the
+   first ` — `; every `P<tier>-<n>` token in that span is a **prerequisite**, and the why text is
+   ignored. An id equal to the finding's own id is ignored. No line means no prerequisites.
 
 7. **Empty doc.** No `### P` issue headings at all → the run is a no-op. Report one line — "No
    findings in `<absolute path>` — nothing to sweep." — and stop. No stamp is posted: a stamp for a
@@ -138,7 +130,8 @@ a skill that edits code unattended has no safe way to proceed on a broken premis
 ## Step 3: The Triage Loop
 
 Walk the findings **in doc order** — the order they appear under `## Issues`, P1 through P3.
-Doc order is what guarantees a P1 is adjudicated before any later finding that shares its files.
+Doc order is what guarantees a P1 is adjudicated before any later finding that shares its files,
+and that a finding's prerequisites are decided before it.
 
 For each finding, evaluate the conditions below **in this exact order, first match wins.** A
 finding matching several conditions is reported under the first one that matched; the order is
@@ -147,7 +140,7 @@ cheapest-and-most-decisive first, so nothing reads code it did not have to.
 | # | Condition | Outcome |
 |---|-----------|---------|
 | 1 | `Status:` is `done`, `deferred`, or `wont-fix` | Skip. Count as a **prior decision**, not this run's. |
-| 2 | `Status:` is `open` and it already carries a `**Sweep:**` line **that this run's preflight did not write** | Skip as **already swept**. Counted separately; no second `Sweep:` line is ever written. |
+| 2 | `Status:` is `open` and it carries a `**Sweep:**` line | Skip. Count as **already swept** — unless this run's preflight wrote the line, which counts as surfaced this run. No second `Sweep:` line is ever written. |
 | 3 | The fix would delete or gitignore a protected artifact | `wont-fix` + `**Skip reason:** protected-artifact — <path>` (see step 4). |
 | 4 | `Confidence rationale:` is `not stated by reviewer`, or `Confidence:` is absent | Surface: `unrated confidence`. **Do not read the code.** |
 | 5 | `Confidence:` is `low` | Surface: `low confidence`. **Do not read the code.** |
@@ -155,7 +148,7 @@ cheapest-and-most-decisive first, so nothing reads code it did not have to.
 | 7 | Any cited path cannot be resolved, or resolves to a directory | Surface: `stale citation`. |
 | 8 | Any cited path is a **sensitive path** (see 3a) | Surface: `sensitive path: <path>`. **Do not read the code.** |
 | 9 | Any cited path is contested by a surfaced P1 | Surface: `overlaps surfaced P1-<N>`. |
-| 10 | The finding belongs to a group whose `Cascade:` states a dependency or a conflict (a suggested order alone does not) | Surface: `cascade`. |
+| 10 | A prerequisite id names no finding, or names one that did not end `done` | Surface: `depends on: <id>`, naming the first such prerequisite. |
 
 Condition 4 exists because a missing `Confidence:` is not the same as a low one.
 [The synthesizer](../../agents/review/review-synthesizer.md) fills an unstated confidence with
@@ -428,7 +421,7 @@ line has two plausible splits and neither reader nor script can tell which is ri
 | `stale citation` | The cited path or the described code could not be found. | Re-check against the current code; the review may have drifted. |
 | `sensitive path: <path>` | A cited path is a migration, a CI workflow, or a `.yaml`/`.yml`/`.tf` file; the sweep did not read the code. | Read it and decide — an unattended edit here has too large a blast radius. |
 | `overlaps surfaced P1-<N>` | A cited file also holds a P1 that was surfaced, not fixed. | Settle P1-`<N>` first; then this one is likely trivial. |
-| `cascade` | Its group's `Cascade:` says one fix depends on another landing first. | Fix the group in `Suggested order:` by hand — `/review-walk` walks P-order and ignores groups, so read the `Cascade:` line yourself. |
+| `depends on: <id>` | Its fix needs finding `<id>`'s fix first, and that one did not land. | Settle `<id>` first; then this one is likely trivial. |
 | `test precondition` | A testing finding failed the R5 shape check or names a test file that does not exist. | Write the test yourself, or decide it is not worth writing. |
 | `interrupted` | A previous sweep run died mid-fix on this finding. | Check the working tree for a half-applied edit before doing anything else. |
 | `implemented — <what changed>` | The fix landed (`done`); the sweep made this edit. The free text is required here, however small the change. | Read the diff. It is uncommitted and in the working tree. |
