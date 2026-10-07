@@ -78,7 +78,7 @@ Several were ported from [EveryInc/compound-engineering-plugin](https://github.c
 | `test-coverage-reviewer` | Missing cases, weak assertions, untested branches, flaky patterns in shipped tests | deep-review |
 | `pattern-recognition-specialist` | Design patterns, anti-patterns, naming, duplication | compound, blueprint-deepen |
 | `code-simplicity-reviewer` | Final pass — YAGNI violations, simplification opportunities | deep-review, compound |
-| `review-synthesizer` | Consolidates all reviewer findings into the `docs/reviews/` document (dedupe, severity, groups) | deep-review |
+| `review-synthesizer` | Consolidates all reviewer findings into the `docs/reviews/` document (dedupe, severity, fix dependencies) | deep-review |
 | `python-reviewer` | High-bar Python: Pythonic patterns, type safety, maintainability | _opt-in via `cc-forge.local.md`_ |
 | `typescript-reviewer` | High-bar TypeScript: type safety, modern patterns, maintainability | _opt-in via `cc-forge.local.md`_ |
 
