@@ -1,8 +1,8 @@
 ---
 name: test-protocol
 description: >
-  Shared specification for the test skills — test-plan, test-plan-run, and grind's
-  test plan. Owns the rules all three obey identically: the three lenses and
+  Shared specification for the test skills — test-plan, test-plan-walk, test-plan-run,
+  and grind's test plan. Owns the rules they obey identically: the three lenses and
   what each may see, the surface digest, the tag vocabulary, the keep and drop rules, the
   Drop List, the revise bucket, the scratch contract, the synthesizer dispatch and count
   check, the document shape, the assurance filters and revise execution, the re-run
@@ -15,12 +15,14 @@ disable-model-invocation: true
 
 # Test Protocol Specification (v1)
 
-Three callers produce and consume one test-plan document: two producers that propose cases
-— one stopping for review, one autonomous — and a consumer that acts on them.
+Four callers produce and consume one test-plan document: two producers that propose cases
+— one stopping for review, one autonomous — and two consumers: a walk that judges each
+case and a run that acts on them.
 
 | Caller | Does | Produces |
 |---|---|---|
 | [`test-plan`](../test-plan/SKILL.md) | dispatches the three lenses and the synthesizer, stops for review | `docs/tests/*.md` |
+| [`test-plan-walk`](../test-plan-walk/SKILL.md) | walks every `T-NNN` case with a human, keep or cut, before any run | `**Walk:**`, `**Recommended:**`, `Status: cut`, and the `walked:` frontmatter key in that doc |
 | [`test-plan-run`](../test-plan-run/SKILL.md) | runs one scope (`auto`, `browser`, or `manual`) over an existing doc | `Status:`, `**Filter:**`, `## Receipts` in that doc; test files on disk |
 | [`grind`](../grind/SKILL.md)'s test plan | dispatches the three lenses and the synthesizer after its review and fixes, before the PR opens; writes no tests and commits nothing | `docs/tests/*.md` |
 
@@ -30,8 +32,9 @@ digest, their lens briefs, their own argument parsing, their own filled stamp te
 and their own terminal wording — and reference this spec for everything below. **Never
 restate a rule from this file inside a test skill**, not even paraphrased.
 
-Every rule here is written so all three callers can execute it. A rule that only
-`/test-plan` could run, or that assumes a user is present, does not belong in this file.
+Every rule here is written so each caller it applies to can execute it. A rule that only
+`/test-plan` could run does not belong in this file, and a rule that needs a user present —
+`manual` mode, the walk — names the caller it binds.
 
 Throughout, **the orchestrator** means whichever caller is running — it holds `Bash` and
 runs every command; **lens** means one of the three proposing agents; **the writer** means
@@ -213,9 +216,12 @@ Every case carries exactly one tag, from a closed set:
 
 | Tag | Meaning | Who drives it |
 |---|---|---|
-| `auto` | an automated test in the repo's runner | the writer, then the orchestrator's filters |
-| `browser` | a flow driven through Playwright or the Chrome tools | `/test-plan-run browser` |
-| `manual` | a check a human performs and reports | `/test-plan-run manual` |
+| `manual` | a check that needs human judgment — appearance, layout, copy quality, empty-state clarity | `/test-plan-run manual` |
+| `browser` | interaction and exact outcomes — click, type, navigate, drag, then assert what appears, including exact rendered strings — driven through Playwright or the Chrome tools | `/test-plan-run browser` |
+| `auto` | logic that needs no DOM — hooks, reducers, formatters, state transitions — as an automated test in the repo's runner | the writer, then the orchestrator's filters |
+
+A case that asserts anything about the UI is never `auto`: it is `browser` when the outcome
+is exact and `manual` when it needs judgment. **Tag first, then keep, then drop.**
 
 There is no `all` tag and no untagged case. A revise case is always `auto`; its
 `**Action:**` is a field, not a tag, and the set stays closed.
@@ -239,12 +245,13 @@ The synthesizer applies these, and only these. They are the whole of R7.
 
 ### Keep
 
-A case is kept only if at least one holds:
+A case is kept only if at least one holds, and its `**Keep rule:**` names the label of the
+first that does:
 
-- It exercises a changed line or branch **through a public boundary, with real
-  collaborators**.
-- It asserts an **error path of new code**.
-- It is a **codebase-wide invariant** guard.
+- `changed behavior` — it exercises a changed line or branch **through a public boundary,
+  with real collaborators**.
+- `new error path` — it asserts an **error path of new code**.
+- `invariant guard` — it is a **codebase-wide invariant** guard.
 
 ### Drop
 
@@ -256,9 +263,9 @@ holds:
 | `pins a constant` | asserts a literal value that the code states once |
 | `asserts a mock` | asserts that a mock was called, how often, or in what order |
 | `duplicates existing` | an existing test already covers it |
-| `jsdom focus/timing` | asserts focus, timing, or async rendering under jsdom |
-| `unchanged code` | asserts only behavior of code the diff did not touch — see the adjacent-risk test below |
-| `framework behavior` | asserts what a library or framework guarantees rather than what the change decided — a query-param bound the framework enforces, a type the schema library rejects |
+| `UI test in fake DOM` | asserts a UI behavior through jsdom or another simulated DOM that a real browser should own |
+| `tests untouched code` | asserts only behavior of code the diff did not touch — see the adjacent-risk test below |
+| `library already guarantees it` | asserts what a library or framework guarantees rather than what the change decided — a query-param bound the framework enforces, a type the schema library rejects |
 | `still valid` | a revise proposal the blast-radius lens judged still valid |
 
 No drop reason re-judges a revise proposal; only `still valid` drops one.
@@ -267,11 +274,7 @@ No drop reason re-judges a revise proposal; only `still valid` drops one.
 when its `**Why:**` names a changed line or branch and the call path by which the change
 reaches the asserted behavior — such a case exercises the change even when the assertion
 lands in code the diff left alone. "The change sits near X, so X still works" is
-`unchanged code`: it re-proves behavior the existing suite already owns.
-
-**The jsdom retag.** A focus, timing, or async-rendering case is **never** kept as `auto`.
-It is retagged `browser` when a real browser could drive it meaningfully, and dropped with
-reason `jsdom focus/timing` otherwise. Retag first, drop second.
+`tests untouched code`: it re-proves behavior the existing suite already owns.
 
 ### Folding
 
@@ -293,9 +296,12 @@ per listed row, so a failure still names the row that broke.
 
 One table, one row per dropped case, under a `## Drop List` heading in the document:
 
-| Proposed case | Source | Reason | Note |
-|---|---|---|---|
-| `<the case title as proposed>` | `<lens>` | `<reason from the table above>` | `<one line: what made it match>` |
+| Proposed case | Mode | Source | Viability | Reason | Note |
+|---|---|---|---|---|---|
+| `<the case title as proposed>` | `<tag>` | `<lens>` | `<level>` | `<reason from the table above>` | `<one line: what made it match>` |
+
+The reasons are spelled exactly as in the table above; `/test-plan-walk`'s cut codes 1–6
+reuse them byte for byte, so a walk cut and a synthesizer drop count together.
 
 **The Drop List is never empty in a real run** and never omitted. A run that drops nothing
 writes the heading with `_None — every proposed case was kept._` beneath it, so a reader
@@ -326,7 +332,7 @@ Existing tests the change made stale. They are not new cases, so they live apart
   per entry. The synthesizer never sees the diff, so it de-dupes the verdicts by target
   and formats them, and never judges one: a `delete` or `regression` becomes a `V-NNN`
   block; a `still valid` becomes a Drop List row with reason `still valid`.
-- **The keep and drop rules do not re-judge a revise verdict.** `unchanged code` never
+- **The keep and drop rules do not re-judge a revise verdict.** `tests untouched code` never
   applies — a revise target is by definition existing test code.
 - **Uncapped**, like every other mode.
 - Executed per [executing revise cases](#executing-revise-cases).
@@ -444,11 +450,16 @@ target: <branch name>
 date: YYYY-MM-DD
 status: in-progress   # in-progress | complete
 lenses: <which lenses contributed, and any that returned empty or failed>
+walked: <partial | complete>   # written by /test-plan-walk; absent until a walk runs
 ---
 ```
 
 `target:` is the **branch name** and is the gate every consumer checks before acting. See
 [the target-match gate](#the-target-match-gate).
+
+`walked:` is re-derived from the case blocks' `**Walk:**` lines and written whenever the
+walk exits: `complete` when every `T-NNN` case carries `keep` or `cut`, `partial`
+otherwise. Readers treat the `**Walk:**` lines as authoritative.
 
 ### Case blocks
 
@@ -458,6 +469,8 @@ lenses: <which lenses contributed, and any that returned empty or failed>
 **Mode:** `auto`
 **Source:** spec
 **Viability:** High
+**Keep rule:** changed behavior
+**Why:** <one line: why this case is worth running>
 
 **Steps:**
 1. <what to do>
@@ -471,8 +484,11 @@ lenses: <which lenses contributed, and any that returned empty or failed>
 ```
 
 The `### T-<NNN>:` heading with `**Status:**` below it is the anchor every consumer edits
-against. **A new per-case field goes below `**Status:**`, never between it and the
-heading.**
+against. **Fields the synthesizer writes sit above `**Status:**`; a field any consumer adds
+later goes below it, never between it and the heading.** Under `**Status:**` the order is
+fixed: `**Status:**` → `**Filter:**` (when present) → `**Walk:**` → `**Recommended:**`.
+The walk runs first and inserts directly under `Status:`; `/test-plan-run` inserts
+`**Filter:**` directly under `Status:` too, which lands it above `**Walk:**`.
 
 ### Revise blocks
 
@@ -500,9 +516,9 @@ Under `## Revise`, after the `T-NNN` cases:
 the same field-placement rule holds. Every anchor rule in this spec accepts
 `### (T|V)-<NNN>:`.
 
-### The five `Status:` values
+### The six `Status:` values
 
-`untested | pass | fail | blocked | skip`
+`untested | pass | fail | blocked | skip | cut`
 
 - `untested` — no run has decided this case. The initial value for every case.
 - `pass` — the case was run and behaved as expected.
@@ -512,8 +528,11 @@ the same field-placement rule holds. Every anchor rule in this spec accepts
   case is never `blocked`, because a missing runner stops the mode before any case is
   touched.
 - `skip` — deliberately not run this time.
+- `cut` — a human cut the case in the walk. Only `/test-plan-walk` sets it, and only on a
+  `T-NNN` case. The block stays in place as a tombstone; nothing is renumbered.
 
-**Every mode may move a case to any of these values on every run; last run wins.** A case
+**Every mode may move a case to any value but `cut` on every run; last run wins** — except
+on a cut case, which no run writes, runs, presents, or counts. A case
 whose test was discarded by a filter stays `untested` — a discarded test never ran, so it
 never passed or failed.
 
@@ -564,6 +583,37 @@ browser run, not by the filters.
 
 **The `**Filter:**` slot is never used for a user's words.** A verdict from `manual` mode
 goes to `Status:` and the user's note to that case's `**Notes:**` field.
+
+### The `**Walk:**` and `**Recommended:**` lines
+
+`/test-plan-walk`'s record of a human verdict, written below `Status:` in
+[the fixed order](#case-blocks), exactly one of each per walked `T-NNN` case:
+
+```markdown
+**Status:** `untested`
+**Walk:** pending
+**Recommended:** keep
+```
+
+```markdown
+**Status:** `untested`
+**Walk:** keep
+**Recommended:** cut — duplicates existing
+```
+
+```markdown
+**Status:** `cut`
+**Walk:** cut — UI test in fake DOM — asserts the toast text under jsdom; T-007 drives it in a browser
+**Recommended:** cut — UI test in fake DOM
+```
+
+Grammar: `**Walk:** pending | keep | cut — <code> — <text>`, always one line. `pending` is
+the walk's claim, written before the card renders; `keep` and `cut` are the verdicts, and
+`cut` always pairs with `Status: cut`. `**Recommended:** keep | cut — <code>` is the card's
+recommendation, written in the same edit as the claim and never revised — not after
+`explain`, not when the user overrules it. The cut codes are owned by the walk; codes 1–6
+are [the drop reasons](#drop), spelled identically. A case with no `**Walk:**` line was
+never walked.
 
 ### The document's Drop List section
 
@@ -747,7 +797,7 @@ know.
 
 ### Zero cases in a mode is success
 
-Each mode counts its tag first. Zero cases → report "no `<tag>` cases in this document"
+Each mode counts its tag first; the count excludes cut cases. Zero cases → report "no `<tag>` cases in this document"
 and exit that mode cleanly. On the no-argument path the run continues to the other mode.
 Zero is never an error.
 
@@ -764,6 +814,8 @@ Zero is never an error.
 
 ### What a re-run does
 
+- **A case at `cut` is never written, run, or re-verified.** A test already on disk for it
+  is left alone.
 - **A case at `pass` whose test file exists on disk is re-verified, never rewritten.** The
   filters run again against the existing file; the writer is not dispatched for it.
 - **A case at `untested` or `fail` with no test on disk is written.**
@@ -788,8 +840,8 @@ diff-sourced one. A test with no case ID is not resumable.
 
 ## Presenting a case
 
-`manual` mode only. It follows `/review-walk`'s post-#117 contract, and the rules below
-are the whole of it.
+`manual` mode only, and never a cut case. It follows `/review-walk`'s post-#117 contract,
+and the rules below are the whole of it.
 
 **Invoking the mode is the confirmation.** There is no "proceed?" prompt, no "ready?"
 prompt, and no per-section gate.
@@ -855,7 +907,8 @@ The block is appended, never rewritten. An earlier run's receipts stay exactly a
 
 ## The completion report
 
-All three callers emit this. The sections and field names are fixed here; only the prose
+The two producers and `/test-plan-run` emit this; the walk ends with its
+[walk-protocol](../walk-protocol/SKILL.md) summary instead. The sections and field names are fixed here; only the prose
 wording is the caller's own.
 
 ````markdown
@@ -865,12 +918,12 @@ wording is the caller's own.
 
 ### Cases
 
-| Mode | Total | untested | pass | fail | blocked | skip |
-|---|---|---|---|---|---|---|
-| auto | n | n | n | n | n | n |
-| browser | n | n | n | n | n | n |
-| manual | n | n | n | n | n | n |
-| revise | n | n | n | n | n | n |
+| Mode | Total | untested | pass | fail | blocked | skip | cut |
+|---|---|---|---|---|---|---|---|
+| auto | n | n | n | n | n | n | n |
+| browser | n | n | n | n | n | n | n |
+| manual | n | n | n | n | n | n | n |
+| revise | n | n | n | n | n | n | n |
 
 ### Receipts
 
@@ -893,7 +946,8 @@ heading.
 
 Each caller ends at a different place, and each states only its own:
 
-- `/test-plan` → "review the document, then `/test-plan-run`."
+- `/test-plan` → "review the document, walk it with `/test-plan-walk` if you want, then
+  `/test-plan-run`."
 - `/test-plan-run` → `/ship`.
 - grind → its own terminal report owns its next steps.
 
@@ -938,6 +992,8 @@ The body below the marker heading, and nothing else belongs in it:
 **Receipts:** `<command>` → exit <code>, <n> passed
 **Discarded:** <n> (<case id: filter>, …)
 ```
+
+The counts omit cut cases by design: a run never touches one.
 
 Both terminal outcomes stamp — including a run that wrote nothing, ran nothing, or found
 zero cases in its mode. A stop before the preflight passes posts no stamp, because no run
@@ -984,5 +1040,7 @@ happened.
 - **Receipts, never "tests pass."** The command, the exit code, the counts from real
   runner output, the reruns, and the discards.
 - **A discarded test leaves its case `untested`.** It never ran, so it never failed.
+- **A cut case is out of every run.** Only the walk sets `cut`; no run writes, runs,
+  presents, counts, or changes it.
 - **Zero cases in a mode is success.** Report it and move on.
 - **Every terminal outcome stamps**, including one that ran nothing.
