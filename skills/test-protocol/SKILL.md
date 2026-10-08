@@ -22,7 +22,7 @@ case and a run that acts on them.
 | Caller | Does | Produces |
 |---|---|---|
 | [`test-plan`](../test-plan/SKILL.md) | dispatches the three lenses and the synthesizer, stops for review | `docs/tests/*.md` |
-| [`test-plan-walk`](../test-plan-walk/SKILL.md) | walks every `T-NNN` case with a human, keep or cut, before any run | `**Walk:**`, `**Recommended:**`, `Status: cut`, and the `walked:` frontmatter key in that doc |
+| [`test-plan-walk`](../test-plan-walk/SKILL.md) | walks every `T-NNN` case with a human, keep or cut, before any run | `**Walk:**` in that doc |
 | [`test-plan-run`](../test-plan-run/SKILL.md) | runs one scope (`auto`, `browser`, or `manual`) over an existing doc | `Status:`, `**Filter:**`, `## Receipts` in that doc; test files on disk |
 | [`grind`](../grind/SKILL.md)'s test plan | dispatches the three lenses and the synthesizer after its review and fixes, before the PR opens; writes no tests and commits nothing | `docs/tests/*.md` |
 
@@ -450,16 +450,11 @@ target: <branch name>
 date: YYYY-MM-DD
 status: in-progress   # in-progress | complete
 lenses: <which lenses contributed, and any that returned empty or failed>
-walked: <partial | complete>   # written by /test-plan-walk; absent until a walk runs
 ---
 ```
 
 `target:` is the **branch name** and is the gate every consumer checks before acting. See
 [the target-match gate](#the-target-match-gate).
-
-`walked:` is re-derived from the case blocks' `**Walk:**` lines and written whenever the
-walk exits: `complete` when every `T-NNN` case carries `keep` or `cut`, `partial`
-otherwise. Readers treat the `**Walk:**` lines as authoritative.
 
 ### Case blocks
 
@@ -484,11 +479,9 @@ otherwise. Readers treat the `**Walk:**` lines as authoritative.
 ```
 
 The `### T-<NNN>:` heading with `**Status:**` below it is the anchor every consumer edits
-against. **Fields the synthesizer writes sit above `**Status:**`; a field any consumer adds
-later goes below it, never between it and the heading.** Under `**Status:**` the order is
-fixed: `**Status:**` → `**Filter:**` (when present) → `**Walk:**` → `**Recommended:**`.
-The walk runs first and inserts directly under `Status:`; `/test-plan-run` inserts
-`**Filter:**` directly under `Status:` too, which lands it above `**Walk:**`.
+against. **Fields the synthesizer writes sit above `**Status:**`; a field a run adds goes
+below it, never between it and the heading.** The one exception is the walk's
+`**Walk:**` line, which sits directly under the heading so the walk can anchor on it alone.
 
 ### Revise blocks
 
@@ -516,9 +509,9 @@ Under `## Revise`, after the `T-NNN` cases:
 the same field-placement rule holds. Every anchor rule in this spec accepts
 `### (T|V)-<NNN>:`.
 
-### The six `Status:` values
+### The five `Status:` values
 
-`untested | pass | fail | blocked | skip | cut`
+`untested | pass | fail | blocked | skip`
 
 - `untested` — no run has decided this case. The initial value for every case.
 - `pass` — the case was run and behaved as expected.
@@ -528,13 +521,15 @@ the same field-placement rule holds. Every anchor rule in this spec accepts
   case is never `blocked`, because a missing runner stops the mode before any case is
   touched.
 - `skip` — deliberately not run this time.
-- `cut` — a human cut the case in the walk. Only `/test-plan-walk` sets it, and only on a
-  `T-NNN` case. The block stays in place as a tombstone; nothing is renumbered.
 
-**Every mode may move a case to any value but `cut` on every run; last run wins** — except
-on a cut case, which no run writes, runs, presents, or counts. A case
+**Every mode may move a case to any of these values on every run; last run wins.** A case
 whose test was discarded by a filter stays `untested` — a discarded test never ran, so it
 never passed or failed.
+
+**A cut case is out of every run.** A `T-NNN` case whose `**Walk:**` line begins `cut` is
+never written, run, re-verified, presented, or counted, and no run changes its `Status:`;
+a test already on disk for it is left alone. The block stays in place; nothing is
+renumbered.
 
 ### The `**Filter:**` line
 
@@ -584,34 +579,29 @@ browser run, not by the filters.
 **The `**Filter:**` slot is never used for a user's words.** A verdict from `manual` mode
 goes to `Status:` and the user's note to that case's `**Notes:**` field.
 
-### The `**Walk:**` and `**Recommended:**` lines
+### The `**Walk:**` line
 
-`/test-plan-walk`'s record of a human verdict, written below `Status:` in
-[the fixed order](#case-blocks), exactly one of each per walked `T-NNN` case:
+`/test-plan-walk`'s record of a human verdict, written directly under the case's heading
+per [the case-block rule](#case-blocks), exactly one per walked `T-NNN` case:
 
 ```markdown
-**Status:** `untested`
+### T-003: Archive-all keeps rank order
 **Walk:** pending
-**Recommended:** keep
 ```
 
 ```markdown
-**Status:** `untested`
+### T-004: Sort param rejects unknown fields
 **Walk:** keep
-**Recommended:** cut — duplicates existing
 ```
 
 ```markdown
-**Status:** `cut`
+### T-005: Toast confirms the sort change
 **Walk:** cut — UI test in fake DOM — asserts the toast text under jsdom; T-007 drives it in a browser
-**Recommended:** cut — UI test in fake DOM
 ```
 
 Grammar: `**Walk:** pending | keep | cut — <code> — <text>`, always one line. `pending` is
-the walk's claim, written before the card renders; `keep` and `cut` are the verdicts, and
-`cut` always pairs with `Status: cut`. `**Recommended:** keep | cut — <code>` is the card's
-recommendation, written in the same edit as the claim and never revised — not after
-`explain`, not when the user overrules it. The cut codes are owned by the walk; codes 1–6
+the walk's claim, written before the card renders; `keep` and `cut` are the verdicts, and a
+`cut` makes the case [a cut case](#the-five-status-values). The cut codes are owned by the walk; codes 1–6
 are [the drop reasons](#drop), spelled identically. A case with no `**Walk:**` line was
 never walked.
 
@@ -797,7 +787,7 @@ know.
 
 ### Zero cases in a mode is success
 
-Each mode counts its tag first; the count excludes cut cases. Zero cases → report "no `<tag>` cases in this document"
+Each mode counts its tag first. Zero cases → report "no `<tag>` cases in this document"
 and exit that mode cleanly. On the no-argument path the run continues to the other mode.
 Zero is never an error.
 
@@ -814,8 +804,6 @@ Zero is never an error.
 
 ### What a re-run does
 
-- **A case at `cut` is never written, run, or re-verified.** A test already on disk for it
-  is left alone.
 - **A case at `pass` whose test file exists on disk is re-verified, never rewritten.** The
   filters run again against the existing file; the writer is not dispatched for it.
 - **A case at `untested` or `fail` with no test on disk is written.**
@@ -840,7 +828,7 @@ diff-sourced one. A test with no case ID is not resumable.
 
 ## Presenting a case
 
-`manual` mode only, and never a cut case. It follows `/review-walk`'s post-#117 contract,
+`manual` mode only. It follows `/review-walk`'s post-#117 contract,
 and the rules below are the whole of it.
 
 **Invoking the mode is the confirmation.** There is no "proceed?" prompt, no "ready?"
@@ -918,12 +906,12 @@ wording is the caller's own.
 
 ### Cases
 
-| Mode | Total | untested | pass | fail | blocked | skip | cut |
-|---|---|---|---|---|---|---|---|
-| auto | n | n | n | n | n | n | n |
-| browser | n | n | n | n | n | n | n |
-| manual | n | n | n | n | n | n | n |
-| revise | n | n | n | n | n | n | n |
+| Mode | Total | untested | pass | fail | blocked | skip |
+|---|---|---|---|---|---|---|
+| auto | n | n | n | n | n | n |
+| browser | n | n | n | n | n | n |
+| manual | n | n | n | n | n | n |
+| revise | n | n | n | n | n | n |
 
 ### Receipts
 
@@ -993,8 +981,6 @@ The body below the marker heading, and nothing else belongs in it:
 **Discarded:** <n> (<case id: filter>, …)
 ```
 
-The counts omit cut cases by design: a run never touches one.
-
 Both terminal outcomes stamp — including a run that wrote nothing, ran nothing, or found
 zero cases in its mode. A stop before the preflight passes posts no stamp, because no run
 happened.
@@ -1040,7 +1026,7 @@ happened.
 - **Receipts, never "tests pass."** The command, the exit code, the counts from real
   runner output, the reruns, and the discards.
 - **A discarded test leaves its case `untested`.** It never ran, so it never failed.
-- **A cut case is out of every run.** Only the walk sets `cut`; no run writes, runs,
-  presents, counts, or changes it.
+- **A cut case is out of every run.** A case whose `**Walk:**` begins `cut` is never
+  written, run, presented, or counted.
 - **Zero cases in a mode is success.** Report it and move on.
 - **Every terminal outcome stamps**, including one that ran nothing.

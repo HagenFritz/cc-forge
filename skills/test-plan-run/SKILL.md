@@ -18,7 +18,7 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Task
 
 <command_purpose> Run one scope of a reviewed test plan, leave the evidence in the document, and report what actually ran. </command_purpose>
 
-`/test-plan-run` obeys [the test-protocol spec](../test-protocol/SKILL.md) and embeds only its own prose: its argument parsing, how each mode drives its cases, its filled stamp template, and its terminal wording. Every shared rule — the preflights, the target-match gate, the assurance filters, the six `Status:` values and the cut-case exclusion, the `**Filter:**` grammar, the manual card, the receipts fields, the report's shape — lives in the spec and is cited, never restated.
+`/test-plan-run` obeys [the test-protocol spec](../test-protocol/SKILL.md) and embeds only its own prose: its argument parsing, how each mode drives its cases, its filled stamp template, and its terminal wording. Every shared rule — the preflights, the target-match gate, the assurance filters, the five `Status:` values and the cut-case exclusion, the `**Filter:**` grammar, the manual card, the receipts fields, the report's shape — lives in the spec and is cited, never restated.
 
 It is the **consumer** half of the pair. `/test-plan` writes the document and stops; this skill is what acts on it, and it is the only skill that discovers an existing document to resume.
 
@@ -72,11 +72,11 @@ Everything here runs **before any agent is dispatched, any test file is written,
 
 2. **The target-match gate.** Apply [the spec's gate](../test-protocol/SKILL.md#the-target-match-gate) to the document's `target:` against the current branch. A mismatch **stops here**, naming both values — before the writer, before an edit, and without switching branches.
 
-3. **Count the mode's cases.** Parse every `### T-<NNN>:` and `### V-<NNN>:` block and its `**Mode:**` field. The count excludes `Status: cut` cases, so a mode left with only cut cases has zero; zero cases carrying this scope's tag exits the mode per [the spec](../test-protocol/SKILL.md#zero-cases-in-a-mode-is-success); on the no-argument path the run continues to the other mode rather than ending.
+3. **Count the mode's cases.** Parse every `### T-<NNN>:` and `### V-<NNN>:` block and its `**Mode:**` field. Every step below skips [cut cases](../test-protocol/SKILL.md#the-five-status-values), so the count excludes them and a mode left with only cut cases has zero; zero cases carrying this scope's tag exits the mode per [the spec](../test-protocol/SKILL.md#zero-cases-in-a-mode-is-success); on the no-argument path the run continues to the other mode rather than ending.
 
 4. **Scope-specific, in the same pass:**
    - `auto` → detect the repo's test command with [`/land`'s ladder](../land/SKILL.md). Nothing detected → **stop** per [no runner, no writer](../test-protocol/SKILL.md#no-runner-no-writer), naming what was looked for. The writer is not dispatched.
-   - `browser` → check whether Playwright or the Chrome tools are available this session. Neither → mark the mode's cases `blocked` — never a `cut` one — and report it, per [no browser, no drive](../test-protocol/SKILL.md#no-browser-no-drive). This degrades; it never fails the run.
+   - `browser` → check whether Playwright or the Chrome tools are available this session. Neither → mark the mode's cases `blocked` and report it, per [no browser, no drive](../test-protocol/SKILL.md#no-browser-no-drive). This degrades; it never fails the run.
    - `manual` → nothing to check. A human is the runner.
 
 ### 3. Run the scope
@@ -87,7 +87,7 @@ Everything here runs **before any agent is dispatched, any test file is written,
 
 2. **Re-derive the repo's test conventions** — test directories, runner, live-service markers, existing fixture names — the way `/test-plan` step 4 does. The document does not carry the markers, so they are derived here, not read.
 
-3. **Select the cases to write.** Apply [the spec's re-run semantics](../test-protocol/SKILL.md#what-a-re-run-does) against the case IDs on disk: a `cut` case is never selected, written, or re-verified; grep the test directories for each remaining `auto` case's `T-NNN` ID. A `T-NNN` case whose ID is already in a test file is **re-verified**, never rewritten, whatever its `Status:`; only the cases with no test on disk go to the writer. A `V-NNN` case is selected by the same section's revise line. Every case already covered → dispatch no writer and go straight to the filters.
+3. **Select the cases to write.** Apply [the spec's re-run semantics](../test-protocol/SKILL.md#what-a-re-run-does) against the case IDs on disk: grep the test directories for each `auto` case's `T-NNN` ID. A `T-NNN` case whose ID is already in a test file is **re-verified**, never rewritten, whatever its `Status:`; only the cases with no test on disk go to the writer. A `V-NNN` case is selected by the same section's revise line. Every case already covered → dispatch no writer and go straight to the filters.
 
 4. **Run the revise cases** per [executing revise cases](../test-protocol/SKILL.md#executing-revise-cases): [the gate](../test-protocol/SKILL.md#the-gate) on every selected `V-NNN` case first, then whole-file deletes yourself and within-file deletes snapshotted and sent to the writer, per [delete](../test-protocol/SKILL.md#delete). A `regression` or a gate pass is recorded then and never reaches the writer.
 
@@ -116,13 +116,13 @@ Everything here runs **before any agent is dispatched, any test file is written,
    - Derive the live-service flag yourself per [the spec](../test-protocol/SKILL.md#live-service-tests): grep each written test for the live-service markers step 2 found. The writer's per-test hint is advisory — on disagreement run the full reruns and say so in one report line.
    - When a second failure deletes a test and the writer's fix round said it believes **the code under test is wrong**, carry that sentence into the report verbatim. A discarded test whose author thought the code was broken is the most useful line in the run; swallowing it is how a real bug ships.
 
-7. **Record the outcome per case** — a `Status:` value from [the spec's six](../test-protocol/SKILL.md#the-six-status-values), never `cut`, and a `**Filter:**` line in [the spec's grammar](../test-protocol/SKILL.md#the-filter-line), written directly under `Status:`, anchored on that case's `### T-<NNN>:` or `### V-<NNN>:` heading. One `**Filter:**` line per case: rewrite the existing one rather than adding a second. Once every revise outcome is recorded, delete the snapshot directory per [the spec](../test-protocol/SKILL.md#delete).
+7. **Record the outcome per case** — a `Status:` value from [the spec's five](../test-protocol/SKILL.md#the-five-status-values) and a `**Filter:**` line in [the spec's grammar](../test-protocol/SKILL.md#the-filter-line), written directly under `Status:`, anchored on that case's `### T-<NNN>:` or `### V-<NNN>:` heading. One `**Filter:**` line per case: rewrite the existing one rather than adding a second. Once every revise outcome is recorded, delete the snapshot directory per [the spec](../test-protocol/SKILL.md#delete).
 
 8. **Leave the test files uncommitted** — deleted ones included, as working-tree deletions. `/ship` commits them. Never `git add`, never commit, never push, never stash.
 
 #### `browser`
 
-Drive each `browser` case through Playwright or the Chrome tools, in document order, one case at a time, skipping every `cut` case per [the spec](../test-protocol/SKILL.md#the-six-status-values): perform its `**Steps:**`, compare against its `**Expected result:**`, and record a `Status:` from the spec's six, never `cut`. A case whose environment is unavailable is `blocked`, not `fail`.
+Drive each `browser` case through Playwright or the Chrome tools, in document order, one case at a time: perform its `**Steps:**`, compare against its `**Expected result:**`, and record a `Status:` from the spec's five. A case whose environment is unavailable is `blocked`, not `fail`.
 
 A browser run writes **no `**Filter:**` line** — that slot is the assurance filters' signature and a driven flow has no filter behind it. Anything worth noting about a case goes in its `**Notes:**` field.
 
@@ -130,7 +130,7 @@ Receipts for a browser run carry the per-case outcome in place of a runner's cou
 
 #### `manual`
 
-Follow [the spec's presenting-a-case section](../test-protocol/SKILL.md#presenting-a-case) exactly — it owns the one-case-per-reply rule, the rule that a `cut` case is never presented, the card, the four verbs, the numbered plain-text action line, the required free-text catch-all, and the self-loop. **Never call `AskUserQuestion`**, in this mode or anywhere in this skill.
+Follow [the spec's presenting-a-case section](../test-protocol/SKILL.md#presenting-a-case) exactly — it owns the one-case-per-reply rule, the card, the four verbs, the numbered plain-text action line, the required free-text catch-all, and the self-loop. **Never call `AskUserQuestion`**, in this mode or anywhere in this skill.
 
 Per [the spec](../test-protocol/SKILL.md#presenting-a-case), the user's verdict goes to that case's `Status:` and the user's own words go to its `**Notes:**` field, verbatim. **Never to the `**Filter:**` slot.** Write both before showing the next card, so an interrupted walk resumes from the document.
 
@@ -144,7 +144,7 @@ Counts come from **real runner output**, parsed from what the command printed. A
 
 Emit [the spec's completion report](../test-protocol/SKILL.md#the-completion-report) with `Test run complete` as the heading, filled from the document as re-read after this run's writes:
 
-- **Cases** — the table, from the document's `### T-<NNN>:` blocks and their current `Status:` values, cut cases in the spec's `cut` column, with the `revise` row from its `### V-<NNN>:` blocks.
+- **Cases** — the table, from the document's `### T-<NNN>:` blocks and their current `Status:` values, with the `revise` row from its `### V-<NNN>:` blocks.
 - **Receipts** — this invocation's block, the same fields just appended. Never the sentence "tests pass" on its own.
 - **Dropped** — the discarded tests: the case ID and the filter that discarded it, plus the document's `## Drop List` rows.
 - **Lenses** — from the document's `lenses:` frontmatter. This run dispatched none; it reports what the document records.
@@ -185,5 +185,5 @@ A no-argument run that covered two modes stamps **once per mode**, each with its
 - **It never commits, pushes, or stashes.** The tests land in the working tree and stay there.
 - **It never dispatches a lens or the synthesizer.** A document that does not exist is `/test-plan`'s problem; this skill consumes one that does.
 - **It never calls `AskUserQuestion`.** Every question is a plain-text numbered list with a free-text catch-all.
-- **It never changes a `cut` status.** Only `/test-plan-walk` sets `cut`; a run never writes, runs, presents, or counts a cut case, per [the spec](../test-protocol/SKILL.md#the-six-status-values).
+- **It never touches a cut case**, per [the spec](../test-protocol/SKILL.md#the-five-status-values).
 - **It never switches branches.** A `target:` mismatch is a stop, not a checkout.

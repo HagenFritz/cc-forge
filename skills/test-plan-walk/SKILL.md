@@ -6,8 +6,8 @@ description: >
   a compact card (mode, source, viability, keep rule, what it asserts, why it was kept,
   the kind of test it is, and a recommendation computed when the walk reaches it), then
   takes keep / explain / cut / add term — or free text. Cut records one of nine coded
-  reasons. `**Walk:**` and `**Recommended:**` lines are written inline under each case's
-  `Status:` so progress is durable and resumable. Triggers on phrases like "walk the test
+  reasons. A `**Walk:**` line is written directly under each case's
+  heading so progress is durable and resumable. Triggers on phrases like "walk the test
   plan", "which tests can we cut", "review the test plan with me", "test-plan-walk", or
   passing a path to a docs/tests/*.md file.
 user-invocable: true
@@ -26,9 +26,8 @@ This skill **consumes** test docs. It proposes no cases, writes no test files, a
 nothing. It follows [the walk-protocol spec](../walk-protocol/SKILL.md) for order, resume,
 the action self-loop contract, anchoring, claim-first, term capture, the summary, and the
 stamp, and [the test-protocol spec](../test-protocol/SKILL.md) for the document format —
-the case block, [the `**Walk:**` and `**Recommended:**` grammar](../test-protocol/SKILL.md#the-walk-and-recommended-lines),
-[`Status: cut`](../test-protocol/SKILL.md#the-six-status-values), and the `walked:`
-frontmatter key. Only what is specific to walking a test plan is written here.
+the case block, [the `**Walk:**` grammar](../test-protocol/SKILL.md#the-walk-line),
+and [the cut-case rule](../test-protocol/SKILL.md#the-five-status-values). Only what is specific to walking a test plan is written here.
 
 It slots between `/test-plan` and `/test-plan-run` and is optional: an unwalked doc runs
 exactly as it does today. It walks before any run, by convention. `/grind` never invokes it.
@@ -51,8 +50,7 @@ number.
    ```
 
    Read each `target:` newest-first and take the first match. None → stop: "No test plan
-   found for `<branch>` in `docs/tests/`. Run `/test-plan` first." When an **older** match
-   carries `walked:`, warn in one line that its verdicts do not carry forward to this doc.
+   found for `<branch>` in `docs/tests/`. Run `/test-plan` first."
 3. Apply [the target-match gate](../test-protocol/SKILL.md#the-target-match-gate) to the
    resolved doc. A mismatch stops before any write, naming both values.
 4. Parse every `### T-<NNN>:` block. **Zero `T-NNN` cases** (an empty or revise-only doc)
@@ -68,8 +66,7 @@ Per [walk-protocol resume](../walk-protocol/SKILL.md#resume). The claimed state 
 line is non-terminal. Walk order is `T-NNN` in document order, per
 [walk order](../walk-protocol/SKILL.md#walk-order).
 
-Every case terminal → write `walked:` (Step 7), report "Walk already complete. N cases —
-n kept / n cut.", and exit.
+Every case terminal → print the summary per Step 7, then exit without stamping.
 
 Open with one line — `Walking <path>: N cases, n remaining.` — then read the diff (Step 3)
 and render the first card.
@@ -101,15 +98,14 @@ Computed when the walk reaches the case — never in an up-front pass. Its input
 - every `**Walk:**` verdict already in this doc, so a case an earlier `duplicates case`
   cut named is judged with that in view.
 
-The call is `keep` or `cut — <code>`, using [the cut codes](#the-cut-codes). **A case that
-already carries `**Recommended:**` keeps it** — on resume it is reused, never recomputed.
+The call is `keep` or `cut — <code>`, using [the cut codes](#the-cut-codes). It is shown on
+the card and never written to the doc.
 
 ### The claim
 
-Before the card renders, write `**Walk:** pending` and `**Recommended:** <call>` in one
-write, per [claim first](../walk-protocol/SKILL.md#claim-first) and
-[the state-line write](#the-state-line-write). The recommendation is never revised after
-this: not after `explain`, not when the user overrules it.
+Before the card renders, write `**Walk:** pending`, per
+[claim first](../walk-protocol/SKILL.md#claim-first) and
+[the state-line write](#the-state-line-write).
 
 ### The card
 
@@ -152,13 +148,9 @@ Then stop and wait for the reply.
 
 ## Step 5: Reading the Reply
 
-| Reply | Action |
-|-------|--------|
-| `1`, `keep`, `yes` | **Keep**. |
-| `2`, `explain`, `why`, `more`, a question about the case | **Explain**. Self-loop. |
-| `3`, `cut`, `drop`, `no`, optionally followed by a code and text | **Cut**. A code and text in the reply pre-answer the picker. |
-| `4 <x>`, `term <x>`, `add term`, `what is <x>` | **Add term**. Self-loop. |
-| anything else | The "just tell me" path: answer in as few sentences as it needs and re-show the action list. Self-loop. |
+Answer with the action's number or word. A code and note after `3` pre-answer the picker,
+and a term after `4` pre-answers its question. Anything else gets an answer in as few
+sentences as it needs, then the action list again.
 
 There is no skip and no modify: every case ends kept or cut, so the record has no holes,
 and the walk judges cases without rewriting them.
@@ -189,37 +181,17 @@ The answer is a number or the full code, then the note: `3 tests/test_auth.py co
 ask for it. A reply that starts with none of the nine re-shows the picker; never guess a
 code from prose, and there is no `other`.
 
-`duplicates case` runs two checks, both warnings, never edits to another case:
-
-- **The named case must exist and must not be cut.** A note naming no `T-NNN`, this case,
-  a `T-NNN` with no heading in the doc, or one whose `**Walk:**` is `cut` → say which in
-  one line and re-show the picker.
-- **Cutting a case an earlier cut named.** When another case's `**Walk:**` reads
-  `cut — duplicates case —` and names this case, print one line — "T-004 was cut as a
-  duplicate of this case; cutting it too leaves that behavior untested." — and append
-  `(T-004 was cut as a duplicate of this case)` to this case's note. Exclude this case's
-  own line from the scan.
-
-Then write `**Status:** \`cut\`` and `**Walk:** cut — <code> — <note>` in one write. The
+Then write `**Walk:** cut — <code> — <note>`; `Status:` is left as it is. The
 note is the user's words, verbatim, collapsed to one line. Next card.
 
 ### The cut codes
 
 Codes 1–6 are [the Drop List reasons](../test-protocol/SKILL.md#drop), spelled byte for
 byte: a cut with one means the synthesizer had the rule and missed it. Codes 7–9 are
-walk-only: a cut with one means the synthesizer lacks a rule.
-
-1. **`pins a constant`** — the drop reason of that name.
-2. **`asserts a mock`** — the drop reason of that name.
-3. **`duplicates existing`** — the drop reason of that name: an existing repo test already
-   covers it.
-4. **`UI test in fake DOM`** — the drop reason of that name: a UI behavior asserted through
-   jsdom that a real browser should own.
-5. **`tests untouched code`** — the drop reason of that name.
-6. **`library already guarantees it`** — the drop reason of that name.
-7. **`duplicates case`** — another case in this plan covers it; the note names the `T-NNN`.
-8. **`implementation detail`** — asserts how, not what; a refactor breaks it.
-9. **`not worth it`** — real risk, too small for the test's cost.
+walk-only — a cut with one means the synthesizer lacks a rule: `duplicates case` (another
+case in this plan covers it; the note names the `T-NNN`), `implementation detail` (asserts
+how, not what; a refactor breaks it), and `not worth it` (real risk, too small for the
+test's cost).
 
 ### Explain
 
@@ -236,64 +208,25 @@ same case.
 
 ### The state-line write
 
-Every write follows [the write protocol](../walk-protocol/SKILL.md#write-protocol). In a
-test doc the case body sits between the `### T-<NNN>:` heading and `**Status:**`, so an
-`Edit` anchor holding both would carry the whole body through the write. Instead, the
-anchor is the heading, and a scoped rewrite changes only the state lines under it:
-
-1. Re-read the case block from disk, per
-   [re-read before every write](../walk-protocol/SKILL.md#re-read-before-every-write).
-2. Count the heading: `grep -c -F -- "### T-<NNN>:" <doc>` must print `1`, per
-   [anchoring](../walk-protocol/SKILL.md#anchoring). `0` or more than `1` stops as that
-   section says.
-3. Write the three state lines to a temp file with the Write tool, in this order: the
-   `**Status:**` line (copied from the fresh read, or `` **Status:** `cut` `` on a cut), the
-   `**Walk:**` line, the `**Recommended:**` line (copied from the fresh read once it
-   exists).
-4. Run:
-
-   ```bash
-   awk -v id='### T-<NNN>:' -v state='<temp file>' '
-   BEGIN { while ((getline l < state) > 0) s[++k] = l }
-   index($0, id) == 1 { inb = 1; hits++; print; next }
-   inb && /^##/ { inb = 0 }
-   inb && /^\*\*Status:\*\*/ { n++; print s[1]; tail = 1; next }
-   tail && /^\*\*Filter:\*\*/ { print; next }
-   tail && /^\*\*(Walk|Recommended):\*\*/ { next }
-   tail { print s[2]; print s[3]; tail = 0 }
-   { print }
-   END { if (tail) { print s[2]; print s[3] }; if (hits != 1 || n != 1) exit 3 }
-   ' <doc> > <doc>.tmp && mv <doc>.tmp <doc> || { rm -f <doc>.tmp; echo "STOP: anchor"; }
-   ```
-
-   It replaces `**Status:**`, keeps any `**Filter:**` line in place, and writes `**Walk:**`
-   and `**Recommended:**` beneath them — the order
-   [the spec fixes](../test-protocol/SKILL.md#case-blocks). It refuses, leaving the doc
-   untouched, unless the heading and the block's `**Status:**` line each occur exactly
-   once. A refusal stops the walk, as an ambiguous anchor does.
-
-The rewrite never touches any line outside the case's state lines.
+The `**Walk:**` line sits directly under the `### T-<NNN>:` heading,
+per [the spec](../test-protocol/SKILL.md#case-blocks), so every write is a plain `Edit`
+anchored on that heading, per [the write protocol](../walk-protocol/SKILL.md#write-protocol):
+re-read the block, count the heading with `grep -c -F -- "### T-<NNN>:" <doc>` (it must
+print `1`), then edit only the heading line and the line directly under it. The claim
+inserts the line after the heading; a verdict rewrites it in place.
+`Status:` and everything below it are never touched.
 
 ## Step 7: Finishing
 
 Per [the summary](../walk-protocol/SKILL.md#the-summary), re-read the doc and derive every
 count from the `**Walk:**` lines:
 
-- **Buckets** — kept, cut, never reached (no `**Walk:**` line), left pending. The
-  declined bucket is always empty, because the walk has no skip verb; the summary says
-  so.
+- **Buckets** — kept, cut, never reached (no `**Walk:**` line), left pending.
 - **Cut codes** — a count per code, one line, e.g. `duplicates existing ×3, not worth it ×1`.
-- **Agreement** — how many walked cases' verdict matches their `**Recommended:**`. A cut
-  agrees only when its code matches too.
 - **Terms added**, as the spec defines it.
 
-**Write `walked:` on every exit** — complete, already complete, or ended early — per
-[the frontmatter rule](../test-protocol/SKILL.md#frontmatter): re-derived from the
-`**Walk:**` lines, never from session memory. Edit the existing `walked:` line in place,
-or insert it directly after the `lenses:` line, counting the anchor with `grep -c -F --`
-first. The zero-case exit in Step 1 writes nothing.
-
-Then stamp (§7a), and close with one line: `Next: /test-plan-run`.
+Then stamp (§7a) when this session recorded at least one verdict — the already-complete
+exit never stamps — and close with one line: `Next: /test-plan-run`.
 
 ### 7a. Stamp the Walk Outcome
 
@@ -321,12 +254,4 @@ analysis source; the doc is.
 
 ## Rules
 
-- **Never touch a `V-NNN` block or the Drop List.** They are rendered nowhere and edited
-  never.
 - **Never read `docs/reviews/`.** The test and review families never read each other.
-- **Never write a test file, and never run one.**
-- **Never set a `Status:` other than `cut`**, and never edit a `**Filter:**` line.
-- **Never revise `**Recommended:**`** once written.
-- **Every case gets its own card and its own reply**, per
-  [walk order](../walk-protocol/SKILL.md#walk-order). Explain and Add term never advance
-  the walk.

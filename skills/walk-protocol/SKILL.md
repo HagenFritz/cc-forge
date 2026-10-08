@@ -144,7 +144,9 @@ than inserting a second one.
 ### Destructive actions
 
 An action that rewrites or withdraws the doc's own text is **destructive** and is
-gated the same way in every walk:
+gated the same way in every walk. `test-plan-walk`'s `cut` is not one: it changes only the
+case's state lines and leaves its text in place, so neither this gate nor the tombstone
+rule below applies to it.
 
 1. Ask the user what is wrong, in their words.
 2. Claim the item.
@@ -216,9 +218,7 @@ Bucket every item by its state value, and keep these distinct:
 
 - The **terminal verdicts**, each named separately.
 - **Declined-without-verdict** — reported as *unreviewed*, never folded into the
-  accepted bucket. The user declined to give a verdict, which is not approval. In a
-  walk with no skip verb this bucket is always empty, and its summary says so rather
-  than omitting it.
+  accepted bucket. The user declined to give a verdict, which is not approval.
 - **Never reached** — items carrying no state line at all. Distinct from the above:
   nobody looked at these. Naming them separately is what stops "12 items, 9 accepted"
   from hiding three the walk never showed.
@@ -261,8 +261,7 @@ mechanics, marker encoding, and failure posture are defined in
   Render what exists; never infer the rest.
 - **Never mutate the doc outside the item being walked.** Sections the walk does not
   own stay untouched even when a verdict makes one stale; reconciling that is the
-  human's call. The one allowance: a walk may keep a single frontmatter key derived
-  only from its state lines, rewritten whenever the walk exits.
+  human's call.
 - **Never act on a destructive action without the before/after confirm.**
 - **Stop the walk on an ambiguous anchor.** More than one match means refusing to
   write and surfacing it.
