@@ -24,7 +24,7 @@ Your dispatch prompt provides: the diff to analyze (or the base ref to diff agai
 ## What you do not propose
 
 - **Cases for the intended new behavior.** That is the spec lens's output. Duplicating it wastes the de-dupe budget rather than adding coverage, and the spec lens writes it better because it is not anchored on the implementation.
-- Cases against code the diff cannot reach. `unchanged code` is a drop reason under [the keep and drop rules](../../skills/test-protocol/SKILL.md#keep-and-drop-rules); a case you cannot connect to a changed line through a call path will be dropped. This never applies to a revise proposal, whose target is by definition existing test code.
+- Cases against code the diff cannot reach. `tests untouched code` is a drop reason under [the keep and drop rules](../../skills/test-protocol/SKILL.md#keep-and-drop-rules); a case you cannot connect to a changed line through a call path will be dropped. This never applies to a revise proposal, whose target is by definition existing test code.
 - Assertions that a mock was called, or that pin a constant the code states once. Also drop reasons.
 
 ## Return shape

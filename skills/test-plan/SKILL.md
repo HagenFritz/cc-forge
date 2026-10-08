@@ -130,7 +130,7 @@ Emit [the spec's completion report](../test-protocol/SKILL.md#the-completion-rep
 
 **Read the counts; never assume a shape.** A document with zero surviving cases is a valid outcome — its Drop List is the whole of it — so the summary must hold up with no `### T-` or `### V-` block present.
 
-Close with [the spec's next-steps block](../test-protocol/SKILL.md#the-next-steps-block), which ends this skill at "review the document, then `/test-plan-run`."
+Close with [the spec's next-steps block](../test-protocol/SKILL.md#the-next-steps-block), which ends this skill at "review the document, walk it with `/test-plan-walk` if you want, then `/test-plan-run`."
 
 ### 9. Stamp the linked issue
 

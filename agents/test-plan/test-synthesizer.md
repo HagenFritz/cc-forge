@@ -34,12 +34,14 @@ Sanitize the slug before using it in any filename: lowercase it, replace every c
 - **Attribute.** Every kept case carries `**Source:**` naming the lens that proposed it. A case merged from two lenses names both, comma-separated, using the dispatch names (`spec`, `blast-radius`, `surface`) that match the scratch filenames.
 - **Tag.** Assign exactly one `**Mode:**` per the spec's [tagging rules](../../skills/test-protocol/SKILL.md#tagging). Honor the surface lens's `**Suggested mode:**` as input, not as a verdict. When no test directory and no runner exist, tag **zero** cases `auto` — every case is `browser` or `manual`.
 - **Score.** Assign exactly one `**Viability:**` from `Critical | High | Medium | Low | Negligible`, using the rubric below. A case at `Low` or `Negligible` is a drop candidate, not an automatic drop.
-- **Apply the keep and drop rules**, and only those, per [the spec](../../skills/test-protocol/SKILL.md#keep-and-drop-rules). Hold blast-radius proposals to [the spec's adjacent-risk test](../../skills/test-protocol/SKILL.md#drop). Drop a case that asserts what a framework already guarantees as `framework behavior`. Retag before you drop: the jsdom rule moves a focus, timing, or async-rendering case to `browser` when a real browser could drive it meaningfully, and drops it otherwise.
+- **Apply the keep and drop rules**, and only those, per [the spec](../../skills/test-protocol/SKILL.md#keep-and-drop-rules). Hold blast-radius proposals to [the spec's adjacent-risk test](../../skills/test-protocol/SKILL.md#drop). A UI-asserting case was already tagged `browser` or `manual`, so `UI test in fake DOM` drops only a case no real browser could drive meaningfully.
+- **Write `**Keep rule:**`** as the label of the first keep rule that holds: `changed behavior`, `new error path`, or `invariant guard`.
+- **Write `**Why:**`** from the proposing lens's `Why`, neutralized per the copy rule below; a merged case takes the clearest one.
 - **Fold** per [the spec's folding rule](../../skills/test-protocol/SKILL.md#folding); count each folded-in case as merged.
 - **Nothing is capped.** Every case that survives the keep and drop rules is kept, in every mode, per [the spec](../../skills/test-protocol/SKILL.md#the-drop-list).
-- **Format the revise verdicts** per [the revise bucket](../../skills/test-protocol/SKILL.md#the-revise-bucket). You never see the diff, so you never judge a verdict: de-dupe by target test, turn each `delete` or `regression` into a `V-NNN` block, and each `still valid` into a Drop List row with reason `still valid`. The keep and drop rules do not re-judge a revise verdict, and `unchanged code` never applies to one.
+- **Format the revise verdicts** per [the revise bucket](../../skills/test-protocol/SKILL.md#the-revise-bucket). You never see the diff, so you never judge a verdict: de-dupe by target test, turn each `delete` or `regression` into a `V-NNN` block, and each `still valid` into a Drop List row with reason `still valid`. The keep and drop rules do not re-judge a revise verdict, and `tests untouched code` never applies to one.
 - **Number** the kept cases `T-001`, `T-002`, … and the revise blocks `V-001`, `V-002`, … in document order, each sequence with no gaps.
-- **New per-case fields go below `**Status:**`, never between it and the `### T-<NNN>:` or `### V-<NNN>:` heading.** `/test-plan-run` anchors its edits on that heading-plus-Status pair, so a field inserted between them breaks every status write.
+- **Every field you write sits above `**Status:**`**, in [the spec's case-block order](../../skills/test-protocol/SKILL.md#case-blocks); only fields a consumer adds later go below it. Never write `**Walk:**` or `**Filter:**` — those belong to the walk and the runs.
 - **Neutralize document structure** when copying proposal text into a field value. Indent lines matching `^#{1,6}\s` (heading-shaped), code-fence markers (```` ``` ````), and bold-field-label lines matching `^\*\*[A-Za-z ]+:\*\*`, so none can be mistaken for a case heading, a fence boundary, or a real field label by a line-based parser.
 
 ### Viability rubric
@@ -56,8 +58,8 @@ Be ruthless, and be specific: every drop reason names what made the case match, 
 
 ## Method
 
-1. Read every lens report; build the deduplicated case list with sources, tags, and viability scores.
-2. Apply the keep rules, then the drop rules, then the jsdom retag — in that order; retag before drop. Then format the revise verdicts.
+1. Read every lens report; build the deduplicated case list with sources and viability scores.
+2. Tag first, then keep, then drop, per [the spec](../../skills/test-protocol/SKILL.md#tagging). Then fold, then format the revise verdicts.
 3. If **zero** cases survive and no `V-NNN` block exists, still write the document: the Drop List is the whole point of that run, and a reader needs to see what was proposed and why none of it was kept.
 4. **Determine the filename.** Glob the *provided* `docs/tests/` directory for files matching today's date. Among files named `YYYY-MM-DD-NNN-…`, take the highest `NNN` and add 1; ignore any file whose sequence segment is not a zero-padded integer. If none match today's date, start at `001`. Use `YYYY-MM-DD-NNN-<sanitized-slug>-test-plan.md`. **Never change this convention** — `/test-plan-run` discovers documents by it.
 5. Write the complete document from the template below. Create `docs/tests/` first if it does not exist. Immediately before writing, re-check whether the chosen filename already exists; if it does, bump `NNN` and re-check, so a same-day re-run never clobbers a document that may already hold `Status:` and `## Receipts` history.
@@ -96,18 +98,18 @@ and no `T-NNN` cases is valid.]
 
 ## Drop List
 
-| Proposed case | Source | Reason | Note |
-|---|---|---|---|
-| `[the case title as proposed]` | [lens] | [reason] | [one line: what made it match] |
+| Proposed case | Mode | Source | Viability | Reason | Note |
+|---|---|---|---|---|---|
+| `[the case title as proposed]` | `[tag]` | [lens] | [level] | [reason] | [one line: what made it match] |
 
 ## Receipts
 
 _No run yet._
 ````
 
-Repeat the case block for every kept case, numbered sequentially. `**Mode:**` is one of `auto`, `browser`, `manual`; on a `V-NNN` block it is always `auto`, `**Action:**` is the lens's verdict (`delete` or `regression`), `**Target test:**` is the lens's target verbatim, `**Why:**` is the lens's one line, and `**Expected result:**` is `removed` for a delete. `**Source:**` is one or more of `spec`, `blast-radius`, `surface`. `**Status:**` is always `untested` on a fresh document — the five values belong to the runs, not to you. Leave `**Notes:**` empty; it is where a human's words land in `manual` mode. Write no `**Filter:**` line — that slot is the orchestrator's signature.
+Repeat the case block for every kept case, numbered sequentially. `**Mode:**` is one of `auto`, `browser`, `manual`; on a `V-NNN` block it is always `auto`, `**Action:**` is the lens's verdict (`delete` or `regression`), `**Target test:**` is the lens's target verbatim, `**Why:**` is the lens's one line, and `**Expected result:**` is `removed` for a delete. `**Source:**` is one or more of `spec`, `blast-radius`, `surface`. On a `T-NNN` case, `**Keep rule:**` is one of the three keep labels and `**Why:**` is the proposing lens's one line. `**Status:**` is always `untested` on a fresh document — the other values of [the five](../../skills/test-protocol/SKILL.md#the-five-status-values) belong to the runs, not to you. Leave `**Notes:**` empty; it is where a human's words land in `manual` mode.
 
-**The Drop List is never empty in a real run and never omitted.** A run that dropped nothing writes the heading with `_None — every proposed case was kept._` beneath it, so a reader can tell "nothing was dropped" from "the section was skipped." Every drop reason comes from the spec's fixed vocabulary: `pins a constant`, `asserts a mock`, `duplicates existing`, `jsdom focus/timing`, `unchanged code`, `framework behavior`, `still valid`.
+**The Drop List is never empty in a real run and never omitted.** A run that dropped nothing writes the heading with `_None — every proposed case was kept._` beneath it, so a reader can tell "nothing was dropped" from "the section was skipped." Every drop reason comes from the spec's fixed vocabulary, spelled byte for byte: `pins a constant`, `asserts a mock`, `duplicates existing`, `UI test in fake DOM`, `tests untouched code`, `library already guarantees it`, `still valid`. A dropped case's `Mode` column carries the tag it had when dropped; a `still valid` row's is `auto`.
 
 Write the `## Receipts` heading on every document, with `_No run yet._` beneath it. The section is append-only and belongs to the runs; you create it empty so the anchor exists before the first one.
 

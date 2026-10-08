@@ -1,18 +1,18 @@
 ---
 name: walk-protocol
 description: >
-  Shared specification for the three walk skills — brainstorm-walk, blueprint-walk, and
-  review-walk. Owns the rules every walk obeys identically: walk order, the action
-  self-loop contract, the edit-anchoring and re-read discipline, the claim-first rule,
-  the term-capture side buffer, and the summary-and-stamp shape. Not user-invocable;
-  the walks cite it and restate none of it.
+  Shared specification for the four walk skills — brainstorm-walk, blueprint-walk,
+  review-walk, and test-plan-walk. Owns the rules every walk obeys identically: walk
+  order, the action self-loop contract, the edit-anchoring and re-read discipline, the
+  claim-first rule, the term-capture side buffer, and the summary-and-stamp shape. Not
+  user-invocable; the walks cite it and restate none of it.
 user-invocable: false
 disable-model-invocation: true
 ---
 
 # Walk Protocol Specification (v1)
 
-Three skills walk a document interactively, one item at a time, recording verdicts
+Four skills walk a document interactively, one item at a time, recording verdicts
 inline so the walk resumes across sessions:
 
 | Skill | Artifact | Item | State field |
@@ -20,6 +20,7 @@ inline so the walk resumes across sessions:
 | [`brainstorm-walk`](../brainstorm-walk/SKILL.md) | `docs/brainstorms/*-requirements.md` | `R`-bullet | `**Reviewed:**` |
 | [`blueprint-walk`](../blueprint-walk/SKILL.md) | `docs/plans/*.md` | implementation unit | `**Reviewed:**` |
 | [`review-walk`](../review-walk/SKILL.md) | `docs/reviews/*.md` | finding | `**Status:**` |
+| [`test-plan-walk`](../test-plan-walk/SKILL.md) | `docs/tests/*.md` | `T-NNN` case | `**Walk:**` |
 
 This file is the single source of truth for every rule that applies to more than one
 of them. Walk skills embed only their own artifact-specific prose — path resolution,
@@ -71,7 +72,7 @@ is a **thing to build** and is accepted, modified, or removed; a review finding 
 **proposed fix** and is implemented, deferred, or declined. What is shared is the
 shape:
 
-- Every walk offers **add term**, and it behaves identically in all three.
+- Every walk offers **add term**, and it behaves identically in all four.
 - Actions are either **advancing** (they record a verdict and move to the next item) or
   **self-loops**.
 - **A self-loop changes no state.** It does its work, then re-asks the same action
@@ -84,7 +85,8 @@ That is the entire point of the side buffer: learning must not cost the review t
 **Vocabulary warning.** *Skip* means "no verdict yet, reported as unreviewed" in
 `brainstorm-walk` and `blueprint-walk`. `review-walk` has no such action — its
 terminal decline is **won't fix**. Never introduce an action named *skip* that closes
-an item, and never introduce one named *won't fix* that defers.
+an item, and never introduce one named *won't fix* that defers. A walk may offer no
+skip verb at all.
 
 ## Write protocol
 
@@ -142,7 +144,9 @@ than inserting a second one.
 ### Destructive actions
 
 An action that rewrites or withdraws the doc's own text is **destructive** and is
-gated the same way in every walk:
+gated the same way in every walk. `test-plan-walk`'s `cut` is not one: it changes only the
+case's state lines and leaves its text in place, so neither this gate nor the tombstone
+rule below applies to it.
 
 1. Ask the user what is wrong, in their words.
 2. Claim the item.

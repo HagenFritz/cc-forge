@@ -18,7 +18,7 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Task
 
 <command_purpose> Run one scope of a reviewed test plan, leave the evidence in the document, and report what actually ran. </command_purpose>
 
-`/test-plan-run` obeys [the test-protocol spec](../test-protocol/SKILL.md) and embeds only its own prose: its argument parsing, how each mode drives its cases, its filled stamp template, and its terminal wording. Every shared rule — the preflights, the target-match gate, the assurance filters, the five `Status:` values, the `**Filter:**` grammar, the manual card, the receipts fields, the report's shape — lives in the spec and is cited, never restated.
+`/test-plan-run` obeys [the test-protocol spec](../test-protocol/SKILL.md) and embeds only its own prose: its argument parsing, how each mode drives its cases, its filled stamp template, and its terminal wording. Every shared rule — the preflights, the target-match gate, the assurance filters, the five `Status:` values and the cut-case exclusion, the `**Filter:**` grammar, the manual card, the receipts fields, the report's shape — lives in the spec and is cited, never restated.
 
 It is the **consumer** half of the pair. `/test-plan` writes the document and stops; this skill is what acts on it, and it is the only skill that discovers an existing document to resume.
 
@@ -72,7 +72,7 @@ Everything here runs **before any agent is dispatched, any test file is written,
 
 2. **The target-match gate.** Apply [the spec's gate](../test-protocol/SKILL.md#the-target-match-gate) to the document's `target:` against the current branch. A mismatch **stops here**, naming both values — before the writer, before an edit, and without switching branches.
 
-3. **Count the mode's cases.** Parse every `### T-<NNN>:` and `### V-<NNN>:` block and its `**Mode:**` field. Zero cases carrying this scope's tag exits the mode per [the spec](../test-protocol/SKILL.md#zero-cases-in-a-mode-is-success); on the no-argument path the run continues to the other mode rather than ending.
+3. **Count the mode's cases.** Parse every `### T-<NNN>:` and `### V-<NNN>:` block and its `**Mode:**` field. Every step below skips [cut cases](../test-protocol/SKILL.md#the-five-status-values), so the count excludes them and a mode left with only cut cases has zero; zero cases carrying this scope's tag exits the mode per [the spec](../test-protocol/SKILL.md#zero-cases-in-a-mode-is-success); on the no-argument path the run continues to the other mode rather than ending.
 
 4. **Scope-specific, in the same pass:**
    - `auto` → detect the repo's test command with [`/land`'s ladder](../land/SKILL.md). Nothing detected → **stop** per [no runner, no writer](../test-protocol/SKILL.md#no-runner-no-writer), naming what was looked for. The writer is not dispatched.
@@ -185,4 +185,5 @@ A no-argument run that covered two modes stamps **once per mode**, each with its
 - **It never commits, pushes, or stashes.** The tests land in the working tree and stay there.
 - **It never dispatches a lens or the synthesizer.** A document that does not exist is `/test-plan`'s problem; this skill consumes one that does.
 - **It never calls `AskUserQuestion`.** Every question is a plain-text numbered list with a free-text catch-all.
+- **It never touches a cut case**, per [the spec](../test-protocol/SKILL.md#the-five-status-values).
 - **It never switches branches.** A `target:` mismatch is a stop, not a checkout.

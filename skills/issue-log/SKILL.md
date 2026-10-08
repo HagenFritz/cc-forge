@@ -80,6 +80,7 @@ Optional keys:
 | review-walk | `review-walk-complete` | 🚶 | Summary line + every walked issue as "what — status: why"; tracking refs for deferred items filed as issues; terms added to the glossary |
 | review-sweep | `sweep-complete` | 🧹 | Counts implemented / skipped / surfaced (marker keys); doc path; surfaced findings listed as "id: title — reason" in the body |
 | test-plan | `test-plan-written` | 🧪 | Doc path, case counts by mode plus revise count, dropped count, lenses that contributed |
+| test-plan-walk | `test-plan-walk-complete` | 🚶 | Summary line + counts of cases kept and cut; cut counts per reason code; terms added to the glossary |
 | test-plan-run | `tests-run` | 🧾 | Doc path, scope (`scope` in the marker), result counts, revised counts, receipts line, discarded tests |
 | side-quest | `side-quest-filed` | 🧭 | What was found, tracking-issue link (`tracking`, `followup:true`) |
 | ship | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
