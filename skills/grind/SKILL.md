@@ -193,7 +193,7 @@ Print:
   ```
   Next — review in a new session in the worktree:
     cd <worktree> && claude
-    /review-walk <review doc>  →  /review-push  →  /test-plan-run <test doc>  →  /ship  →  /land
+    /review-walk <review doc>  →  /review-push  →  /test-plan-walk <test doc>  →  /test-plan-run <test doc>  →  /ship  →  /land
   ```
 
   Drop the review steps when there is no review doc, and the test steps when there is no test doc.
