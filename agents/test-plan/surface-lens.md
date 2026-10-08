@@ -18,15 +18,15 @@ Your dispatch prompt provides: the changed file paths, the [surface digest](../.
 1. Classify the changed paths. A UI surface is a page, view, component, template, route handler that renders markup, stylesheet, or client-side script — anything a person sees or clicks. Config, migrations, server-only modules, build files, and documentation are not.
 2. If nothing in the diff is a UI surface, stop and return the empty result below. Do not hunt for something to say.
 3. For each changed surface, read it and the components it renders. Identify the states it can be in: loading, empty, populated, error, and whatever the change introduces.
-4. Propose **browser** cases for flows a headless driver can perform deterministically — navigate, fill, click, assert visible text or state. These are the ones `/test-plan-run browser` drives through Playwright or the Chrome tools.
-5. Propose **manual** cases for what a driver cannot judge: visual layout and spacing, responsive behavior at real viewport sizes, keyboard and screen-reader access, focus order, animation and perceived latency, copy that has to read right to a human.
+4. Propose **browser** cases for interaction and exact outcomes — navigate, fill, click, drag, then assert what appears, including exact rendered strings and focus or timing behavior. These are the ones `/test-plan-run browser` drives through Playwright or the Chrome tools.
+5. Propose **manual** cases for what needs human judgment: visual layout and spacing, responsive behavior at real viewport sizes, screen-reader experience, perceived latency, empty-state clarity, copy that has to read right to a human. Exact visible text is `browser`; copy quality is `manual`. See [the spec's tagging](../../skills/test-protocol/SKILL.md#tagging).
 6. Suggest which of the two each case is, in the `**Suggested mode:**` field below. The synthesizer decides the final tag; your suggestion is input, not a verdict.
 
 ## What you do not propose
 
 - Backend or API cases with no visible surface. Those belong to the other two lenses.
-- Cases for surfaces the diff did not touch. `unchanged code` is a drop reason under [the keep and drop rules](../../skills/test-protocol/SKILL.md#keep-and-drop-rules).
-- Cases the synthesizer will retag away from you: a focus, timing, or async-rendering check is yours to propose as `browser`, and it is never an `auto` case.
+- Cases for surfaces the diff did not touch. `tests untouched code` is a drop reason under [the keep and drop rules](../../skills/test-protocol/SKILL.md#keep-and-drop-rules).
+- `auto` cases. A case that asserts anything about the UI is never `auto`: it is `browser` when the outcome is exact and `manual` when it needs judgment.
 
 ## Return shape
 
