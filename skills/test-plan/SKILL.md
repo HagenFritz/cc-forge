@@ -77,7 +77,7 @@ A language not in the table contributes its top-level declaration lines by the s
 
 ### 4. Discover the test conventions
 
-One pass, recorded as plain text and passed to the lenses and the synthesizer:
+One pass, recorded as plain text and passed to the lenses, the synthesizer, and the judge:
 
 - **Test directories** — `tests/`, `test/`, `spec/`, `__tests__/`, or whatever the repo actually uses. None found → record **"no test directory"** verbatim; the synthesizer reads that and tags zero cases `auto`.
 - **Runner** — detect it with [`/land`'s ladder](../land/SKILL.md) (`package.json` scripts, `Makefile`, `pytest.ini`, `Cargo.toml`, and peers). None found → record "no runner detected".
