@@ -142,7 +142,7 @@ Task forge:test-plan:test-judge(
 )
 ```
 
-**This step never stops the run.** Whatever it ends in — a failed dispatch, a rejected return, a write that stopped partway — is handled by [the spec's judge-failure posture](../test-protocol/SKILL.md#judge-failure-posture), and the run goes on to steps 9 and 10.
+A failed dispatch, a rejected return, or a write that stopped partway is handled per [the spec's judge-failure posture](../test-protocol/SKILL.md#judge-failure-posture).
 
 ### 9. Report
 
@@ -166,7 +166,7 @@ Compose the body below, write it to a temp file with the Write tool, and post:
 **Doc:** `docs/tests/<filename>`
 **Cases:** <n> auto / <n> browser / <n> manual / <n> revise
 **Dropped:** <n>
-**Judge:** <cut <n> of <m> | not judged — <reason> | incomplete — <k> of <m> written>
+**Judge:** <the doc's `judged:` value>
 **Lenses:** <which contributed; any empty or failed>
 ```
 

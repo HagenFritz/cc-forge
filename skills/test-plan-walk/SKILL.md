@@ -199,18 +199,7 @@ a case in this doc that is not cut, by the judge or by the walk; one that is get
 one-line ask for a case still standing.
 
 Then write `**Walk:** cut — <code> — <note>`; `Status:` is left as it is. The
-note is the user's words, verbatim, collapsed to one line.
-
-**The orphan notice.** After that write, look for judge-cut cases whose line reads
-`**Judge:** cut — duplicates case — <this case's ID> …` — the first `T-NNN` in the text
-is this case, per [the spec](../test-protocol/SKILL.md#the-judge-line); an ID that appears
-only inside `(via …)` does not match. When any exist, print one line:
-
-```
-T-004 stood in for T-009 and T-011, cut by the judge — restore each on its **Judge:** line.
-```
-
-It is a notice, never a prompt: nothing is written and no reply is awaited. Next card.
+note is the user's words, verbatim, collapsed to one line. Next card.
 
 ### The cut codes
 

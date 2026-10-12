@@ -11,7 +11,7 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Agent, AskUserQuestion, Push
 
 `/grind` builds one phase of a plan — the whole plan when it has no `## Phased Delivery` — on one branch in one worktree, and ends at one ready PR. It asks you once, then runs without prompting: build the slices, review the branch, triage and fix, write a test plan and have the judge cut it, open the PR, stop. It never merges and never watches CI. You review the PR and its three docs — work, review, test plan — in a new session in the worktree, and land it yourself.
 
-**If anything fails, the run stops.** Grind does not retry or work around a failure: it says what failed, leaves the branch and worktree as they are, and notifies you. The one exception is the test plan's judge (step 6), whose failure is recorded and never stops the run. A **timer** also stops it cleanly once 90 minutes have passed, before the VM's ~2-hour wall. Either way, re-running `/grind` on the same plan picks up where the run stopped (Resume).
+**If anything fails, the run stops.** Grind does not retry or work around a failure: it says what failed, leaves the branch and worktree as they are, and notifies you. The one exception is the test plan's judge (step 6), whose failure never stops the run. A **timer** also stops it cleanly once 90 minutes have passed, before the VM's ~2-hour wall. Either way, re-running `/grind` on the same plan picks up where the run stopped (Resume).
 
 Never start `/grind` on your own initiative or from inside another skill; the user has to ask for it.
 
@@ -162,7 +162,7 @@ Stamp a verified doc, once the judge step has ended, per [the spec](../test-prot
 **Doc:** `docs/tests/<filename>`
 **Cases:** <n> auto / <n> browser / <n> manual / <n> revise
 **Dropped:** <n>
-**Judge:** <cut <n> of <m> | not judged — <reason> | incomplete — <k> of <m> written>
+**Judge:** <the doc's `judged:` value>
 **Lenses:** <which contributed; any empty or failed>
 ```
 
@@ -219,7 +219,7 @@ Then stamp the completion and notify:
 
 ### Stopping
 
-Any failure stops the run on the spot: a blocked unit, commits that did not land, a review with no verified doc, fixes that did not push, a PR that did not open, a missing or dirty worktree on resume. The test plan's judge is the one failure that does not stop the run: step 6 records it as `not judged` and goes on. Leave the branch, worktree, docs, and any PR exactly as they are. Report what failed with its real output and where the work is, stamp, and notify:
+Any failure stops the run on the spot: a blocked unit, commits that did not land, a review with no verified doc, fixes that did not push, a PR that did not open, a missing or dirty worktree on resume. The test plan's judge is the one failure that does not stop the run, per [the spec's judge-failure posture](../test-protocol/SKILL.md#judge-failure-posture). Leave the branch, worktree, docs, and any PR exactly as they are. Report what failed with its real output and where the work is, stamp, and notify:
 
 ```markdown
 <!-- cc-forge-log v1: {"skill":"grind","event":"grind-blocked","paths":["<plan file path>"]} -->
@@ -253,4 +253,4 @@ On completion and on a stop, after the stamp:
 - One confirmation, then no questions. Never merge, never watch CI, never write or run tests.
 - Push only with `git push -u origin <branch>`. Never push to `main`, force-push, use `--no-verify`, or `git add -A` — for grind or any subagent.
 - Check every subagent's claim against git before moving on.
-- Any failure stops the run, with no retries inside it — except the test plan's judge, which is retried and recorded as `not judged` per [the spec's posture](../test-protocol/SKILL.md#judge-failure-posture), never a stop. Re-running `/grind` on the plan resumes from the run's docs.
+- Any failure stops the run, with no retries inside it — except the test plan's judge, per [the spec's posture](../test-protocol/SKILL.md#judge-failure-posture). Re-running `/grind` on the plan resumes from the run's docs.

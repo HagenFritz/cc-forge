@@ -495,7 +495,8 @@ Task forge:test-plan:test-judge(
 The judge's `## Inputs` section (`agents/test-plan/test-judge.md`) is the authoritative
 description of each value — **pass the values, not restatements of what they mean.** The
 conventions are the ones the caller discovered for the lenses. The judge's only command is
-one read-only `git diff <base>...HEAD`, run in the directory it was handed.
+one read-only `git -C <directory> diff <base>...HEAD`, pointed at the directory it was
+handed.
 
 ### The judge's rule
 
@@ -520,6 +521,8 @@ The judge follows this procedure, in this order:
 4. **No code, no cut.** A case no code fits is kept.
 5. **Re-point.** Every `duplicates case` cut names a case that is kept in the final set.
    When Z was cut as a duplicate of Y and Y was later cut as a duplicate of X, Z names X.
+   When Y was instead cut as `duplicates existing`, Z is re-coded `duplicates existing`
+   and its text begins with Y's `<path>::<test>`.
 
 Bounds on the procedure:
 
@@ -543,7 +546,8 @@ T-003 | cut | duplicates existing | tests/test_sort.py::test_default_order alrea
 Judged: 3 cases, cut 2
 ```
 
-Four fields, split on the first three ` | `: case ID | verdict (`keep` or `cut`) | code
+Four fields, split on the first three `|` with the whitespace around each field trimmed:
+case ID | verdict (`keep` or `cut`) | code
 (empty on `keep`) | text. The text is one line, written verbatim as the `<regression>` or
 `<text>` of [the `**Judge:**` line](#the-judge-line), evidence included. The closing line
 is `Judged: <m> cases, cut <n>`.
@@ -556,7 +560,7 @@ rejects the whole return, and nothing is written.** A return is invalid when:
 - the closing `Judged:` line is missing, or its counts differ from the lines above it;
 - a `T-NNN` case in the document has no line or more than one, or a line names a case the
   document lacks or a `V-NNN`;
-- a verdict is neither `keep` nor `cut`, a `keep` carries a code, a `cut` carries none, or
+- a verdict is neither `keep` nor `cut`, a `keep` carries a non-empty code field, a `cut` carries none, or
   a text is empty;
 - a `cut` carries a code outside the judge's eight, per [the cut codes](#the-cut-codes);
 - a `duplicates case` text does not begin with a `T-NNN` that this same return keeps;
@@ -784,18 +788,8 @@ line per [the case-block rule](#case-blocks), exactly one per judged `T-NNN` cas
 
 ```markdown
 **Judge:** keep — a sort key missing from the allow-list returns 200 instead of 422
-```
-
-```markdown
 **Judge:** cut — duplicates case — T-004 rejects the same unknown sort field through the same endpoint
-```
-
-```markdown
 **Judge:** cut — duplicates existing — tests/test_sort.py::test_default_order already asserts the default order
-```
-
-```markdown
-**Judge:** cut — duplicates case — T-004 (via T-009) rejects the same unknown sort field
 ```
 
 Grammar: `**Judge:** keep — <regression> | cut — <code> — <text>`, always one line. On
@@ -806,8 +800,8 @@ shape, so one count covers both writers.
 
 **The text after a code carries the evidence:**
 
-- `duplicates case` — begins with the `T-NNN` that stands in its place. The last example
-  is a chain, T-011 → T-009 → T-004, re-pointed at the survivor.
+- `duplicates case` — begins with the `T-NNN` that stands in its place, the final
+  survivor of any chain.
 - `duplicates existing` — begins with `<path>::<test>`, the path relative to the repo
   root.
 - every other code — names what in the diff made the case match.
@@ -818,8 +812,7 @@ changes. A `T-NNN` case with no `**Judge:**` line was not judged, and stays.
 ### The document's Drop List section
 
 A `## Drop List` heading carrying the table specified in
-[Keep and drop rules](#the-drop-list). Written once, by the synthesizer. A judge cut is
-never a row here: it is a line on the case, so the document shows who removed what.
+[Keep and drop rules](#the-drop-list). Written once, by the synthesizer.
 
 ### The document's Receipts section
 
