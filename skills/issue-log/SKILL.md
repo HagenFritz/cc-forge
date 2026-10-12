@@ -79,7 +79,7 @@ Optional keys:
 | quick-review | `review-written` | ⚡ | Same shape as deep-review's row: severity counts + the findings table from the terminal summary |
 | review-walk | `review-walk-complete` | 🚶 | Summary line + every walked issue as "what — status: why"; tracking refs for deferred items filed as issues; terms added to the glossary |
 | review-sweep | `sweep-complete` | 🧹 | Counts implemented / skipped / surfaced (marker keys); doc path; surfaced findings listed as "id: title — reason" in the body |
-| test-plan | `test-plan-written` | 🧪 | Doc path, case counts by mode plus revise count, dropped count, lenses that contributed |
+| test-plan | `test-plan-written` | 🧪 | Doc path, case counts by mode plus revise count (no cut case counted), dropped count, the judge line (the doc's `judged:` value), lenses that contributed |
 | test-plan-walk | `test-plan-walk-complete` | 🚶 | Summary line + counts of cases kept and cut; cut counts per reason code; terms added to the glossary |
 | test-plan-run | `tests-run` | 🧾 | Doc path, scope (`scope` in the marker), result counts, revised counts, receipts line, discarded tests |
 | side-quest | `side-quest-filed` | 🧭 | What was found, tracking-issue link (`tracking`, `followup:true`) |
@@ -89,7 +89,7 @@ Optional keys:
 | grind | `unit-complete` | 🔨 | Same shape as work's row: **Did** (always), **Solved** (only when a problem was solved); `branch` in the marker |
 | grind | `unit-blocked` | ⚠️ | **Blocked:** reason; optional `blocked_by`; `branch` in the marker |
 | grind | `review-written` | 🔍 | Same shape as deep-review's row; no `pr`, since the review runs before the PR opens |
-| grind | `test-plan-written` | 🧪 | Same shape as test-plan's row |
+| grind | `test-plan-written` | 🧪 | Same shape as test-plan's row, judge line included |
 | grind | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
 | grind | `grind-stopped` | ⏸️ | Timer stop: the step it stopped before, steps done, the resume command; `branch` in the marker (an older stamp without `branch` is from the multi-PR run and is history only) |
 | grind | `grind-blocked` | 🛑 | What halted the run, worktree path, remaining slice count; `pr` and the PR url only when a PR is open |
