@@ -16,6 +16,7 @@ Models are pinned per agent using **bare family aliases** (`opus`, `sonnet`, `ha
 | `research/repo-research-analyst`, `research/framework-docs-researcher`, `research/best-practices-researcher`, `workflow/spec-flow-analyzer` | `opus` + `effort: high` — `/blueprint`'s research fan-out, whose output gates downstream planning decisions |
 | `test-plan/spec-lens`, `test-plan/blast-radius-lens`, `test-plan/surface-lens` | `sonnet` — three parallel proposers; each reads one slice of the change and writes no file, so the judgment cost sits downstream |
 | `test-plan/test-synthesizer` | `opus` + `effort: high` — scores every proposed case, applies the keep and drop rules, and writes a drop list the user acts on |
+| `test-plan/test-judge` | `opus` + `effort: high` — compares every kept case with the diff, the other cases, and the existing tests; its cuts take cases out of every later walk and run |
 | `test-plan/test-writer` | `opus` + `effort: high` — writes real test code from the stated behavior alone, with no view of the implementation to copy from |
 | `research/issue-intelligence-analyst` | `opus` + `effort: high` — clusters issues by root cause rather than symptom; grounds all of `/ideate`'s fan-out |
 
@@ -23,7 +24,7 @@ No agent uses `inherit`; every model is pinned so a run's cost and quality don't
 
 Pins are plain frontmatter — edit them if your org's model allowlist differs. Note a pin also applies when *other* skills dispatch the same agent, and it overrides (even downgrades) whatever model the main session runs. `effort` accepts `low`/`medium`/`high`/`xhigh`/`max` and overrides the session effort level.
 
-`tools:` is an optional frontmatter field naming the exact tools an agent may use. Omit it and the agent inherits every tool available to subagents; list tools and it gets only those. Five agents restrict it, and in every case the restriction is the design rather than a precaution — an agent that cannot reach something cannot be talked into reaching it:
+`tools:` is an optional frontmatter field naming the exact tools an agent may use. Omit it and the agent inherits every tool available to subagents; list tools and it gets only those. Six agents restrict it, and in every case the restriction is the design rather than a precaution — an agent that cannot reach something cannot be talked into reaching it:
 
 | Agent | `tools:` | Why |
 |---|---|---|
@@ -31,6 +32,7 @@ Pins are plain frontmatter — edit them if your org's model allowlist differs. 
 | `test-plan/test-synthesizer` | `Read, Write, Glob, Grep` | same shape — reads lens output, writes one document |
 | `test-plan/test-writer` | `Read, Write, Glob, Grep` | **no `Bash`**, so it cannot `git diff`, `git log -p`, or `cat` an implementation file. The outside-observer wall depends on this, and the orchestrator runs every test itself |
 | `test-plan/surface-lens` | `Read, Glob, Grep, Bash` | reads the changed UI paths; no `Write`, because a lens proposes and never edits |
+| `test-plan/test-judge` | `Read, Glob, Grep, Bash` | reads the document, the diff, and the existing tests; **no `Write` or `Edit`**, so a verdict is all it can produce — a judge that fails has changed nothing |
 | `workflow/scope-observer` | `Read, Glob, Grep, Bash` | reads the diff and the plan; **no `Write` or `Edit`**, so a deviation card is all it can produce — it never fixes, reverts, or gates |
 
 `test-plan/spec-lens` is the one agent that must reach **no file tools at all** — it proposes test cases from the stated intent, so seeing the repo would defeat it. `tools:` cannot express that, so the shape is `disallowedTools:`:
@@ -89,6 +91,7 @@ Several were ported from [EveryInc/compound-engineering-plugin](https://github.c
 | `blast-radius-lens` | Proposes regression cases for adjacent behavior; reads the diff and its call sites | test-plan, grind |
 | `surface-lens` | Proposes browser and manual cases from changed UI paths; empty on a backend diff | test-plan, grind |
 | `test-synthesizer` | De-dupes, tags, scores, formats revise verdicts, and writes the `docs/tests/` document with its Drop List | test-plan, grind |
+| `test-judge` | Compares the kept cases with each other, the diff, and the existing tests; returns one keep-or-cut verdict per case and writes nothing | test-plan, grind |
 | `test-writer` | Writes the `auto` tests from the cases and the public surface; never runs anything | test-plan-run |
 
 ## workflow/
