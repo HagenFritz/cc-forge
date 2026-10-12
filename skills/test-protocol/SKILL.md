@@ -4,9 +4,9 @@ description: >
   Shared specification for the test skills — test-plan, test-plan-walk, test-plan-run,
   and grind's test plan. Owns the rules they obey identically: the three lenses and
   what each may see, the surface digest, the tag vocabulary, the keep and drop rules, the
-  Drop List, the revise bucket, the scratch contract, the synthesizer dispatch and count
-  check, the document shape, the assurance filters and revise execution, the re-run
-  semantics, the receipts, the
+  Drop List, the cut codes, the revise bucket, the scratch contract, the synthesizer
+  dispatch and count check, the judge and its Judge line, the document shape, the
+  assurance filters and revise execution, the re-run semantics, the receipts, the
   completion report, and the two stamps' shared bodies. Not user-invocable; the test
   skills cite it and restate none of it.
 user-invocable: false
@@ -16,15 +16,16 @@ disable-model-invocation: true
 # Test Protocol Specification (v1)
 
 Four callers produce and consume one test-plan document: two producers that propose cases
-— one stopping for review, one autonomous — and two consumers: a walk that judges each
-case and a run that acts on them.
+and have [the judge](#the-judge) cut the kept set — one stopping for review, one
+autonomous — and two consumers: a walk that takes a human's verdict on each case and a run
+that acts on them.
 
 | Caller | Does | Produces |
 |---|---|---|
-| [`test-plan`](../test-plan/SKILL.md) | dispatches the three lenses and the synthesizer, stops for review | `docs/tests/*.md` |
-| [`test-plan-walk`](../test-plan-walk/SKILL.md) | walks every `T-NNN` case with a human, keep or cut, before any run | `**Walk:**` in that doc |
+| [`test-plan`](../test-plan/SKILL.md) | dispatches the three lenses, the synthesizer, and the judge, stops for review | `docs/tests/*.md` |
+| [`test-plan-walk`](../test-plan-walk/SKILL.md) | walks every `T-NNN` case the judge did not cut with a human, keep or cut, before any run | `**Walk:**` in that doc |
 | [`test-plan-run`](../test-plan-run/SKILL.md) | runs one scope (`auto`, `browser`, or `manual`) over an existing doc | `Status:`, `**Filter:**`, `## Receipts` in that doc; test files on disk |
-| [`grind`](../grind/SKILL.md)'s test plan | dispatches the three lenses and the synthesizer after its review and fixes, before the PR opens; writes no tests and commits nothing | `docs/tests/*.md` |
+| [`grind`](../grind/SKILL.md)'s test plan | dispatches the three lenses, the synthesizer, and the judge after its review and fixes, before the PR opens; writes no tests and commits nothing | `docs/tests/*.md` |
 
 This file is the single source of truth for every rule that applies to more than one of
 them. Test skills embed only their own prose — origin discovery, how they build the
@@ -37,9 +38,10 @@ Every rule here is written so each caller it applies to can execute it. A rule t
 `manual` mode, the walk — names the caller it binds.
 
 Throughout, **the orchestrator** means whichever caller is running — it holds `Bash` and
-runs every command; **lens** means one of the three proposing agents; **the writer** means
-`forge:test-plan:test-writer`; **a case** means one `T-NNN` or `V-NNN` block in the
-document; **a revise case** means a `V-NNN` block, per [the revise bucket](#the-revise-bucket).
+runs every test command; **lens** means one of the three proposing agents; **the judge**
+means `forge:test-plan:test-judge`; **the writer** means `forge:test-plan:test-writer`;
+**a case** means one `T-NNN` or `V-NNN` block in the document; **a revise case** means a
+`V-NNN` block, per [the revise bucket](#the-revise-bucket).
 
 ## Scope and non-goals
 
@@ -59,8 +61,8 @@ document; **a revise case** means a `V-NNN` block, per [the revise bucket](#the-
   lens; the spec lens never receives it. A work doc never reads a test doc.
 - **This spec owns the document format**, unlike `review-protocol`, which delegates the
   format to its synthesizer. No single agent writes the whole test document: the
-  synthesizer writes it and the run appends to it, so the format has to live where both
-  can cite it.
+  synthesizer writes it, the orchestrator adds the judge's lines, and the walk and the run
+  write back into it, so the format has to live where all of them can cite it.
 
 ## Prerequisites
 
@@ -98,11 +100,14 @@ test roster and it lives here, so grind can cite it rather than re-enumerate it.
 | `forge:test-plan:blast-radius-lens` | full | proposes regression cases for adjacent behavior |
 | `forge:test-plan:surface-lens` | `Read, Glob, Grep, Bash` | proposes browser and manual cases from changed UI paths |
 | `forge:test-plan:test-synthesizer` | `Read, Write, Glob, Grep` | de-dupes, tags, applies the keep and drop rules, formats the revise verdicts, writes the document |
+| `forge:test-plan:test-judge` | `Read, Glob, Grep, Bash` | compares the kept `T-NNN` cases with each other, the diff, and the existing tests; returns one keep-or-cut verdict per case; never writes |
 | `forge:test-plan:test-writer` | `Read, Write, Glob, Grep` | writes the `auto` tests and removes a within-file `delete`'s named test; never runs anything |
 
-**The synthesizer and the writer are always-run infrastructure** — never list either in a
-caller's lens roster and never count either among the lenses whose output is synthesized.
-The writer is dispatched only by `/test-plan-run auto`; the producers never dispatch it.
+**The synthesizer, the judge, and the writer are always-run infrastructure** — never list
+any of them in a caller's lens roster and never count any among the lenses whose output is
+synthesized. The judge is dispatched only by the two producers, per
+[the judge](#the-judge). The writer is dispatched only by `/test-plan-run auto`; the
+producers never dispatch it.
 
 **No caller adds, substitutes, or skips a roster agent.** A lens that fails is handled by
 [the lens-failure posture](#lens-failure-posture), not replaced.
@@ -241,7 +246,8 @@ is `browser` or `manual`. (This repo is one of them.)
 
 ## Keep and drop rules
 
-The synthesizer applies these, and only these. They are the whole of R7.
+The synthesizer applies the keep, drop, and folding rules, and only these. They are the
+whole of R7. [The cut codes](#the-cut-codes) belong to the walk and the judge.
 
 ### Keep
 
@@ -300,16 +306,37 @@ One table, one row per dropped case, under a `## Drop List` heading in the docum
 |---|---|---|---|---|---|
 | `<the case title as proposed>` | `<tag>` | `<lens>` | `<level>` | `<reason from the table above>` | `<one line: what made it match>` |
 
-The reasons are spelled exactly as in the table above; `/test-plan-walk`'s cut codes 1–6
-reuse them byte for byte, so a walk cut and a synthesizer drop count together.
+The reasons are spelled exactly as in the table above; [the cut codes](#the-cut-codes)
+reuse six of them byte for byte, so a cut and a synthesizer drop count together.
 
 **The Drop List is never empty in a real run** and never omitted. A run that drops nothing
 writes the heading with `_None — every proposed case was kept._` beneath it, so a reader
 can tell "nothing was dropped" from "the section was skipped."
 
-**Nothing is capped.** Every case that survives the keep rules is kept, in every mode —
-`auto` included — and the revise bucket is uncapped too. The tight
-[timeouts](#prerequisites) are what bound the run, not a count.
+**Nothing is capped.** The synthesizer keeps every case that survives the keep rules, in
+every mode — `auto` included — and the revise bucket is uncapped too.
+[The judge](#the-judge) may then cut a kept case under its own rule, still with no count
+and no target. The tight [timeouts](#prerequisites) are what bound the run, not a count.
+
+### The cut codes
+
+A cut takes a kept `T-NNN` case out after synthesis and carries exactly one code. Two
+writers cut: `/test-plan-walk`, on [the `**Walk:**` line](#the-walk-line), and the judge,
+on [the `**Judge:**` line](#the-judge-line). The synthesizer never cuts; it drops.
+
+Six codes are [the drop reasons](#drop) `pins a constant`, `asserts a mock`,
+`duplicates existing`, `UI test in fake DOM`, `tests untouched code`, and
+`library already guarantees it`, spelled byte for byte. Three belong to cuts alone:
+
+| Code | What it catches |
+|---|---|
+| `duplicates case` | another case in this plan covers it; the text names the `T-NNN` |
+| `implementation detail` | asserts how, not what; a refactor breaks it |
+| `not worth it` | real risk, too small for the test's cost |
+
+- **The walk** may use all nine.
+- **The judge** may use eight — never `not worth it`, which is a human's call.
+- **Neither** uses `still valid`; it drops only a revise proposal.
 
 ## The revise bucket
 
@@ -372,7 +399,8 @@ from memory. Then locate the synthesizer's rules and template by trying, in orde
    exiting with no output.
 
 Follow whichever resolved, and state in the completion report that the document was
-produced by fallback, not the synthesizer.
+produced by fallback, not the synthesizer. A fallback document is never
+[judged](#the-judge): write `judged: not judged — fallback document` in its frontmatter.
 
 **"Dispatch failed"** means the Task call returned an error or returned without a
 `Doc path:` line. On a **model or spawn rejection** (the model pinned in
@@ -437,6 +465,133 @@ On success, verify the document rather than trusting the return message:
 A document that fails any check is treated as a failed dispatch: go to the inline
 fallback.
 
+## The judge
+
+After the document verifies, each producer dispatches the judge once. It compares the kept
+`T-NNN` cases with each other, the branch diff, and the repo's existing tests, and returns
+one verdict per case. **The judge returns; the orchestrator writes.** The judge holds no
+`Write` or `Edit`, so a judge that fails has changed nothing.
+
+**The judge does not run** on:
+
+- a document produced by [the inline fallback](#inline-fallback), which already carries
+  `judged: not judged — fallback document`;
+- a document with no `T-NNN` case — the orchestrator writes
+  `judged: not judged — no T-NNN case`;
+- a document this run did not write. There is no resume and no re-judging.
+
+It judges every `T-NNN` case in every mode and never a `V-NNN` case.
+
+```
+Task forge:test-plan:test-judge(
+  - the absolute path of the verified document
+  - the absolute path of the directory to run git in
+  - the base ref the branch is diffed against
+  - the repo's test conventions — test directories, runner, existing test file names —
+    or "no test directory"
+)
+```
+
+The judge's `## Inputs` section (`agents/test-plan/test-judge.md`) is the authoritative
+description of each value — **pass the values, not restatements of what they mean.** The
+conventions are the ones the caller discovered for the lenses. The judge's only command is
+one read-only `git diff <base>...HEAD`, run in the directory it was handed.
+
+### The judge's rule
+
+**A regression** is a concrete wrong version of the changed behavior, now or after a later
+edit, that makes the case fail. **A case stays only if it catches a regression that no
+single other case and no single existing test catches.** There is no cap and no target
+count.
+
+The judge follows this procedure, in this order:
+
+1. **List.** For every `T-NNN` case, list the regressions it catches. A
+   [folded](#folding) case is one unit — kept or cut whole.
+2. **Structural pass.** A case that, as the diff now shows it, matches `pins a constant`,
+   `asserts a mock`, `UI test in fake DOM`, `tests untouched code`,
+   `library already guarantees it`, or `implementation detail` is cut under that code.
+3. **Duplicate pass.** One mode at a time, over the cases still standing in that mode:
+   lowest `**Viability:**` first, then highest `T` number first. Cut the case when
+   everything it catches is also caught by one named existing test
+   (`duplicates existing`) or by one named case still standing in the same mode
+   (`duplicates case`). Otherwise keep it, and name what it catches that no single other
+   case does.
+4. **No code, no cut.** A case no code fits is kept.
+5. **Re-point.** Every `duplicates case` cut names a case that is kept in the final set.
+   When Z was cut as a duplicate of Y and Y was later cut as a duplicate of X, Z names X.
+
+Bounds on the procedure:
+
+- **One cover per cut.** A case covered only jointly, by two or more others, is kept.
+- **Same mode only.** A case is never cut as a duplicate of a case in another mode.
+- **The `invariant guard` bar.** A case whose `**Keep rule:**` is `invariant guard` is
+  never cut as `tests untouched code`.
+- **A `V-NNN` `delete` target never counts as an existing test.**
+- **With "no test directory"** the judge compares cases only with each other, and
+  `duplicates existing` is unreachable.
+- **An all-cut result stands.** There is no floor.
+
+### The judge's return
+
+One line per `T-NNN` case, in document order, then one closing line:
+
+```
+T-001 | keep | | a sort key missing from the allow-list returns 200 instead of 422
+T-002 | cut | duplicates case | T-001 rejects the same unknown sort field through the same endpoint
+T-003 | cut | duplicates existing | tests/test_sort.py::test_default_order already asserts the default order
+Judged: 3 cases, cut 2
+```
+
+Four fields, split on the first three ` | `: case ID | verdict (`keep` or `cut`) | code
+(empty on `keep`) | text. The text is one line, written verbatim as the `<regression>` or
+`<text>` of [the `**Judge:**` line](#the-judge-line), evidence included. The closing line
+is `Judged: <m> cases, cut <n>`.
+
+### Checking the return
+
+The orchestrator checks the return before it writes anything. **One invalid verdict
+rejects the whole return, and nothing is written.** A return is invalid when:
+
+- the closing `Judged:` line is missing, or its counts differ from the lines above it;
+- a `T-NNN` case in the document has no line or more than one, or a line names a case the
+  document lacks or a `V-NNN`;
+- a verdict is neither `keep` nor `cut`, a `keep` carries a code, a `cut` carries none, or
+  a text is empty;
+- a `cut` carries a code outside the judge's eight, per [the cut codes](#the-cut-codes);
+- a `duplicates case` text does not begin with a `T-NNN` that this same return keeps;
+- a `duplicates existing` text does not begin with the path of a test file that exists on
+  disk, resolved against the directory the judge was handed.
+
+### Writing the verdicts
+
+Straight after a valid return, with no step between:
+
+1. **Case lines.** One [`**Judge:**` line](#the-judge-line) per `T-NNN` case, each by an
+   `Edit` whose old string runs from the case's `### T-<NNN>:` heading through its
+   `**Why:**` line.
+2. **Count.** Count the `**Judge:**` lines in the document against its `### T-` headings.
+3. **`judged:`.** Insert the key directly under the `lenses:` line, per
+   [frontmatter](#frontmatter): `cut <n> of <m>` when the counts match, and
+   `incomplete — <k> of <m> written` when they differ.
+
+**The lines are the truth; `judged:` is a summary.** [The cut-case rule](#the-five-status-values)
+reads each case's own line, so every line written stays in force when the write stopped
+partway or the `judged:` key is missing.
+
+### Judge-failure posture
+
+**A judge failure never stops a producer.** The document stands as synthesized and the run
+goes on to its report and stamp.
+
+- **Dispatch failed or return rejected** → retry the dispatch once, carrying the specific
+  rejection reasons. A second failure writes `judged: not judged — <reason>`.
+- **Model or spawn rejection** (the model pinned in `agents/test-plan/test-judge.md`
+  frontmatter is not on the org's allowlist) → no retry. Emit one line naming that pinned
+  model and pointing at `agents/README.md`, then write `judged: not judged — <reason>`.
+- **Write stopped partway** → `judged: incomplete — <k> of <m> written`, per
+  [writing the verdicts](#writing-the-verdicts). No retry.
+
 ## The document
 
 One file per run, at `docs/tests/YYYY-MM-DD-NNN-<slug>-test-plan.md`.
@@ -450,11 +605,26 @@ target: <branch name>
 date: YYYY-MM-DD
 status: in-progress   # in-progress | complete
 lenses: <which lenses contributed, and any that returned empty or failed>
+judged: <cut <n> of <m> | not judged — <reason> | incomplete — <k> of <m> written>
 ---
 ```
 
 `target:` is the **branch name** and is the gate every consumer checks before acting. See
 [the target-match gate](#the-target-match-gate).
+
+`judged:` is the producer run's record of [the judge](#the-judge). The orchestrator
+inserts it directly under `lenses:` after synthesis; the synthesizer never writes it. It
+takes one of three values:
+
+- `cut <n> of <m>` — the judge cut `n` of the `m` `T-NNN` cases; `cut 0 of <m>` when it
+  cut none.
+- `not judged — <reason>` — the judge failed, the document is a fallback document, or it
+  holds no `T-NNN` case.
+- `incomplete — <k> of <m> written` — the write stopped after `k` of `m` `**Judge:**`
+  lines.
+
+A document with no `judged:` key predates the judge, or its run ended before the key was
+written. Either way each case's own `**Judge:**` line governs.
 
 ### Case blocks
 
@@ -466,6 +636,7 @@ lenses: <which lenses contributed, and any that returned empty or failed>
 **Viability:** High
 **Keep rule:** changed behavior
 **Why:** <one line: why this case is worth running>
+**Judge:** keep — <the regression this case alone catches>   <!-- added by the orchestrator after synthesis; never written by the synthesizer -->
 
 **Steps:**
 1. <what to do>
@@ -479,9 +650,11 @@ lenses: <which lenses contributed, and any that returned empty or failed>
 ```
 
 The `### T-<NNN>:` heading with `**Status:**` below it is the anchor every consumer edits
-against. **Fields the synthesizer writes sit above `**Status:**`; a field a run adds goes
-below it, never between it and the heading.** The one exception is the walk's
-`**Walk:**` line, which sits directly under the heading so the walk can anchor on it alone.
+against. **Fields a producer writes sit above `**Status:**`** — the synthesizer's, and
+[the `**Judge:**` line](#the-judge-line) the orchestrator adds directly after `**Why:**`
+once the judge returns — **and a field a run adds goes below it, never between it and the
+heading.** The one exception is the walk's `**Walk:**` line, which sits directly under the
+heading so the walk can anchor on it alone.
 
 ### Revise blocks
 
@@ -526,10 +699,10 @@ the same field-placement rule holds. Every anchor rule in this spec accepts
 whose test was discarded by a filter stays `untested` — a discarded test never ran, so it
 never passed or failed.
 
-**A cut case is out of every run.** A `T-NNN` case whose `**Walk:**` line begins `cut` is
-never written, run, re-verified, presented, or counted, and no run changes its `Status:`;
-a test already on disk for it is left alone. The block stays in place; nothing is
-renumbered.
+**A cut case is out of every run.** A `T-NNN` case whose `**Walk:**` line or `**Judge:**`
+line begins `cut` is never written, run, re-verified, presented, or counted, and no run
+changes its `Status:`; a test already on disk for it is left alone. The block stays in
+place; nothing is renumbered.
 
 ### The `**Filter:**` line
 
@@ -601,14 +774,52 @@ per [the case-block rule](#case-blocks), exactly one per walked `T-NNN` case:
 
 Grammar: `**Walk:** pending | keep | cut — <code> — <text>`, always one line. `pending` is
 the walk's claim, written before the card renders; `keep` and `cut` are the verdicts, and a
-`cut` makes the case [a cut case](#the-five-status-values). The cut codes are owned by the walk; codes 1–6
-are [the drop reasons](#drop), spelled identically. A case with no `**Walk:**` line was
-never walked.
+`cut` makes the case [a cut case](#the-five-status-values). The codes are
+[the cut codes](#the-cut-codes). A case with no `**Walk:**` line was never walked.
+
+### The `**Judge:**` line
+
+The judge's verdict, written by the orchestrator directly after the case's `**Why:**`
+line per [the case-block rule](#case-blocks), exactly one per judged `T-NNN` case:
+
+```markdown
+**Judge:** keep — a sort key missing from the allow-list returns 200 instead of 422
+```
+
+```markdown
+**Judge:** cut — duplicates case — T-004 rejects the same unknown sort field through the same endpoint
+```
+
+```markdown
+**Judge:** cut — duplicates existing — tests/test_sort.py::test_default_order already asserts the default order
+```
+
+```markdown
+**Judge:** cut — duplicates case — T-004 (via T-009) rejects the same unknown sort field
+```
+
+Grammar: `**Judge:** keep — <regression> | cut — <code> — <text>`, always one line. On
+`keep` the text names the regression this case alone catches. A `cut` makes the case
+[a cut case](#the-five-status-values), takes one of the judge's eight
+[cut codes](#the-cut-codes), and uses the `**Walk:**` line's `cut — <code> — <text>`
+shape, so one count covers both writers.
+
+**The text after a code carries the evidence:**
+
+- `duplicates case` — begins with the `T-NNN` that stands in its place. The last example
+  is a chain, T-011 → T-009 → T-004, re-pointed at the survivor.
+- `duplicates existing` — begins with `<path>::<test>`, the path relative to the repo
+  root.
+- every other code — names what in the diff made the case match.
+
+**A cut is restored by hand:** edit the line to `keep — <text>` or delete it. Nothing else
+changes. A `T-NNN` case with no `**Judge:**` line was not judged, and stays.
 
 ### The document's Drop List section
 
 A `## Drop List` heading carrying the table specified in
-[Keep and drop rules](#the-drop-list). Written once, by the synthesizer.
+[Keep and drop rules](#the-drop-list). Written once, by the synthesizer. A judge cut is
+never a row here: it is a line on the case, so the document shows who removed what.
 
 ### The document's Receipts section
 
@@ -920,6 +1131,11 @@ wording is the caller's own.
 
 <the Drop List rows, or "none">
 
+### Judge
+
+<the document's `judged:` value, then one line per judge-cut case — `T-NNN — <code> —
+<text>` — or "none cut">
+
 ### Lenses
 
 <which lenses contributed; any that returned empty or failed, and the input-ladder rung
@@ -928,6 +1144,14 @@ that fed the spec lens>
 
 A producer run reports empty `Receipts` — nothing has been run yet — and never omits the
 heading.
+
+**The `Cases` table counts survivors**: no [cut case](#the-five-status-values) is in any
+of its numbers.
+
+**The `Judge` section is read from the document** — the `judged:` key and the
+`**Judge:** cut` lines actually present — so a report never says "not judged" while the
+document holds cuts. A document with no `judged:` key reports "no judge record". When
+every `T-NNN` case was cut, the report says so in plain words.
 
 ### The next-steps block
 
@@ -953,8 +1177,9 @@ that spec's writer-fills-its-own-template convention.
 
 Two writers: `/test-plan` and grind's test plan, on the `unit-complete` two-writers
 precedent. Posted once the document has passed every verification check — the same gate
-that deleted the scratch. A **fallback-produced document posts no stamp**;
-the stamp attests to a verified document.
+that deleted the scratch — and [the judge](#the-judge) step has ended, whatever its
+outcome. A **fallback-produced document posts no stamp**; the stamp attests to a verified
+document.
 
 It is a document-producing event, so the body starts with `**Doc:**` and the marker
 carries `paths`. The body below the marker heading:
@@ -963,8 +1188,12 @@ carries `paths`. The body below the marker heading:
 **Doc:** `docs/tests/<filename>`
 **Cases:** <n> auto / <n> browser / <n> manual / <n> revise
 **Dropped:** <n>
+**Judge:** <cut <n> of <m> | not judged — <reason> | incomplete — <k> of <m> written>
 **Lenses:** <which contributed; any empty or failed>
 ```
+
+`**Judge:**` is the document's `judged:` value, and `**Cases:**` counts no
+[cut case](#the-five-status-values).
 
 ### `tests-run`
 
@@ -1000,10 +1229,15 @@ happened.
   tools are denied by name and its brief is self-contained; the writer gets no `Bash`.
   Never "tell" an agent not to look at something it has the tools to reach — and keep the
   deny list current, because it only covers the tools it enumerates.
-- **The orchestrator runs every command.** The writer writes and the lenses propose;
-  nothing but the orchestrator executes.
+- **The orchestrator runs every test command.** The writer writes, the lenses propose, and
+  the judge compares — its one command is a read-only `git diff`. Nothing but the
+  orchestrator runs a test, a filter, or a gate.
+- **The judge returns; the orchestrator writes.** The judge holds no `Write` or `Edit`,
+  and an invalid return is rejected whole, per [the judge](#the-judge).
+- **A judge failure never stops a producer.** The document stands as synthesized, and
+  `judged:` says why.
 - **The roster is fixed and lives here.** Never re-enumerate the lenses, the synthesizer,
-  or the writer in a caller — cite [the roster](#the-roster).
+  the judge, or the writer in a caller — cite [the roster](#the-roster).
 - **Persist raw lens output to scratch before dispatching**, and delete it only after the
   document verifies — never on the fallback path, which reads from it.
 - **Never claim a document was written until it verifies.** Confirm it exists, carries the
@@ -1017,7 +1251,8 @@ happened.
   runs the suite once, off `/ship`'s push.
 - **Breadth-first: every test reaches pass before any reruns.** The phase clock cuts only
   reruns; a test that never passed is discarded as `timeout`, never shipped.
-- **Nothing is capped.** Not `auto`, not the revise bucket.
+- **Nothing is capped.** Not `auto`, not the revise bucket; the judge cuts by rule, never
+  to a count.
 - **The revise verdict is the blast-radius lens's.** The synthesizer formats it; the spec
   lens never sees the work doc.
 - **Every kept test names its case.** Without its `T-NNN`, receipts and resume cannot
@@ -1025,7 +1260,7 @@ happened.
 - **Receipts, never "tests pass."** The command, the exit code, the counts from real
   runner output, the reruns, and the discards.
 - **A discarded test leaves its case `untested`.** It never ran, so it never failed.
-- **A cut case is out of every run.** A case whose `**Walk:**` begins `cut` is never
-  written, run, presented, or counted.
+- **A cut case is out of every run.** A case whose `**Walk:**` or `**Judge:**` line begins
+  `cut` is never written, run, presented, or counted.
 - **Zero cases in a mode is success.** Report it and move on.
 - **Every terminal outcome stamps**, including one that ran nothing.
