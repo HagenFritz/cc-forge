@@ -44,7 +44,7 @@ Read `cc-forge.local.md` in the project root. If found, use `review_agents` from
 
 If no settings file exists, use the default agent set (correctness, reliability, learnings-researcher) plus conditional agents (adversarial on large/sensitive diffs).
 
-Follow [the review-protocol spec](../review-protocol/SKILL.md#briefing-the-reviewers) — it owns the sentence every code reviewer this skill dispatches is handed, verbatim: the roster loop in either mode, the always-last list, the conditional adversarial reviewer, and section 4's code-simplicity reviewer. The learnings researcher is not sent it.
+Every code reviewer this skill dispatches is briefed per [the review-protocol spec](../review-protocol/SKILL.md#briefing-the-reviewers).
 
 #### Choose Execution Mode
 
@@ -210,7 +210,7 @@ Complete system context map with component interactions
 
 ### 4. Simplification and Minimalism Review
 
-Run the Task forge:review:code-simplicity-reviewer() to see if we can simplify the code. Hand it [the spec's reviewer brief](../review-protocol/SKILL.md#briefing-the-reviewers), verbatim.
+Run the Task forge:review:code-simplicity-reviewer() to see if we can simplify the code.
 
 ### 5. Findings Synthesis and Review Document
 

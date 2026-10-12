@@ -273,10 +273,10 @@ been edited yet.
   correctly", "add validation", "consider refactoring") is not actionable unattended: surface with
   `vague fix`.
 
-- **No test code.** The sweep writes no tests. A finding whose fix would change only test code —
-  its `Fix:` is to add or edit a test, or every path it cites is test code (a test, a fixture, a
-  test helper) — surfaces with `test-only fix` and is never set `in-progress`. A `Fix:` that names
-  a test alongside a code change proceeds; 3f lands its code half.
+- **No test code.** The sweep writes no tests. A finding whose `Fix:` adds or edits test code, on
+  its own or alongside a code change, surfaces with `test-only fix` and is never set
+  `in-progress` — no code lands ahead of its test. Test code is as
+  [the reviewer brief](../review-protocol/SKILL.md#briefing-the-reviewers) defines it.
 
 ### 3f. Implement
 
@@ -294,10 +294,7 @@ In this order, no step skipped:
    scratchpad. This patch contains any earlier finding's fixes in the same files — which is exactly
    what makes a revert here safe for them.
 3. **Edit the code**, and only the code the `Fix:` describes. Do not extend the fix, do not tidy
-   nearby code, do not rename anything the finding did not name. When the `Fix:` also names a
-   test, only its code half lands and the test stays unwritten; a finding left with nothing to
-   edit once the test is set aside goes back to `open` with the 3e gate's token instead of
-   reaching `done`.
+   nearby code, do not rename anything the finding did not name.
 4. **Scope self-check (R4).** `git status --porcelain` again, compared against the dirty baseline ∪
    the touched set ∪ this finding's cited paths. The touched set is what keeps this exact once a
    second finding is implemented: files an earlier `done` finding edited are in neither the baseline
@@ -324,8 +321,7 @@ In this order, no step skipped:
    [`/review-walk`'s reason-line rule](../review-walk/SKILL.md) — it sits beside the same anchors
    every parser keys on, and this line is model prose rather than the user's. **It is never
    empty**: a one-token diff still gets a clause (`implemented — removed the fallback branch`),
-   never a bare `implemented` and never a dangling dash. When the `Fix:` named a test the sweep
-   did not write, the text opens with the fixed phrase the `implemented` row in step 4 gives.
+   never a bare `implemented` and never a dangling dash.
 
    **Write both lines in a single `Edit` call, never two.** A run killed between a `done` status
    and its signature would leave a fix that triage condition 1 skips forever and that no later
@@ -412,9 +408,9 @@ line has two plausible splits and neither reader nor script can tell which is ri
 | `sensitive path: <path>` | A cited path is a migration, a CI workflow, or a `.yaml`/`.yml`/`.tf` file; the sweep did not read the code. | Read it and decide — an unattended edit here has too large a blast radius. |
 | `overlaps surfaced P1-<N>` | A cited file also holds a P1 that was surfaced, not fixed. | Settle P1-`<N>` first; then this one is likely trivial. |
 | `depends on: <id>` | Its fix needs finding `<id>`'s fix first, and that one did not land. | Settle `<id>` first; then this one is likely trivial. |
-| `test-only fix` | The fix is test code, which the sweep never writes. Nothing was edited. | Decide it in the walk, or leave it to the test plan. |
+| `test-only fix` | The fix adds or edits test code, which the sweep never writes. Nothing was edited, including any code change the fix paired with the test. | Decide it in the walk, or re-run `/test-plan` if it matters. |
 | `interrupted` | A previous sweep run died mid-fix on this finding. | Check the working tree for a half-applied edit before doing anything else. |
-| `implemented — <what changed>` | The fix landed (`done`); the sweep made this edit. The free text is required here, however small the change. When the `Fix:` named a test the sweep did not write, the free text opens with `named test not written` and a comma, never a second em dash: `implemented — named test not written, <what changed>`. | Read the diff. It is uncommitted and in the working tree. |
+| `implemented — <what changed>` | The fix landed (`done`); the sweep made this edit. The free text is required here, however small the change. | Read the diff. It is uncommitted and in the working tree. |
 | `wont-fix — misread` | The sweep read the code and closed the finding out (`wont-fix`); the `Skip reason:` line below says what the code actually does. | Check the call if you doubt it; otherwise nothing. |
 | `wont-fix — protected-artifact` | The sweep closed the finding out (`wont-fix`) because its fix would delete or gitignore a protected path. | Nothing — the rule is absolute. |
 
@@ -475,10 +471,9 @@ members.
    any finding flipped from `in-progress` to `interrupted`.
 
 3. **Implemented** (`done`). Per finding: id and title; the files **actually touched**, read from
-   `git status --porcelain` and the diff rather than from `File(s):`; the test the `Fix:` named and
-   the sweep did not write, when there is one; and one plain sentence of what changed. Write that
-   sentence in what-changed terms drawn from the `Fix:` intent and the real diff hunk — not a paste
-   of the reviewer's problem statement.
+   `git status --porcelain` and the diff rather than from `File(s):`; and one plain sentence of what
+   changed. Write that sentence in what-changed terms drawn from the `Fix:` intent and the real diff
+   hunk — not a paste of the reviewer's problem statement.
 
 4. **`wont-fix`.** Per finding: id, title, and the reason, labelled as **misread** or
    **protected-artifact**. The two are different claims and the report keeps them apart.
@@ -562,7 +557,6 @@ gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
   files, no issues filed, the stamp the only GitHub write. In addition: no `git stash`, no
   `git checkout` of a path the sweep did not itself edit this run, and no branch or history
   operation of any kind.
-- **Never write or edit a test.** The gate in 3e owns the rule and its one surface reason.
 - **Every revert is patch-based.** Restore, then re-apply the saved patch. A bare `git checkout --`
   on a shared file would take an earlier finding's fix with it, and a `git stash pop` conflict is
   the one failure mode that can lose the user's work outright.

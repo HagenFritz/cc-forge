@@ -117,7 +117,7 @@ After the last slice, dispatch the observer once in [`wrap-up` mode](../work-pro
 ### 4. Review
 
 - **Roster:** `review_agents` from `cc-forge.local.md` when present, else [`/deep-review`'s default set](../deep-review/SKILL.md#load-review-agents) plus [its conditional agents](../deep-review/SKILL.md#conditional-agents-run-if-applicable) and `forge:review:code-simplicity-reviewer`.
-- **Each agent's brief:** the branch diff (`git -C <worktree> diff origin/<default-branch>...HEAD`), the units this phase built, the repo's `CLAUDE.md`, [the spec's reviewer brief](../review-protocol/SKILL.md#briefing-the-reviewers), verbatim — the learnings researcher is not sent it — and the return contract: findings with severity `P1`/`P2`/`P3`, file:line, one-sentence description, and an overall verdict. Run them in parallel.
+- **Each agent's brief:** the branch diff (`git -C <worktree> diff origin/<default-branch>...HEAD`), the units this phase built, the repo's `CLAUDE.md`, [the spec's reviewer brief](../review-protocol/SKILL.md#briefing-the-reviewers), verbatim, and the return contract: findings with severity `P1`/`P2`/`P3`, file:line, one-sentence description, and an overall verdict. Run them in parallel.
 - **Synthesize and verify** per [the review-protocol spec](../review-protocol/SKILL.md) — [scratch](../review-protocol/SKILL.md#the-raw-findings-scratch-contract), [synthesizer](../review-protocol/SKILL.md#dispatching-the-synthesizer), [count check](../review-protocol/SKILL.md#sanity-checking-the-returned-counts), [verification](../review-protocol/SKILL.md#verifying-the-review-document). Pass the branch as the target (no PR exists yet) and the primary checkout's absolute `docs/reviews/`. A clean review skips to step 6. A count shortfall or no verified doc → stop the run.
 - **Stamp** per [the spec](../review-protocol/SKILL.md#the-review-written-stamp):
 
@@ -134,7 +134,7 @@ After the last slice, dispatch the observer once in [`wrap-up` mode](../work-pro
 | Verdict | Use when | Write |
 |---------|----------|-------|
 | **Accept** | The finding is real and fixable in this phase's files, whatever its priority. | `Status: in-progress` |
-| **Reject** | The reviewer misread the code, the behavior is intended by the plan, or the fix contradicts the plan's decisions or scope. Not "low priority". | `Status: wont-fix` + a `Skip reason:` in [`/review-walk`'s format](../review-walk/SKILL.md#skip-reason-format) |
+| **Reject** | The reviewer misread the code, the behavior is intended by the plan, the fix contradicts the plan's decisions or scope, or the fix is only test code (`by-design` — this run writes no tests). Not "low priority". | `Status: wont-fix` + a `Skip reason:` in [`/review-walk`'s format](../review-walk/SKILL.md#skip-reason-format) |
 | **Defer** | The fix belongs to code this phase does not own, or needs its own plan. | `Status: deferred` + `Defer reason: <code> — <text>`, code one of `bigger-than-scoped`, `blocked-on`, `needs-decision`, `follow-up-pr` |
 
 A P1 may be rejected only as `misread` or `by-design`, and deferred only as `bigger-than-scoped`; otherwise it is accepted. Directly under each finding's `Status:` line write `**Grind:** <accepted | rejected | deferred> — <one line why>`. Never file an issue for a deferred finding.
