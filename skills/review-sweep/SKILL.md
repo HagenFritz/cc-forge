@@ -247,15 +247,12 @@ The rows below implement. Everything else surfaces.
 |--------|------|-----------|----------|------------|
 | Small | any | `high` | any | Yes |
 | Small | P1 or P2 | `medium` | any | Yes |
-| Medium | P1 or P2 | `high` | not `testing`, not `architecture` | Yes |
+| Medium | P1 or P2 | `high` | not `architecture` | Yes |
 
-A Medium-effort P1/P2 finding at high confidence whose `Category:` is `testing` or `architecture`
-is surfaced with `excluded category: <category>`. It stays `open` — not `wont-fix`, not
-`deferred` — so `/review-walk` presents it for a deliberate decision. Those two categories are
-where a Medium fix means authoring test infrastructure or changing deploy and workflow structure —
-in the same 1,278-finding corpus cited above, those two categories were declined far more often
-than any other kind of finding, and again the signal is almost entirely `ai-agents`. The sweep
-never lands either unattended.
+A Medium-effort P1/P2 finding at high confidence whose `Category:` is `architecture` is surfaced
+with `excluded category: architecture`. It stays `open` — not `wont-fix`, not `deferred` — so
+`/review-walk` presents it for a deliberate decision. A Medium fix in that category means changing
+deploy and workflow structure, and the sweep never lands one unattended.
 
 A **Small** finding at P3 whose confidence is `medium` is surfaced with `unverified at P3`. It was
 excluded on confidence, not on size — the sweep lands `medium` only at P1 or P2 — so it never
@@ -268,7 +265,7 @@ was read and the problem confirmed. It is a judgment that the fix is too big to 
 
 ### 3e. Preconditions, checked before `in-progress`
 
-All three are gates on a finding that passed 3d. A failure here surfaces the finding; nothing has
+Both are gates on a finding that passed 3d. A failure here surfaces the finding; nothing has
 been edited yet.
 
 - **Concrete `Fix:` (R4).** The `Fix:` text must name the change — the function, the call site, the
@@ -276,29 +273,18 @@ been edited yet.
   correctly", "add validation", "consider refactoring") is not actionable unattended: surface with
   `vague fix`.
 
-- **Testing findings (R5).** A finding whose `Category:` is `testing`, or whose fix is to add test
-  code, is implemented **only** when all of these hold — otherwise surface with `test precondition`:
-  - `Confidence:` is `high`;
-  - the test lands in a test file or fixture that **already exists** (the sweep creates no files —
-    see step 4);
-  - the test is one of three shapes: a **regression test for a bug this run fixed**; a test of
-    **behavior at a public boundary**; or a test of a **caller-visible outcome branch**.
-
-  Anything else — a test of a private helper, a restatement of the implementation, a coverage
-  filler — surfaces. Tests that assert how code is written rather than what it does are the ones
-  that break on every refactor and teach the suite to be ignored.
-
-- **No unprompted tests (R6).** A code fix carries a test **only when its own `Fix:` text names
-  one.** The sweep never adds a test on its own initiative alongside a fix. When a `Fix:` does name
-  a test, that test is still subject to the R5 preconditions above.
+- **No test code.** The sweep writes no tests. A finding whose `Fix:` adds or edits test code, on
+  its own or alongside a code change, surfaces with `test-only fix` and is never set
+  `in-progress` — no code lands ahead of its test. Test code is as
+  [the reviewer brief](../review-protocol/SKILL.md#briefing-the-reviewers) defines it.
 
 ### 3f. Implement
 
 The **touched set** is the run's own footprint: the union of the cited paths of every finding that
-has reached `done` this run, plus any test file an R5/R6 test landed in. It starts empty, and a
-finding's paths join it at the moment that finding is set `done` — never earlier, so a reverted
-finding contributes nothing. It is the sweep's edits and only the sweep's edits, which is what makes the scope self-check in
-3f.4 exact and the run report's file list honest.
+has reached `done` this run. It starts empty, and a finding's paths join it at the moment that
+finding is set `done` — never earlier, so a reverted finding contributes nothing. It is the sweep's
+edits and only the sweep's edits, which is what makes the scope self-check in 3f.4 exact and the run
+report's file list honest.
 
 In this order, no step skipped:
 
@@ -309,13 +295,13 @@ In this order, no step skipped:
    what makes a revert here safe for them.
 3. **Edit the code**, and only the code the `Fix:` describes. Do not extend the fix, do not tidy
    nearby code, do not rename anything the finding did not name.
-4. **Scope self-check (R4).** `git status --porcelain` again, compared against the dirty baseline
-   ∪ the touched set ∪ this finding's cited paths (plus the test file when R5/R6 applied). The
-   touched set is what keeps this exact once a second finding is implemented: files an earlier
-   `done` finding edited are in neither the baseline nor this finding's citation, and without it
-   they would read as extras and trip a false revert. **Any path outside that union is a
-   tripwire** — including a new untracked file, since the sweep creates none. A tripwire means the
-   fix reached past its citation and the finding was not the small, bounded thing it looked like.
+4. **Scope self-check (R4).** `git status --porcelain` again, compared against the dirty baseline ∪
+   the touched set ∪ this finding's cited paths. The touched set is what keeps this exact once a
+   second finding is implemented: files an earlier `done` finding edited are in neither the baseline
+   nor this finding's citation, and without it they would read as extras and trip a false revert.
+   **Any path outside that union is a tripwire** — including a new untracked file, since the sweep
+   creates none. A tripwire means the fix reached past its citation and the finding was not the
+   small, bounded thing it looked like.
 5. **On a tripwire: revert, then surface.** Restore the finding's cited paths
    (`git checkout -- <paths>`), re-apply the saved patch (`git apply <patch>`), and delete any
    untracked file the edit created. Then restore the tracked paths the self-check flagged as
@@ -414,7 +400,7 @@ line has two plausible splits and neither reader nor script can tell which is ri
 | `low confidence` | The reviewer flagged low confidence; the sweep did not read the code. | Read it and decide — it may well be noise. |
 | `outside the sweep rule` | Real, confirmed in the code, too large to land unattended. | Fix it deliberately; it is a genuine finding. |
 | `unverified at P3` | Real, confirmed in the code, and **small** — but the reviewer's confidence was `medium` and the sweep lands `medium` only at P1 or P2. Nothing about it is large. | Glance at it and apply it if you agree; these are usually seconds of work. |
-| `excluded category: <testing\|architecture>` | Real, confirmed in the code, Medium effort at P1/P2 with high confidence — but a test-infrastructure or structural change the sweep never lands unattended. | Decide it in the walk: implement, defer, or won't-fix. The sweep took no position. |
+| `excluded category: architecture` | Real, confirmed in the code, Medium effort at P1/P2 with high confidence — but a structural change the sweep never lands unattended. | Decide it in the walk: implement, defer, or won't-fix. The sweep took no position. |
 | `vague fix` | The problem is real; the `Fix:` text does not say what to change. | Decide the fix yourself, then apply it. |
 | `uncited file` | The fix could not be made without touching a file the finding never cited; the edit was reverted. | Look at what the fix really requires — the scope is bigger than the finding claims. |
 | `dirty file: <path>` | A cited file already had uncommitted changes before the run. | Commit or stash your work, then re-run the sweep or fix it by hand. |
@@ -422,7 +408,7 @@ line has two plausible splits and neither reader nor script can tell which is ri
 | `sensitive path: <path>` | A cited path is a migration, a CI workflow, or a `.yaml`/`.yml`/`.tf` file; the sweep did not read the code. | Read it and decide — an unattended edit here has too large a blast radius. |
 | `overlaps surfaced P1-<N>` | A cited file also holds a P1 that was surfaced, not fixed. | Settle P1-`<N>` first; then this one is likely trivial. |
 | `depends on: <id>` | Its fix needs finding `<id>`'s fix first, and that one did not land. | Settle `<id>` first; then this one is likely trivial. |
-| `test precondition` | A testing finding failed the R5 shape check or names a test file that does not exist. | Write the test yourself, or decide it is not worth writing. |
+| `test-only fix` | The fix adds or edits test code, which the sweep never writes. Nothing was edited, including any code change the fix paired with the test. | Decide it in the walk, or re-run `/test-plan` if it matters. |
 | `interrupted` | A previous sweep run died mid-fix on this finding. | Check the working tree for a half-applied edit before doing anything else. |
 | `implemented — <what changed>` | The fix landed (`done`); the sweep made this edit. The free text is required here, however small the change. | Read the diff. It is uncommitted and in the working tree. |
 | `wont-fix — misread` | The sweep read the code and closed the finding out (`wont-fix`); the `Skip reason:` line below says what the code actually does. | Check the call if you doubt it; otherwise nothing. |
@@ -485,10 +471,9 @@ members.
    any finding flipped from `in-progress` to `interrupted`.
 
 3. **Implemented** (`done`). Per finding: id and title; the files **actually touched**, read from
-   `git status --porcelain` and the diff rather than from `File(s):`; the test added and the file it
-   landed in, when R5/R6 applied; and one plain sentence of what changed. Write that sentence in
-   what-changed terms drawn from the `Fix:` intent and the real diff hunk — not a paste of the
-   reviewer's problem statement.
+   `git status --porcelain` and the diff rather than from `File(s):`; and one plain sentence of what
+   changed. Write that sentence in what-changed terms drawn from the `Fix:` intent and the real diff
+   hunk — not a paste of the reviewer's problem statement.
 
 4. **`wont-fix`.** Per finding: id, title, and the reason, labelled as **misread** or
    **protected-artifact**. The two are different claims and the report keeps them apart.

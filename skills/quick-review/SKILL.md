@@ -72,7 +72,7 @@ Task forge:review:code-simplicity-reviewer(diff content) - Identify YAGNI violat
 
 #### The dominance rule
 
-**Dominant means the most files changed, not the most lines changed.** Count the changed files in each extension group; the group with the largest file count wins. A tie between a matching group and any other group breaks toward running the language reviewer.
+**Dominant means the most files changed, not the most lines changed.** Count the changed files in each extension group, leaving out test code as [the reviewer brief](../review-protocol/SKILL.md#briefing-the-reviewers) defines it; the group with the largest file count wins. A tie between a matching group and any other group breaks toward running the language reviewer.
 
 Lines changed is deliberately not the measure — a single large generated, vendored, or lockfile-shaped file would otherwise pick the wrong reviewer for a diff whose real substance is elsewhere.
 
@@ -85,7 +85,7 @@ Worked examples:
 
 **Never substitute a mismatched reviewer to keep the count at three.** A missing language match means two agents ran, and the report says so.
 
-Dispatch the selected agents in parallel. There is no serial mode.
+Dispatch the selected agents in parallel. Hand each [the spec's reviewer brief](../review-protocol/SKILL.md#briefing-the-reviewers), verbatim. There is no serial mode.
 
 ### 4. Findings Synthesis and Review Document
 

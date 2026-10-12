@@ -1,5 +1,7 @@
 # Dashboard
 
+> **Deprecated: replaced by attn** (`/Users/hfritz/Misc/attn`, launcher `~/.local/bin/attn`). attn carries the session table, VM listener and Haiku summaries forward and adds time tracking. It binds the same ports (45800/45801) and reads the same `~/.claude/.dash-token`, so ccdash and attn cannot run together, and the emitter hook plus the devbox wiring below stay as they are. `dash.js` is kept until Dr. Fritz deletes it; no new work goes here.
+
 Live terminal dashboard for monitoring Claude Code sessions across projects. A single self-contained script (`dash.js`) using only Node stdlib modules (Node >= 22 required). Not plugin-loaded — run by hand in its own terminal tab.
 
 ## Install

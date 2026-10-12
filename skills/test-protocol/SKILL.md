@@ -822,9 +822,8 @@ Case IDs are what tie a test on disk to its case, which is why
 
 The writer puts the case ID (`T-NNN`) in each test's name or docstring; a folded case's
 parametrized test carries its one ID, with the rows as parameter ids. That is how
-receipts map a runner's output back to cases, how a re-run knows which cases already have
-a test on disk, and how the test-coverage reviewer tells a spec-sourced test from a
-diff-sourced one. A test with no case ID is not resumable.
+receipts map a runner's output back to cases, and how a re-run knows which cases already
+have a test on disk. A test with no case ID is not resumable.
 
 ## Presenting a case
 

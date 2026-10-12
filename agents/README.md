@@ -75,7 +75,6 @@ Several were ported from [EveryInc/compound-engineering-plugin](https://github.c
 | `correctness-auditor` | Logic bugs, broken contracts, off-by-one, branching, return values | deep-review |
 | `reliability-engineer` | Error handling, retries, timeouts, partial failure, background-job robustness | deep-review |
 | `adversarial-reviewer` | Abuse cases, race conditions, cascade failures (≥50 lines or sensitive ops) | deep-review |
-| `test-coverage-reviewer` | Missing cases, weak assertions, untested branches, flaky patterns in shipped tests | deep-review |
 | `pattern-recognition-specialist` | Design patterns, anti-patterns, naming, duplication | compound, blueprint-deepen |
 | `code-simplicity-reviewer` | Final pass — YAGNI violations, simplification opportunities | deep-review, compound |
 | `review-synthesizer` | Consolidates all reviewer findings into the `docs/reviews/` document (dedupe, severity, fix dependencies) | deep-review |
@@ -102,7 +101,7 @@ Several were ported from [EveryInc/compound-engineering-plugin](https://github.c
 
 ## How `/deep-review` selects reviewers
 
-`/deep-review` does **not** hard-code its review roster. It reads `review_agents` from each project's `cc-forge.local.md` frontmatter, plus an always-run set (correctness, reliability, test-coverage, learnings-researcher) and conditional ones (adversarial on large/sensitive diffs). The `python-reviewer` / `typescript-reviewer` agents are opt-in: a project lists them only if it's a Python/TS codebase. Pick the matching `-python` or `-typescript` variant of the security/performance reviewers per the project's stack.
+`/deep-review` does **not** hard-code its review roster. It reads `review_agents` from each project's `cc-forge.local.md` frontmatter, plus an always-run set (correctness, reliability, learnings-researcher) and conditional ones (adversarial on large/sensitive diffs). The `python-reviewer` / `typescript-reviewer` agents are opt-in: a project lists them only if it's a Python/TS codebase. Pick the matching `-python` or `-typescript` variant of the security/performance reviewers per the project's stack.
 
 Synthesis is delegated to `review-synthesizer` — always-run infrastructure dispatched after the reviewers finish, never listed in `review_agents`. It owns the review-doc template and writes the document itself.
 

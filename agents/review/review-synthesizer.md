@@ -35,7 +35,7 @@ Sanitize the slug before using it in any filename: lowercase it, replace every c
 
 ### 1. Category Vocabulary
 
-Pick exactly one per finding: `security` (auth, authz, secrets, injection, sensitive data) · `correctness` (logic bugs, wrong behavior, broken contracts) · `performance` (N+1s, hot paths, memory, latency) · `architecture` (boundary violations, layering, coupling, abstractions) · `duplication` (copy-paste, near-duplicate logic, missing reuse) · `maintainability` (naming, readability, complexity, dead code) · `testing` (missing coverage, weak assertions, flaky tests) · `docs` (missing or wrong documentation, comments, READMEs).
+Pick exactly one per finding: `security` (auth, authz, secrets, injection, sensitive data) · `correctness` (logic bugs, wrong behavior, broken contracts) · `performance` (N+1s, hot paths, memory, latency) · `architecture` (boundary violations, layering, coupling, abstractions) · `duplication` (copy-paste, near-duplicate logic, missing reuse) · `maintainability` (naming, readability, complexity, dead code) · `docs` (missing or wrong documentation, comments, READMEs).
 
 ### 2. Confidence Vocabulary
 
@@ -87,7 +87,7 @@ date: YYYY-MM-DD
 
 **Status:** `open` <!-- open | in-progress | done | deferred | wont-fix -->
 
-**Category:** [one of: security | correctness | performance | architecture | duplication | maintainability | testing | docs]
+**Category:** [one of: security | correctness | performance | architecture | duplication | maintainability | docs]
 
 **Raised by:** [agent-name, agent-name — every agent whose report contained this finding; e.g. `correctness-auditor, adversarial-reviewer` or `correctness-auditor, unattributed`]
 
