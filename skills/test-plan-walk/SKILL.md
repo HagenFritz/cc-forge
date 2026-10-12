@@ -4,12 +4,12 @@ description: >
   Walk through a test plan interactively, one T-NNN case at a time, before any test runs.
   Reads a docs/tests/*.md document produced by /test-plan or /grind, renders each case as
   a compact card (mode, source, viability, keep rule, what it asserts, why it was kept,
-  the kind of test it is, and a recommendation computed when the walk reaches it), then
-  takes keep / explain / cut / add term — or free text. Cut records one of nine coded
-  reasons. A `**Walk:**` line is written directly under each case's
-  heading so progress is durable and resumable. Triggers on phrases like "walk the test
-  plan", "which tests can we cut", "review the test plan with me", "test-plan-walk", or
-  passing a path to a docs/tests/*.md file.
+  what the judge said, the kind of test it is, and a recommendation computed when the walk
+  reaches it), then takes keep / explain / cut / add term — or free text. Cut records one
+  of nine coded reasons. A case the judge cut is never walked. A `**Walk:**` line is
+  written directly under each case's heading so progress is durable and resumable.
+  Triggers on phrases like "walk the test plan", "which tests can we cut", "review the
+  test plan with me", "test-plan-walk", or passing a path to a docs/tests/*.md file.
 user-invocable: true
 argument-hint: "[path to docs/tests/*.md]"
 allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Skill
@@ -18,7 +18,8 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Skill
 # Test Plan Walk
 
 Step a human through a test plan one `T-NNN` case at a time and record a verdict on each:
-keep it, or cut it with a coded reason. The test document is the source of truth — the
+keep it, or cut it with a coded reason. A case the judge already cut is not walked. The
+test document is the source of truth — the
 `**Walk:**` lines live in the doc, so walks resume cleanly across sessions, and a walked
 doc is the record later mining reads to tighten `/test-plan`.
 
@@ -27,6 +28,7 @@ nothing. It follows [the walk-protocol spec](../walk-protocol/SKILL.md) for orde
 the action self-loop contract, anchoring, claim-first, term capture, the summary, and the
 stamp, and [the test-protocol spec](../test-protocol/SKILL.md) for the document format —
 the case block, [the `**Walk:**` grammar](../test-protocol/SKILL.md#the-walk-line),
+[the `**Judge:**` line](../test-protocol/SKILL.md#the-judge-line),
 and [the cut-case rule](../test-protocol/SKILL.md#the-five-status-values). Only what is specific to walking a test plan is written here.
 
 It slots between `/test-plan` and `/test-plan-run` and is optional: an unwalked doc runs
@@ -55,9 +57,13 @@ number.
    resolved doc. A mismatch stops before any write, naming both values.
 4. Parse every `### T-<NNN>:` block. **Zero `T-NNN` cases** (an empty or revise-only doc)
    → "No `T-NNN` cases in `<path>` — nothing to walk." and exit with no writes and no
-   stamp.
+   stamp. **Every `T-NNN` case cut by the judge** exits the same way, with its own line:
+   "Every `T-NNN` case in `<path>` was cut by the judge — nothing left to walk."
 
-`### V-<NNN>:` blocks and the `## Drop List` are never walked, rendered, or edited.
+`### V-<NNN>:` blocks, the `## Drop List`, and judge-cut cases are never walked, rendered,
+or edited. A **judge-cut case** is a `T-NNN` case whose `**Judge:**` line begins `cut`, per
+[the spec](../test-protocol/SKILL.md#the-judge-line). A doc with no `**Judge:**` line has
+none, and walks as it always has.
 
 ## Step 2: Find the Resume Point
 
@@ -66,7 +72,11 @@ Per [walk-protocol resume](../walk-protocol/SKILL.md#resume). The claimed state 
 line is non-terminal. Walk order is `T-NNN` in document order, per
 [walk order](../walk-protocol/SKILL.md#walk-order).
 
-Every case terminal → print the summary per Step 7, then exit without stamping.
+**The walk's items are the `T-NNN` cases the judge did not cut.** A case whose
+`**Judge:**` line begins `cut` is never walked, rendered, or counted in `N cases`. It is
+not a resume state, whatever `**Walk:**` line it carries, and it gains no `**Walk:**` line.
+
+Every item terminal → print the summary per Step 7, then exit without stamping.
 
 Open with one line — `Walking <path>: N cases, n remaining.` — then read the diff (Step 3)
 and render the first card.
@@ -96,7 +106,9 @@ Computed when the walk reaches the case — never in an up-front pass. Its input
 - a grep of the existing tests, so `duplicates existing` and
   `library already guarantees it` are reachable;
 - every `**Walk:**` verdict already in this doc, so a case an earlier `duplicates case`
-  cut named is judged with that in view.
+  cut named is judged with that in view;
+- the doc's `**Judge:**` lines — this case's own, and every judge cut whose text names
+  this case as the one standing in its place.
 
 The call is `keep` or `cut — <code>`, using [the cut codes](#the-cut-codes). It is shown on
 the card and never written to the doc.
@@ -114,6 +126,7 @@ Before the card renders, write `**Walk:** pending`, per
 <mode> · <source> · <viability> · keep rule: <label>
 Asserts: <one sentence>
 Why: <one sentence>
+Judge: <one sentence>
 Concept: <one sentence>
 Recommendation: <keep | cut — <code>>: <why>
 
@@ -131,6 +144,8 @@ Rules per line:
   from the doc without their backticks. A field the doc lacks is left out of the line.
 - **Asserts** — what the test checks, written from `**Steps:**` and `**Expected result:**`.
 - **Why** — written from the case's `**Why:**` field. Omitted when the doc has none.
+- **Judge** — written from the text of the case's `**Judge:** keep` line. Omitted when the
+  case has no `**Judge:**` line.
 - **Concept** — the kind of test this is, said the way you would tell a colleague without
   pointing at the code: "a contract test: it pins what callers may rely on, not how the
   function gets there", "a regression guard: it fails if an old bug comes back". Never
@@ -141,8 +156,8 @@ Rules per line:
 
 **Every summary sentence on the card follows [`/tldr`'s rules](../tldr/SKILL.md) with
 N = 1.** Identifiers, error strings, and file paths stay exact. A field missing from the
-doc — a pre-`Keep rule:` doc, a case with no `**Why:**` — is omitted, never fabricated, and
-the walk proceeds.
+doc — a pre-`Keep rule:` doc, a case with no `**Why:**`, a doc that was never judged — is
+omitted, never fabricated, and the walk proceeds.
 
 Then stop and wait for the reply.
 
@@ -179,19 +194,30 @@ Why cut?
 The answer is a number or the full code, then the note: `3 tests/test_auth.py covers it`,
 `7 T-012 same assertion`. **The note is required** — a code with no note gets a one-line
 ask for it. A reply that starts with none of the nine re-shows the picker; never guess a
-code from prose, and there is no `other`.
+code from prose, and there is no `other`. The `T-NNN` in a `duplicates case` note must be
+a case in this doc that is not cut, by the judge or by the walk; one that is gets a
+one-line ask for a case still standing.
 
 Then write `**Walk:** cut — <code> — <note>`; `Status:` is left as it is. The
-note is the user's words, verbatim, collapsed to one line. Next card.
+note is the user's words, verbatim, collapsed to one line.
+
+**The orphan notice.** After that write, look for judge-cut cases whose line reads
+`**Judge:** cut — duplicates case — <this case's ID> …` — the first `T-NNN` in the text
+is this case, per [the spec](../test-protocol/SKILL.md#the-judge-line); an ID that appears
+only inside `(via …)` does not match. When any exist, print one line:
+
+```
+T-004 stood in for T-009 and T-011, cut by the judge — restore each on its **Judge:** line.
+```
+
+It is a notice, never a prompt: nothing is written and no reply is awaited. Next card.
 
 ### The cut codes
 
-Codes 1–6 are [the Drop List reasons](../test-protocol/SKILL.md#drop), spelled byte for
-byte: a cut with one means the synthesizer had the rule and missed it. Codes 7–9 are
-walk-only — a cut with one means the synthesizer lacks a rule: `duplicates case` (another
-case in this plan covers it; the note names the `T-NNN`), `implementation detail` (asserts
-how, not what; a refactor breaks it), and `not worth it` (real risk, too small for the
-test's cost).
+The picker and its numbers are the walk's. The nine codes and what each catches are
+[the spec's cut codes](../test-protocol/SKILL.md#the-cut-codes), spelled byte for byte.
+Codes 1–6 are [the Drop List reasons](../test-protocol/SKILL.md#drop): a cut with one
+means the synthesizer had the rule and missed it.
 
 ### Explain
 
@@ -219,10 +245,14 @@ inserts the line after the heading; a verdict rewrites it in place.
 ## Step 7: Finishing
 
 Per [the summary](../walk-protocol/SKILL.md#the-summary), re-read the doc and derive every
-count from the `**Walk:**` lines:
+count from the `**Walk:**` lines of the cases the judge did not cut:
 
-- **Buckets** — kept, cut, never reached (no `**Walk:**` line), left pending.
+- **Buckets** — kept, cut, never reached (no `**Walk:**` line), left pending. They sum to
+  the walk's items, so a judge-cut case is in none of them.
 - **Cut codes** — a count per code, one line, e.g. `duplicates existing ×3, not worth it ×1`.
+  The walk's cuts only.
+- **Cut by the judge** — the number of judge-cut cases, on its own line, e.g.
+  `Cut by the judge: 6 — not walked here`. Omitted when zero.
 - **Terms added**, as the spec defines it.
 
 Then stamp (§7a) when this session recorded at least one verdict — the already-complete
@@ -232,8 +262,8 @@ exit never stamps — and close with one line: `Next: /test-plan-run`.
 
 Per [the stamp](../walk-protocol/SKILL.md#the-stamp); issue-number resolution, posting,
 encoding, and failure posture are in [the issue-log spec](../issue-log/SKILL.md). Counts
-come from the summary. Compose the body, write it to a temp file with the Write tool, and
-post:
+come from the summary's buckets, so none includes a judge-cut case. Compose the body,
+write it to a temp file with the Write tool, and post:
 
 ```markdown
 <!-- cc-forge-log v1: {"skill":"test-plan-walk","event":"test-plan-walk-complete","paths":["docs/tests/<file>.md"]} -->
@@ -255,3 +285,5 @@ analysis source; the doc is.
 ## Rules
 
 - **Never read `docs/reviews/`.** The test and review families never read each other.
+- **Never walk a judge-cut case, and never edit a `**Judge:**` line.** Restoring a judge
+  cut is a hand edit, per [the spec](../test-protocol/SKILL.md#the-judge-line).
