@@ -3,9 +3,9 @@ name: review-protocol
 description: >
   Shared specification for the review skills — deep-review and quick-review. Owns the
   rules both reviews obey identically: review-target resolution, the protected-artifacts
-  rule, the synthesizer dispatch, the raw-findings scratch contract, review-document
-  verification, the completion report, and the review-written stamp's shared rules. Not
-  user-invocable; the reviews cite it and restate none of it.
+  rule, the reviewer brief rule, the synthesizer dispatch, the raw-findings scratch
+  contract, review-document verification, the completion report, and the review-written
+  stamp's shared rules. Not user-invocable; the reviews cite it and restate none of it.
 user-invocable: false
 disable-model-invocation: true
 ---
@@ -20,15 +20,23 @@ review document that the downstream consumers read:
 | [`deep-review`](../deep-review/SKILL.md) | configurable, plus conditional agents | `docs/reviews/*.md` |
 | [`quick-review`](../quick-review/SKILL.md) | fixed, small | `docs/reviews/*.md` |
 
+`/grind`'s review step cites this spec's sections without being a row: it is one step of a
+build, not a review skill, and where it cites a section it stands as the invoking skill.
+
 This file is the single source of truth for every rule that applies to both of them.
 Review skills embed only their own depth-specific prose — which agents run, how they are
 selected and dispatched, how much thinking each phase gets, what happens after the
 report, and their own filled stamp template — and reference this spec for everything
-below. **Never restate a rule from this file inside a review skill**, not even
-paraphrased.
+below. What every code reviewer is told is not theirs: selection and dispatch stay with
+the skill, and the one sentence all of them carry is owned
+[here](#briefing-the-reviewers). **Never restate a rule from this file inside a review
+skill**, not even paraphrased.
 
 Throughout, **the invoking skill** means whichever review is running, and **review
-agent** means any agent that skill dispatched to produce findings.
+agent** means any agent that skill dispatched to produce findings. A **code reviewer** is
+a review agent that reads the change and reports findings on it. A research agent in the
+roster reads past solutions, not the change, and the synthesizer reviews nothing —
+neither is one.
 
 ## Prerequisites
 
@@ -77,6 +85,30 @@ review agent:
 If a review agent flags any file in these directories for cleanup or removal, the
 review-synthesizer discards that finding during synthesis — **always pass this list in
 its dispatch.**
+
+## Briefing the reviewers
+
+Every code reviewer is handed the sentence below, verbatim, as one value among its
+brief's others:
+
+```
+Ignore test files and test coverage; report no missing-test, weak-assertion, or test-quality finding, and no finding on test code; tests may be read as evidence about the code under review.
+```
+
+Testing has its own skills — `/test-plan`, `/test-plan-walk`, and `/test-plan-run` — so a
+testing finding in a review document is work a dedicated skill already owns.
+
+- **Who receives it:** every code reviewer the invoking skill dispatches, whichever
+  list, mode, or phase dispatches it.
+- **Who does not:** a research agent in the roster, which would otherwise skip past
+  solutions about test failures, and the synthesizer, which reports no findings of its
+  own.
+- **Reading is allowed, reporting is not.** A code reviewer may open a test to learn what
+  the code under review is meant to do. It reports nothing about the test itself.
+
+The invoking skill passes the sentence through unchanged — no paraphrase, and no
+run-specific clause appended. The brief is the only place this rule is applied: the
+synthesizer is handed nothing for it and discards nothing under it.
 
 ## The raw-findings scratch contract
 
@@ -277,6 +309,8 @@ prominently and ensure they're resolved before accepting the PR.
   that way belongs to the invoking skill.
 - **Always pass the protected-artifacts list** in the synthesizer's dispatch, and never
   let a finding against those paths survive into the document.
+- **Brief every code reviewer with the ignore-tests sentence, verbatim.** A research
+  agent and the synthesizer are not sent it, and tests stay readable as evidence.
 - **The synthesizer is always-run infrastructure.** Never list it in a review's agent
   roster, and never count it as one of the agents whose findings it synthesizes.
 - **Persist raw findings to scratch before dispatching.** The fallback reads from disk,
