@@ -4,20 +4,23 @@ description: >
   Produce a reviewable test plan for the current branch. Dispatches the three test
   lenses in parallel — spec (no file tools), blast-radius (full tools), surface (UI
   paths) — then hands their proposals to the test-synthesizer, which de-dupes, tags,
-  scores, and writes the document to docs/tests/ with its Drop List. Stops once
-  the document verifies; it runs nothing and writes no test files. Triggers on phrases
+  scores, and writes the document to docs/tests/ with its Drop List. Once the document
+  verifies, the test-judge compares the kept cases with each other, the diff, and the
+  existing tests, and each verdict is written into the document as a `**Judge:**` line —
+  a cut case stays in place with its coded reason. Then it stops; it runs nothing and
+  writes no test files. Triggers on phrases
   like "write a test plan", "plan the tests for this branch", "test-plan", or passing a
   path to the plan this branch implements.
 user-invocable: true
 argument-hint: "[path to docs/plans/*.md]"
-allowed-tools: Bash, Read, Write, Grep, Glob, Task
+allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Task
 ---
 
 # Test Plan — The Producer
 
 <command_purpose> Propose, filter, and record the test cases worth running for what changed on this branch, and stop for review. </command_purpose>
 
-`/test-plan` obeys [the test-protocol spec](../test-protocol/SKILL.md) and embeds only its own prose: origin discovery, how it builds the surface digest, its lens briefs, its filled stamp template, and its terminal summary. Every shared rule — the roster, what each lens may see, the keep and drop rules, the revise bucket, the scratch contract, the count check, document verification, the report's shape — lives in the spec and is cited, never restated.
+`/test-plan` obeys [the test-protocol spec](../test-protocol/SKILL.md) and embeds only its own prose: origin discovery, how it builds the surface digest, its lens briefs, its filled stamp template, and its terminal summary. Every shared rule — the roster, what each lens may see, the keep and drop rules, the revise bucket, the scratch contract, the count check, document verification, the judge, the report's shape — lives in the spec and is cited, never restated.
 
 It is the **producer** half of the pair. It writes the document and stops; `/test-plan-run` is what acts on it.
 
@@ -41,8 +44,8 @@ Split the argument into flags and a path: no flags are defined, so whatever rema
 
 Run these before anything is dispatched:
 
-- **Branch and repo root** — `git rev-parse --abbrev-ref HEAD` and `git rev-parse --show-toplevel`. The branch is the document's `target:` and the unsanitized slug; the root resolves `docs/tests/`.
-- **Default branch** — the diff base for the digest and the blast-radius lens.
+- **Branch and repo root** — `git rev-parse --abbrev-ref HEAD` and `git rev-parse --show-toplevel`. The branch is the document's `target:` and the unsanitized slug; the root resolves `docs/tests/` and is the directory the judge runs git in.
+- **Default branch** — the diff base for the digest, the blast-radius lens, and the judge.
 - **Origin documents** — the newest `docs/plans/*.md` whose frontmatter names this branch's issue or whose title matches the branch, and the brainstorm its `origin:` field names. An argument-supplied path skips this discovery.
 - **Work doc** — per [the work-protocol readers rule](../work-protocol/SKILL.md#readers): the newest `docs/work/*.md` whose `target:` matches this branch. No match, or no doc, means none is passed — never a stop.
 - **Linked issue and PR** — the issue number from the branch name, and `gh pr view --json number,body` for an open PR on this branch. Both are ladder rungs and the stamp's target.
@@ -124,15 +127,32 @@ The synthesizer is always-run infrastructure: never count it among the lenses an
 
 Follow [the spec's verification section](../test-protocol/SKILL.md#verifying-the-document) — it owns every structural and freshness check, re-reading the verified file as the report's source of truth, and the scratch deletion gated on those checks passing. A dispatch that fails, or a document that fails a check, goes to [the spec's inline fallback](../test-protocol/SKILL.md#inline-fallback).
 
-### 8. Report
+### 8. Judge the kept cases
 
-Emit [the spec's completion report](../test-protocol/SKILL.md#the-completion-report) with `Test plan written` as the heading, filled from the verified document's own sections — the case table from its `### T-<NNN>:` blocks plus a `revise` row from its `### V-<NNN>:` blocks, `Dropped` from its `## Drop List`, `Lenses` from its frontmatter plus the rung that fed the spec lens. `Receipts` is empty on a producer run and the heading is never omitted.
+Follow [the spec's judge section](../test-protocol/SKILL.md#the-judge) — it owns when the judge runs and when it does not, the dispatch block, [the rule](../test-protocol/SKILL.md#the-judges-rule), [the return](../test-protocol/SKILL.md#the-judges-return) and [the checks on it](../test-protocol/SKILL.md#checking-the-return), [the write order](../test-protocol/SKILL.md#writing-the-verdicts), [the `**Judge:**` line](../test-protocol/SKILL.md#the-judge-line), and the `judged:` key in [the frontmatter](../test-protocol/SKILL.md#frontmatter).
 
-**Read the counts; never assume a shape.** A document with zero surviving cases is a valid outcome — its Drop List is the whole of it — so the summary must hold up with no `### T-` or `### V-` block present.
+This skill's four values, in the dispatch block's order:
+
+```
+Task forge:test-plan:test-judge(
+  - the absolute path of the document step 7 verified
+  - the repo root from step 1
+  - the default branch from step 1
+  - the test conventions from step 4 — test directories, runner, existing test file names — or "no test directory"
+)
+```
+
+**This step never stops the run.** Whatever it ends in — a failed dispatch, a rejected return, a write that stopped partway — is handled by [the spec's judge-failure posture](../test-protocol/SKILL.md#judge-failure-posture), and the run goes on to steps 9 and 10.
+
+### 9. Report
+
+Emit [the spec's completion report](../test-protocol/SKILL.md#the-completion-report) with `Test plan written` as the heading, filled from the document's own sections as step 8 left it — the case table from its `### T-<NNN>:` blocks, counting no [cut case](../test-protocol/SKILL.md#the-five-status-values), plus a `revise` row from its `### V-<NNN>:` blocks, `Dropped` from its `## Drop List`, `Judge` from its `judged:` key and the `**Judge:** cut` lines actually present, `Lenses` from its frontmatter plus the rung that fed the spec lens. `Receipts` is empty on a producer run and the heading is never omitted.
+
+**Read the counts; never assume a shape.** A document with zero surviving cases is a valid outcome, by either road: the synthesizer kept none — its Drop List is the whole of it — or the judge cut every `T-NNN` case, which the report states plainly. The summary must hold up with no `### T-` or `### V-` block present, and with every `### T-` block cut.
 
 Close with [the spec's next-steps block](../test-protocol/SKILL.md#the-next-steps-block), which ends this skill at "review the document, walk it with `/test-plan-walk` if you want, then `/test-plan-run`."
 
-### 9. Stamp the linked issue
+### 10. Stamp the linked issue
 
 Follow [the spec's `test-plan-written` section](../test-protocol/SKILL.md#test-plan-written) — it owns when the stamp fires and the rule that a fallback-produced document posts none. Issue-number resolution (including the silent skip when none resolves), posting mechanics, marker encoding, and the never-fatal failure posture are [the issue-log spec's](../issue-log/SKILL.md).
 
@@ -146,6 +166,7 @@ Compose the body below, write it to a temp file with the Write tool, and post:
 **Doc:** `docs/tests/<filename>`
 **Cases:** <n> auto / <n> browser / <n> manual / <n> revise
 **Dropped:** <n>
+**Judge:** <cut <n> of <m> | not judged — <reason> | incomplete — <k> of <m> written>
 **Lenses:** <which contributed; any empty or failed>
 ```
 
@@ -156,5 +177,5 @@ gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
 ## What this skill never does
 
 - **It writes no test file and runs no test.** Both belong to `/test-plan-run`; the writer is never dispatched from here.
-- **It never edits an existing document.** Each run writes a new one under the synthesizer's filename convention. Handing it a path to a `docs/tests/*.md` file is not a resume request — `/test-plan-run` is what resumes.
+- **It edits only the document this run wrote, and only to add judge lines and the `judged:` key.** Each run writes a new document under the synthesizer's filename convention, and no earlier one is touched or re-judged. Handing it a path to a `docs/tests/*.md` file is not a resume request — `/test-plan-run` is what resumes.
 - **It never commits, pushes, or opens anything.** `docs/tests/` is a local artifact.
