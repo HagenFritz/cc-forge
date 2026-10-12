@@ -281,10 +281,10 @@ been edited yet.
 ### 3f. Implement
 
 The **touched set** is the run's own footprint: the union of the cited paths of every finding that
-has reached `done` this run. It starts empty, and a
-finding's paths join it at the moment that finding is set `done` — never earlier, so a reverted
-finding contributes nothing. It is the sweep's edits and only the sweep's edits, which is what makes the scope self-check in
-3f.4 exact and the run report's file list honest.
+has reached `done` this run. It starts empty, and a finding's paths join it at the moment that
+finding is set `done` — never earlier, so a reverted finding contributes nothing. It is the sweep's
+edits and only the sweep's edits, which is what makes the scope self-check in 3f.4 exact and the run
+report's file list honest.
 
 In this order, no step skipped:
 
@@ -298,13 +298,13 @@ In this order, no step skipped:
    test, only its code half lands and the test stays unwritten; a finding left with nothing to
    edit once the test is set aside goes back to `open` with the 3e gate's token instead of
    reaching `done`.
-4. **Scope self-check (R4).** `git status --porcelain` again, compared against the dirty baseline
-   ∪ the touched set ∪ this finding's cited paths. The
-   touched set is what keeps this exact once a second finding is implemented: files an earlier
-   `done` finding edited are in neither the baseline nor this finding's citation, and without it
-   they would read as extras and trip a false revert. **Any path outside that union is a
-   tripwire** — including a new untracked file, since the sweep creates none. A tripwire means the
-   fix reached past its citation and the finding was not the small, bounded thing it looked like.
+4. **Scope self-check (R4).** `git status --porcelain` again, compared against the dirty baseline ∪
+   the touched set ∪ this finding's cited paths. The touched set is what keeps this exact once a
+   second finding is implemented: files an earlier `done` finding edited are in neither the baseline
+   nor this finding's citation, and without it they would read as extras and trip a false revert.
+   **Any path outside that union is a tripwire** — including a new untracked file, since the sweep
+   creates none. A tripwire means the fix reached past its citation and the finding was not the
+   small, bounded thing it looked like.
 5. **On a tripwire: revert, then surface.** Restore the finding's cited paths
    (`git checkout -- <paths>`), re-apply the saved patch (`git apply <patch>`), and delete any
    untracked file the edit created. Then restore the tracked paths the self-check flagged as
@@ -476,9 +476,9 @@ members.
 
 3. **Implemented** (`done`). Per finding: id and title; the files **actually touched**, read from
    `git status --porcelain` and the diff rather than from `File(s):`; the test the `Fix:` named and
-   the sweep did not write, when there is one; and one plain sentence of what changed. Write that sentence in
-   what-changed terms drawn from the `Fix:` intent and the real diff hunk — not a paste of the
-   reviewer's problem statement.
+   the sweep did not write, when there is one; and one plain sentence of what changed. Write that
+   sentence in what-changed terms drawn from the `Fix:` intent and the real diff hunk — not a paste
+   of the reviewer's problem statement.
 
 4. **`wont-fix`.** Per finding: id, title, and the reason, labelled as **misread** or
    **protected-artifact**. The two are different claims and the report keeps them apart.
