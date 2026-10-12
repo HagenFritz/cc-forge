@@ -116,15 +116,15 @@ After the last slice, dispatch the observer once in [`wrap-up` mode](../work-pro
 
 ### 4. Review
 
-- **Roster:** `review_agents` from `cc-forge.local.md` when present, else [`/deep-review`'s default set](../deep-review/SKILL.md#load-review-agents) plus [its conditional agents](../deep-review/SKILL.md#conditional-agents-run-if-applicable) and `forge:review:code-simplicity-reviewer`. **Never dispatch `forge:review:test-coverage-reviewer`** — the test plan owns coverage.
-- **Each agent's brief:** the branch diff (`git -C <worktree> diff origin/<default-branch>...HEAD`), the units this phase built, the repo's `CLAUDE.md`, this line verbatim — "Ignore test files and test coverage. Report no missing-test, weak-assertion, or test-quality findings — this run's test plan owns them." — and the return contract: findings with severity `P1`/`P2`/`P3`, file:line, one-sentence description, and an overall verdict. Run them in parallel.
+- **Roster:** `review_agents` from `cc-forge.local.md` when present, else [`/deep-review`'s default set](../deep-review/SKILL.md#load-review-agents) plus [its conditional agents](../deep-review/SKILL.md#conditional-agents-run-if-applicable) and `forge:review:code-simplicity-reviewer`.
+- **Each agent's brief:** the branch diff (`git -C <worktree> diff origin/<default-branch>...HEAD`), the units this phase built, the repo's `CLAUDE.md`, [the spec's reviewer brief](../review-protocol/SKILL.md#briefing-the-reviewers), verbatim — the learnings researcher is not sent it — and the return contract: findings with severity `P1`/`P2`/`P3`, file:line, one-sentence description, and an overall verdict. Run them in parallel.
 - **Synthesize and verify** per [the review-protocol spec](../review-protocol/SKILL.md) — [scratch](../review-protocol/SKILL.md#the-raw-findings-scratch-contract), [synthesizer](../review-protocol/SKILL.md#dispatching-the-synthesizer), [count check](../review-protocol/SKILL.md#sanity-checking-the-returned-counts), [verification](../review-protocol/SKILL.md#verifying-the-review-document). Pass the branch as the target (no PR exists yet) and the primary checkout's absolute `docs/reviews/`. A clean review skips to step 6. A count shortfall or no verified doc → stop the run.
 - **Stamp** per [the spec](../review-protocol/SKILL.md#the-review-written-stamp):
 
   ```markdown
   <!-- cc-forge-log v1: {"skill":"grind","event":"review-written","paths":["docs/reviews/<filename>","<plan file path>"]} -->
 
-  ### 🔍 /grind — review written (test-coverage-reviewer skipped)
+  ### 🔍 /grind — review written
   ```
 
 ### 5. Triage and fix
@@ -139,7 +139,7 @@ After the last slice, dispatch the observer once in [`wrap-up` mode](../work-pro
 
 A P1 may be rejected only as `misread` or `by-design`, and deferred only as `bigger-than-scoped`; otherwise it is accepted. Directly under each finding's `Status:` line write `**Grind:** <accepted | rejected | deferred> — <one line why>`. Never file an issue for a deferred finding.
 
-**If anything was accepted**, record `git -C <worktree> rev-parse origin/<branch>` as the fix base — one line, `<!-- grind fix base: <sha> -->`, appended as the review doc's last line, so a resume can find it — then dispatch one fix subagent (`Agent`, `model: "opus"`, `subagent_type: "general-purpose"`) with: the worktree path; the accepted findings verbatim, with file:line, and nothing else; edit only the files those findings cite, and never the plan or the review doc; commit and push with exactly `git push -u origin <branch>`; run no tests; the build agent's prohibitions; and **return** per finding what changed and why the fix was applied, or why it couldn't be. Then confirm `git -C <worktree> log origin/<branch>..HEAD` is empty (everything pushed) — otherwise stop the run. List any file in `git -C <worktree> diff --name-only <fix base>..origin/<branch>` that no accepted finding cites; those go in the report and the PR's `### Grind Docs` as outside the findings. In the review doc:
+**If anything was accepted**, record `git -C <worktree> rev-parse origin/<branch>` as the fix base — one line, `<!-- grind fix base: <sha> -->`, appended as the review doc's last line, so a resume can find it — then dispatch one fix subagent (`Agent`, `model: "opus"`, `subagent_type: "general-purpose"`) with: the worktree path; the accepted findings verbatim, with file:line, and nothing else; edit only the files those findings cite, and never the plan or the review doc; commit and push with exactly `git push -u origin <branch>`; write no tests and run no tests; the build agent's prohibitions; and **return** per finding what changed and why the fix was applied, or why it couldn't be. Then confirm `git -C <worktree> log origin/<branch>..HEAD` is empty (everything pushed) — otherwise stop the run. List any file in `git -C <worktree> diff --name-only <fix base>..origin/<branch>` that no accepted finding cites; those go in the report and the PR's `### Grind Docs` as outside the findings. In the review doc:
 
 - **Fixed** → `Status: done`, and rewrite the `Grind:` line to `**Grind:** fixed — <what changed>; why: <why the fix was applied>`.
 - **Not fixed** → leave `Status: in-progress`, and rewrite the line to `**Grind:** accepted — not fixed: <reason>`.

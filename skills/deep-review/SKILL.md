@@ -42,7 +42,9 @@ Follow [the review-protocol spec](../review-protocol/SKILL.md#protected-artifact
 
 Read `cc-forge.local.md` in the project root. If found, use `review_agents` from YAML frontmatter. If the markdown body contains review context, pass it to each agent as additional instructions.
 
-If no settings file exists, use the default agent set (correctness, reliability, test-coverage, learnings-researcher) plus conditional agents (adversarial on large/sensitive diffs).
+If no settings file exists, use the default agent set (correctness, reliability, learnings-researcher) plus conditional agents (adversarial on large/sensitive diffs).
+
+Follow [the review-protocol spec](../review-protocol/SKILL.md#briefing-the-reviewers) — it owns the sentence every code reviewer this skill dispatches is handed, verbatim: the roster loop in either mode, the always-last list, the conditional adversarial reviewer, and section 4's code-simplicity reviewer. The learnings researcher is not sent it.
 
 #### Choose Execution Mode
 
@@ -90,7 +92,6 @@ For each agent in review_agents:
 Always run these last regardless of mode:
 - Task forge:review:correctness-auditor(PR content) - Trace logic, boundaries, and contracts for behavior that doesn't match its claim
 - Task forge:review:reliability-engineer(PR content) - Check error handling, timeouts, retries, and partial-failure safety
-- Task forge:review:test-coverage-reviewer(PR content) - Judge whether shipped tests would catch a regression of this change
 - Task forge:research:learnings-researcher(PR content) - Search docs/solutions/ for past issues related to this PR's modules and patterns
 
 </parallel_tasks>
@@ -131,8 +132,7 @@ Complete system context map with component interactions
 
    - How easy is this to understand and modify?
    - Are the APIs intuitive?
-   - Is debugging straightforward?
-   - Can I test this easily? </questions>
+   - Is debugging straightforward? </questions>
 
 2. **Operations Perspective** <questions>
 
@@ -210,7 +210,7 @@ Complete system context map with component interactions
 
 ### 4. Simplification and Minimalism Review
 
-Run the Task forge:review:code-simplicity-reviewer() to see if we can simplify the code.
+Run the Task forge:review:code-simplicity-reviewer() to see if we can simplify the code. Hand it [the spec's reviewer brief](../review-protocol/SKILL.md#briefing-the-reviewers), verbatim.
 
 ### 5. Findings Synthesis and Review Document
 

@@ -85,7 +85,7 @@ Worked examples:
 
 **Never substitute a mismatched reviewer to keep the count at three.** A missing language match means two agents ran, and the report says so.
 
-Dispatch the selected agents in parallel. There is no serial mode.
+Dispatch the selected agents in parallel. Hand each [the spec's reviewer brief](../review-protocol/SKILL.md#briefing-the-reviewers), verbatim. There is no serial mode.
 
 ### 4. Findings Synthesis and Review Document
 
