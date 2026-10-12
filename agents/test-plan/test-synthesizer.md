@@ -41,7 +41,7 @@ Sanitize the slug before using it in any filename: lowercase it, replace every c
 - **Nothing is capped.** Every case that survives the keep and drop rules is kept, in every mode, per [the spec](../../skills/test-protocol/SKILL.md#the-drop-list).
 - **Format the revise verdicts** per [the revise bucket](../../skills/test-protocol/SKILL.md#the-revise-bucket). You never see the diff, so you never judge a verdict: de-dupe by target test, turn each `delete` or `regression` into a `V-NNN` block, and each `still valid` into a Drop List row with reason `still valid`. The keep and drop rules do not re-judge a revise verdict, and `tests untouched code` never applies to one.
 - **Number** the kept cases `T-001`, `T-002`, … and the revise blocks `V-001`, `V-002`, … in document order, each sequence with no gaps.
-- **Every field you write sits above `**Status:**`**, in [the spec's case-block order](../../skills/test-protocol/SKILL.md#case-blocks); only fields a consumer adds later go below it. Never write `**Walk:**` or `**Filter:**` — those belong to the walk and the runs.
+- **Every field you write sits above `**Status:**`**, in [the spec's case-block order](../../skills/test-protocol/SKILL.md#case-blocks); only fields a consumer adds later go below it. Never write `**Walk:**`, `**Judge:**`, or `**Filter:**` — those belong to the walk, the judge step, and the runs.
 - **Neutralize document structure** when copying proposal text into a field value. Indent lines matching `^#{1,6}\s` (heading-shaped), code-fence markers (```` ``` ````), and bold-field-label lines matching `^\*\*[A-Za-z ]+:\*\*`, so none can be mistaken for a case heading, a fence boundary, or a real field label by a line-based parser.
 
 ### Viability rubric

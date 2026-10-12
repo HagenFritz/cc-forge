@@ -144,7 +144,7 @@ Counts come from **real runner output**, parsed from what the command printed. A
 
 Emit [the spec's completion report](../test-protocol/SKILL.md#the-completion-report) with `Test run complete` as the heading, filled from the document as re-read after this run's writes:
 
-- **Cases** — the table, from the document's `### T-<NNN>:` blocks and their current `Status:` values, with the `revise` row from its `### V-<NNN>:` blocks.
+- **Cases** — the table, counting no [cut case](../test-protocol/SKILL.md#the-five-status-values), from the document's `### T-<NNN>:` blocks and their current `Status:` values, with the `revise` row from its `### V-<NNN>:` blocks.
 - **Receipts** — this invocation's block, the same fields just appended. Never the sentence "tests pass" on its own.
 - **Dropped** — the discarded tests: the case ID and the filter that discarded it, plus the document's `## Drop List` rows.
 - **Lenses** — from the document's `lenses:` frontmatter. This run dispatched none; it reports what the document records.
