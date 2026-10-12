@@ -173,7 +173,6 @@ Based on problem type, optionally invoke specialized agents to review the docume
 - **performance_issue** → `performance-oracle-python` or `performance-oracle-typescript`
 - **security_issue** → `security-sentinel-python` or `security-sentinel-typescript`
 - **database_issue** → `data-integrity-guardian`
-- **test_failure** → `test-coverage-reviewer`
 - Any code-heavy issue → `python-reviewer` or `typescript-reviewer` + `code-simplicity-reviewer`
 
 </parallel_tasks>
@@ -342,7 +341,6 @@ Based on problem type, these agents can enhance documentation:
 ### Specific Domain Experts
 - **performance-oracle-python / performance-oracle-typescript**: Analyzes performance_issue category solutions
 - **security-sentinel-python / security-sentinel-typescript**: Reviews security_issue solutions for vulnerabilities
-- **test-coverage-reviewer**: Reviews test coverage for prevention strategies
 - **data-integrity-guardian**: Reviews database_issue migrations and queries
 
 ### Enhancement & Documentation

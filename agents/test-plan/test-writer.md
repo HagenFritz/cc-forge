@@ -41,7 +41,6 @@ Put the case ID — `T-001`, `T-002`, … — in **each test's name or docstring
 
 - It is how the receipts map runner output back to cases.
 - It is how a re-run knows which cases already have a test on disk.
-- It is how the test-coverage reviewer tells a spec-sourced test from a diff-sourced one.
 
 A test with no case ID is not resumable. Use whatever form is idiomatic — `test("T-003: rejects an expired token", …)` or a docstring opening `T-003:` — as long as the ID is literal and greppable.
 
