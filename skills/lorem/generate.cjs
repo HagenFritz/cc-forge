@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // cc-forge /lorem generator. Nothing is appended to the output, so chars is an
-// exact prefix that may end in whitespace or a newline. The token-mode key is
+// exact prefix that may end in a space. The token-mode key is
 // read from the repo-root .env only, never the environment, so Claude Code
 // itself never picks it up.
 
@@ -53,10 +53,10 @@ function parseArgs(argv) {
   return { n, unit }
 }
 
-function stream(paragraphCount) {
+function stream(paragraphCount, separator = ' ') {
   const out = []
   for (let i = 0; i < paragraphCount; i++) out.push(PARAGRAPHS[i % PARAGRAPHS.length])
-  return out.join('\n\n')
+  return out.join(separator)
 }
 
 function streamOfAtLeast(chars) {
@@ -174,7 +174,7 @@ async function tokensText(n) {
 function generate(n, unit) {
   if (unit === 'chars') return charsText(n)
   if (unit === 'words') return wordsText(n)
-  if (unit === 'paragraphs') return stream(n)
+  if (unit === 'paragraphs') return stream(n, '\n\n')
   return tokensText(n)
 }
 
