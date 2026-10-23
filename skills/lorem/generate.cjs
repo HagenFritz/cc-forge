@@ -5,6 +5,8 @@
 // clipboard: `generate.cjs <n> [chars|words|paragraphs|tokens]`. Every unit is
 // a prefix of one fixed ASCII stream, so output always opens with "Lorem ipsum
 // dolor sit amet" and repeat runs are byte-identical. No trailing newline.
+// Tokens are an estimate sized by a fixed ratio and measured by Haiku 5.5's
+// count_tokens endpoint, with the key read from the repo-root .env only.
 //
 // Zero dependencies, Node 18+. Usage errors print one line on stderr and exit
 // 2 with nothing on stdout; runtime errors exit 1. A missing or failing pbcopy
@@ -13,6 +15,9 @@
 'use strict'
 
 const { execFileSync } = require('child_process')
+const fs = require('fs')
+const https = require('https')
+const path = require('path')
 
 const PARAGRAPHS = [
   'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.',
@@ -31,6 +36,11 @@ const UNITS = {
 }
 
 const CAPS = { chars: 20000, words: 3000, paragraphs: 40, tokens: 5000 }
+
+const ENV_PATH = path.join(__dirname, '..', '..', '.env')
+const CHARS_PER_TOKEN = 2.29
+const TOLERANCE = 0.02
+const RESPONSE_MAX_BYTES = 64 * 1024
 
 const USAGE = 'usage: lorem <n> [chars|words|paragraphs|tokens]'
 
@@ -77,9 +87,93 @@ function wordsText(n) {
   }
 }
 
-function tokensText() {
-  process.stderr.write('lorem: tokens mode is not implemented yet\n')
+function fail(msg) {
+  process.stderr.write(`lorem: ${msg}\n`)
   process.exit(1)
+}
+
+function readKey() {
+  let raw
+  try {
+    raw = fs.readFileSync(ENV_PATH, 'utf8')
+  } catch {
+    fail(`no ANTHROPIC_API_KEY found in ${ENV_PATH}`)
+  }
+  for (const line of raw.split(/\r?\n/)) {
+    const match = /^\s*(?:export\s+)?ANTHROPIC_API_KEY\s*=\s*(.*)$/.exec(line)
+    if (!match) continue
+    const value = match[1].trim().replace(/^(['"])(.*)\1$/, '$2')
+    if (value) return value
+  }
+  fail(`no ANTHROPIC_API_KEY found in ${ENV_PATH}`)
+}
+
+function apiError(status, raw) {
+  let detail = ''
+  try {
+    const { type, message } = JSON.parse(raw).error
+    detail = ` ${type}: ${message}`.replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 300)
+  } catch {}
+  const what = status === 401 || status === 403 ? 'key rejected' : 'token count failed'
+  return `${what} (HTTP ${status}${detail})`
+}
+
+// Never surfaces a caught error object: its message can carry the request headers, key included.
+function countTokens(key, text) {
+  const body = JSON.stringify({ model: 'claude-haiku-5-5', messages: [{ role: 'user', content: text }] })
+  const options = {
+    host: 'api.anthropic.com',
+    path: '/v1/messages/count_tokens',
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+      'content-length': Buffer.byteLength(body),
+    },
+    timeout: 8000,
+  }
+  const unreachable = () => fail('could not reach the Anthropic API to count tokens')
+  return new Promise((resolve) => {
+    const req = https.request(options, (res) => {
+      const chunks = []
+      let size = 0
+      res.on('data', (chunk) => {
+        size += chunk.length
+        if (size > RESPONSE_MAX_BYTES) fail('token counter response too large')
+        chunks.push(chunk)
+      })
+      res.on('end', () => {
+        const raw = Buffer.concat(chunks).toString('utf8')
+        if (res.statusCode !== 200) fail(apiError(res.statusCode, raw))
+        let count
+        try {
+          count = JSON.parse(raw).input_tokens
+        } catch {}
+        if (!Number.isInteger(count)) fail('unexpected response from the token counter')
+        resolve(count)
+      })
+      res.on('error', unreachable)
+    })
+    req.on('timeout', unreachable)
+    req.on('error', unreachable)
+    req.end(body)
+  })
+}
+
+async function tokensText(n) {
+  const key = readKey()
+  const cut = (k) => streamOfAtLeast(k).slice(0, k)
+  let text = cut(Math.max(1, Math.round(n * CHARS_PER_TOKEN)))
+  const [probe, first] = await Promise.all([countTokens(key, text[0]), countTokens(key, text)])
+  const overhead = probe - 1
+  let measured = first - overhead
+  if (Math.abs(measured - n) > TOLERANCE * n) {
+    text = cut(Math.max(1, Math.round((text.length * n) / Math.max(1, measured))))
+    measured = (await countTokens(key, text)) - overhead
+  }
+  process.stderr.write(`lorem: ${measured} tokens by Haiku 5.5's counter\n`)
+  return text
 }
 
 function generate(n, unit) {
@@ -98,9 +192,9 @@ function copyToClipboard(text) {
   }
 }
 
-function main() {
+async function main() {
   const { n, unit } = parseArgs(process.argv.slice(2))
-  const text = generate(n, unit)
+  const text = await generate(n, unit)
   process.stdout.write(text)
   if (!copyToClipboard(text)) process.stderr.write('lorem: pbcopy unavailable; text not copied to the clipboard\n')
 }
