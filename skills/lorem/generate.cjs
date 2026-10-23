@@ -1,16 +1,8 @@
 #!/usr/bin/env node
-// cc-forge — /lorem generator.
-//
-// Prints deterministic lorem ipsum at an exact size and copies it to the
-// clipboard: `generate.cjs <n> [chars|words|paragraphs|tokens]`. Every unit is
-// a prefix of one fixed ASCII stream, so output always opens with "Lorem ipsum
-// dolor sit amet" and repeat runs are byte-identical. No trailing newline.
-// Tokens are an estimate sized by a fixed ratio and measured by Haiku 5.5's
-// count_tokens endpoint, with the key read from the repo-root .env only.
-//
-// Zero dependencies, Node 18+. Usage errors print one line on stderr and exit
-// 2 with nothing on stdout; runtime errors exit 1. A missing or failing pbcopy
-// is a stderr note, not an error.
+// cc-forge /lorem generator. Nothing is appended to the output, so chars is an
+// exact prefix that may end in whitespace or a newline. The token-mode key is
+// read from the repo-root .env only, never the environment, so Claude Code
+// itself never picks it up.
 
 'use strict'
 
@@ -71,6 +63,10 @@ function streamOfAtLeast(chars) {
   let count = 1
   while (stream(count).length < chars) count++
   return stream(count)
+}
+
+function charsText(n) {
+  return streamOfAtLeast(n).slice(0, n)
 }
 
 function wordsText(n) {
@@ -163,13 +159,12 @@ function countTokens(key, text) {
 
 async function tokensText(n) {
   const key = readKey()
-  const cut = (k) => streamOfAtLeast(k).slice(0, k)
-  let text = cut(Math.max(1, Math.round(n * CHARS_PER_TOKEN)))
+  let text = charsText(Math.round(n * CHARS_PER_TOKEN))
   const [probe, first] = await Promise.all([countTokens(key, text[0]), countTokens(key, text)])
   const overhead = probe - 1
   let measured = first - overhead
   if (Math.abs(measured - n) > TOLERANCE * n) {
-    text = cut(Math.max(1, Math.round((text.length * n) / Math.max(1, measured))))
+    text = charsText(Math.max(1, Math.round((text.length * n) / measured)))
     measured = (await countTokens(key, text)) - overhead
   }
   process.stderr.write(`lorem: ${measured} tokens by Haiku 5.5's counter\n`)
@@ -177,7 +172,7 @@ async function tokensText(n) {
 }
 
 function generate(n, unit) {
-  if (unit === 'chars') return streamOfAtLeast(n).slice(0, n)
+  if (unit === 'chars') return charsText(n)
   if (unit === 'words') return wordsText(n)
   if (unit === 'paragraphs') return stream(n)
   return tokensText(n)
@@ -199,4 +194,4 @@ async function main() {
   if (!copyToClipboard(text)) process.stderr.write('lorem: pbcopy unavailable; text not copied to the clipboard\n')
 }
 
-if (require.main === module) main()
+main()

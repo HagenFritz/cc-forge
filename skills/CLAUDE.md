@@ -21,7 +21,7 @@ Two consequences worth stating, because both look like exceptions and neither is
 
 The rule covers skills that read or write a `docs/` artifact. Skills whose object is a branch, a PR, a worktree, or an issue — `ship/`, `land/`, `tree/`, `read-issue/`, `triage-issue/` — are outside it and were not renamed to fit.
 
-`lorem/` is the first skill to bundle a script: `generate.cjs` sits beside its `SKILL.md` and is invoked as `node ${CLAUDE_SKILL_DIR}/generate.cjs`, which is also the only command its `allowed-tools` grants. The script owns parsing, generation, size caps, and the clipboard; the `SKILL.md` only passes arguments through and shows stdout verbatim. It touches no `docs/` artifact, so it is outside the producer/consumer naming rule, and like `term-add/` and `term-quiz/` it is repo-independent and posts no issue stamps.
+`lorem/` is the first skill to bundle a script: `generate.cjs` sits beside its `SKILL.md` and is invoked as `node ${CLAUDE_SKILL_DIR}/generate.cjs`, which is also the only command its `allowed-tools` grants. It touches no `docs/` artifact, so it is outside the producer/consumer naming rule.
 
 `walk-protocol/` is the third reference skill: it owns every rule the four walks share — walk order and the no-batching rule, resume, the self-loop contract, the edit-anchoring and re-read discipline, claim-first, the destructive-action gate, the term-capture side buffer, and the summary-and-stamp shape. The walks cite it and restate none of it; a rule that drifts between four files is worse than a rule stated once.
 
