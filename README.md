@@ -83,6 +83,12 @@ GitHub skills shell out to `gh`; have it installed and authenticated.
 |---|---|---|
 | `/tldr` | Caps **one** response at N sentences in plain language; identifiers and paths never paraphrased | `/tldr <n> [question]` for a straight short answer |
 
+### Utilities
+
+| Skill | What it does | When to use |
+|---|---|---|
+| `/lorem` | Generates deterministic lorem ipsum at an exact count of chars, words (default), or paragraphs — the same input always gives the same text — and copies it to the clipboard. `tokens` is an estimate measured by Haiku 5.5's token counter and needs `ANTHROPIC_API_KEY` in the repo-root `.env` | `/lorem <n> [chars\|words\|paragraphs\|tokens]` when you need filler text of a known size |
+
 ### Learning
 
 | Skill | What it does | When to use |
