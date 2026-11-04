@@ -150,6 +150,8 @@ Emit [the spec's completion report](../test-protocol/SKILL.md#the-completion-rep
 
 **Read the counts; never assume a shape.** A document with zero surviving cases is a valid outcome, by either road: the synthesizer kept none — its Drop List is the whole of it — or the judge cut every `T-NNN` case, which the report states plainly. The summary must hold up with no `### T-` or `### V-` block present, and with every `### T-` block cut.
 
+When `${CLAUDE_SKILL_DIR}/../stack/stack.sh check` exits 0 and the document keeps at least one non-cut `browser` case, print one line before the next-steps block recommending `/stack up` before `/test-plan-run browser`, so the flows drive this worktree's own stack. The line is terminal output only, never written into the document.
+
 Close with [the spec's next-steps block](../test-protocol/SKILL.md#the-next-steps-block), which ends this skill at "review the document, walk it with `/test-plan-walk` if you want, then `/test-plan-run`."
 
 ### 10. Stamp the linked issue
