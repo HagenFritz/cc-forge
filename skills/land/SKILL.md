@@ -1,6 +1,6 @@
 ---
 name: land
-description: "Take an open PR to merged with zero prompts: run the PR body's pre-merge test checklist, watch its existing CI checks (running the local test suite only when the PR reports no checks at all), squash-merge and delete the branch, remove the /tree worktree when one holds it, sync local main, and post a pr-merged stamp on the linked issue. Never pushes a commit, never triggers a CI run, halts on any red. Use when the user says 'land this', 'land the PR', 'merge this PR', 'land and merge', or invokes /land. Runs on an open PR."
+description: "Take an open PR to merged with zero prompts: run the PR body's pre-merge test checklist, watch its existing CI checks (running the local test suite only when the PR reports no checks at all), squash-merge and delete the branch, remove the /tree worktree when one holds it (tearing down its local dev stack first), sync local main, and post a pr-merged stamp on the linked issue. Never pushes a commit, never triggers a CI run, halts on any red. Use when the user says 'land this', 'land the PR', 'merge this PR', 'land and merge', or invokes /land. Runs on an open PR."
 argument-hint: "[optional PR number]"
 allowed-tools: Bash, Read, Write, Grep, Glob
 ---
@@ -57,8 +57,8 @@ Typical flow: open the PR with `/ship` → `/quick-review` or `/deep-review` →
 
 10. **Worktree and local branch** (`gh pr merge --delete-branch` already removed the remote branch):
    - `git worktree list` — is `<headRefName>` checked out in a linked worktree?
-   - **Worktree found, clean** (`git -C <path> status --short` empty, no `.git/MERGE_HEAD` or `.git/rebase-merge`): `git worktree remove <path>`, then `git branch -D <headRefName>`. If the directory is already gone from disk (stale metadata), `git worktree remove <path>` then `git worktree prune`.
-   - **Worktree found, dirty or mid-merge/rebase:** leave the worktree **and** the branch exactly as they are and report both, with the manual commands (`git worktree remove <path>`, `git branch -D <headRefName>`) for when the user is done. Never `--force`.
+   - **Worktree found, clean** (`git -C <path> status --short` empty, no `.git/MERGE_HEAD` or `.git/rebase-merge`): `${CLAUDE_SKILL_DIR}/../stack/stack.sh down --worktree <path>` to tear down the worktree's local dev stack (silent with exit 0 when it has none, so it runs in any repo), then `git worktree remove <path>`, then `git branch -D <headRefName>`. A non-zero teardown is one report line with its `stack:` output, never a halt — the worktree removal goes ahead. If the directory is already gone from disk (stale metadata), run the same `stack.sh down --worktree <path>` for its orphaned stack, then `git worktree remove <path>` then `git worktree prune`.
+   - **Worktree found, dirty or mid-merge/rebase:** leave the worktree **and** the branch exactly as they are and report both — its stack is left running too, for its own timer to stop — with the manual commands (`git worktree remove <path>`, `git branch -D <headRefName>`) for when the user is done. Never `--force`.
    - **No worktree:** `git branch -D <headRefName>` (skip if the branch doesn't exist locally). If deletion fails, report the exact error and the manual command — don't fold it into a success report.
 11. **Sync the default branch:** `git checkout main && git pull` (or `master`). If the checkout fails because another worktree holds `main`, fall back to `git fetch origin main:main`. Any other failure (network, auth) is a real error — report it; don't claim the ref is current.
 
@@ -75,7 +75,7 @@ Typical flow: open the PR with `/ship` → `/quick-review` or `/deep-review` →
     **Follow-ups:**
     - <known follow-up from this branch — omit the section when none>
     ```
-13. **Report the final state:** what gated the merge (pre-merge checks run/passed, CI, local suite, or ungated), merged, remote branch deleted, worktree removed or intentionally left (say which and why), `main` checked out or fetched, stamp posted or skipped. A failed stamp is one report line plus the manual command — the merge already succeeded; roll nothing back.
+13. **Report the final state:** what gated the merge (pre-merge checks run/passed, CI, local suite, or ungated), merged, remote branch deleted, worktree removed or intentionally left (say which and why), the stack torn down, none, or left running (and why — dirty worktree or a failed teardown), `main` checked out or fetched, stamp posted or skipped. A failed stamp is one report line plus the manual command — the merge already succeeded; roll nothing back.
 
 ## Rules
 
