@@ -28,6 +28,7 @@ Things the user will see:
 - A stack seeded from main has its copied background work neutralized (scheduled jobs paused, pending sends and pushes marked done), so it never repeats main's side effects.
 - Integrations use main's credentials database, so main's Postgres container must be running for them to work.
 - LangSmith traces go to `<project>-wt<N>`, where `N` is the slot.
+- The web app serves its committed generated files; the stack skips the pre-dev build that would rewrite them and dirty the worktree.
 
 ## Rules
 

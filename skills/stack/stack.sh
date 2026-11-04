@@ -1,15 +1,6 @@
 #!/usr/bin/env bash
 #
 # stack — a configured app's per-worktree local stack (web, LangGraph backend, Postgres).
-#
-#   stack.sh up            start this worktree's stack on its slot (claims one if needed)
-#   stack.sh restart       reinstall, re-migrate, and restart on the same slot, keeping data
-#   stack.sh down [slot]   remove this worktree's stack, or the given slot's (1-9)
-#   stack.sh down --worktree <path>   remove that worktree's stack; silent when it has none
-#   stack.sh status        every stack: slot, state, time left, ports, branch, worktree
-#   stack.sh logs          tail of this worktree's service logs
-#   stack.sh url           this worktree's web URL when its stack is running
-#   stack.sh check         exit 0 only inside a configured app's worktree (not the main checkout)
 set -euo pipefail
 
 REGISTRY="$HOME/.local/state/cc-forge-stack"
@@ -29,10 +20,22 @@ FAIL_LINES=20
 STACK_TTL=43200
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 OVERRIDE="$SCRIPT_DIR/compose.override.yml"
-CONFIG="${STACK_CONFIG:-$SCRIPT_DIR/stack.local.conf}"
+CONFIG="$SCRIPT_DIR/stack.local.conf"
 DUMP_TRAILER="PostgreSQL database cluster dump complete"
 
-usage() { sed -n '3,12p' "$0"; }
+usage() {
+  cat <<'EOF'
+usage: stack.sh <command>
+  up                       start this worktree's stack on its slot (claims one if needed)
+  restart                  reinstall, re-migrate, and restart on the same slot, keeping data
+  down [slot]              remove this worktree's stack, or the given slot's (1-9)
+  down --worktree <path>   remove that worktree's stack; silent when it has none
+  status                   every stack: slot, state, time left, ports, branch, worktree (default)
+  logs                     tail of this worktree's service logs
+  url                      this worktree's web URL when its stack is running
+  check                    exit 0 only inside a configured app's worktree (not the main checkout)
+EOF
+}
 
 die() {
   echo "stack: $*" >&2
@@ -46,7 +49,7 @@ if [ ! -f "$CONFIG" ]; then
     down) if [ "${2:-}" = --worktree ]; then exit 0; fi ;;
   esac
   case "${1:-}" in
-    up | restart | down | status | logs | url | expire) die "no stack configured (copy stack.example.conf to stack.local.conf)" ;;
+    "" | up | restart | down | status | logs | url) die "no stack configured (copy stack.example.conf to stack.local.conf)" ;;
   esac
 else
   . "$CONFIG"
@@ -136,8 +139,8 @@ slot_for_worktree() {
 }
 
 valid_slot() {
-  case "$1" in
-    [1-9]) return 0 ;;
+  case " $SLOTS " in
+    *" $1 "*) [ -n "$1" ] ;;
     *) return 1 ;;
   esac
 }
@@ -148,7 +151,14 @@ slot_ports_busy() {
   port_listening "$(web_port "$1")" || port_listening "$(backend_port "$1")" || port_listening "$(db_port "$1")"
 }
 
-job_running() { launchctl print "$GUI_DOMAIN/$(job_label "$1" "$2")" 2>/dev/null | grep -q 'state = running'; }
+job_running() {
+  local out
+  out="$(launchctl print "$GUI_DOMAIN/$(job_label "$1" "$2")" 2>/dev/null)" || return 1
+  case "$out" in
+    *'state = running'*) return 0 ;;
+  esac
+  return 1
+}
 
 container_running() { [ "$(docker inspect -f '{{.State.Running}}' "$(container_name "$1")" 2>/dev/null)" = true ]; }
 
@@ -194,8 +204,8 @@ lock_stale() {
   local lock="$1" pid start age
   pid="$(cat "$lock/pid" 2>/dev/null || true)"
   start="$(cat "$lock/start" 2>/dev/null || true)"
-  if [ -z "$pid" ]; then
-    # A holder writes its pid right after mkdir; give it a moment before calling it dead.
+  if [ -z "$pid" ] || [ -z "$start" ]; then
+    # A holder writes its pid and start time right after mkdir; give it a moment before calling it dead.
     age=$(($(date +%s) - $(stat -f %m "$lock" 2>/dev/null || date +%s)))
     [ "$age" -gt 5 ]
     return
@@ -306,6 +316,7 @@ check_shared_credentials() {
   local env_file="$1" ours theirs
   ours="$(env_value "$env_file" "$ENCRYPTION_KEY_VAR")"
   theirs="$(env_value "$ENCRYPTION_KEY_FILE" "$ENCRYPTION_KEY_VAR")"
+  [ -n "$theirs" ] || die "$ENCRYPTION_KEY_VAR is missing from $ENCRYPTION_KEY_FILE; cannot share main's credentials database"
   [ "$ours" = "$theirs" ] ||
     die "$ENCRYPTION_KEY_VAR in $env_file differs from $ENCRYPTION_KEY_FILE; the shared credentials database would mark main's integrations needs_reauth"
 }
@@ -369,7 +380,6 @@ assert_no_live_work() {
 # CONTAINER pointed at the slot so its docker exec provisioning never reaches main's container.
 migrate_slot() {
   local n="$1" wt="$2" env_file="$3" main_rev=""
-  [ -f "$wt/backend/scripts/local_db.py" ] || die "branch predates backend/scripts/local_db.py — rebase"
   if main_db_healthy; then
     main_rev="$(main_select "$CREDENTIALS_DB" "SELECT version_num FROM alembic_version" 2>/dev/null | head -n 1)" || main_rev=""
   fi
@@ -430,7 +440,7 @@ PY
 # Brings up slot $1's Postgres for worktree $2, seeding it once from main, then migrates
 # under env file $3. Exits non-zero on any failure; never writes main's database.
 db_start() {
-  local n="$1" wt="$2" env_file="$3" source=empty log
+  local n="$1" wt="$2" env_file="$3" source=empty fresh="" log
   log="$(log_file "$n" db)"
   [ -f "$env_file" ] || die "missing $env_file"
   check_shared_credentials "$env_file"
@@ -451,11 +461,14 @@ db_start() {
     else
       echo "stack: warning: main's database is not running; slot $n starts empty" >&2
     fi
+    registry_set "$n" seeded "$source"
+    fresh=1
   fi
   main_db_healthy ||
     echo "stack: warning: main's database is down, so integrations (shared credentials) are unavailable" >&2
   migrate_slot "$n" "$wt" "$env_file"
-  if [ -z "$(registry_get "$n" seeded)" ]; then
+  if [ -n "$fresh" ]; then
+    rm -f "$(slot_dir "$n")/seeded"
     assert_no_live_work "$n"
     registry_set "$n" seeded "$source"
   fi
@@ -476,10 +489,19 @@ stop_services() {
 }
 
 # Caller holds slot $1's lock.
+# Caller holds slot $1's lock. With Docker down, stops the launchd jobs and leaves the slot
+# registered so a later down, or the orphan reaper, removes the container and volume.
+stop_without_docker() {
+  docker info >/dev/null 2>&1 && return 0
+  stop_services "$1"
+  launchctl bootout "$GUI_DOMAIN/$(job_label "$1" timer)" 2>/dev/null || true
+  die "Docker is not running; stopped slot $1's services, but its container and volume stay until Docker is up (rerun down, or the next /stack command reaps it once its worktree is gone)"
+}
+
 teardown_slot() {
   local n="$1"
   stop_services "$n"
-  launchctl bootout "$GUI_DOMAIN/$(job_label "$n" timer)" 2>/dev/null || true
+  bootout_job "$n" timer
   remove_slot_docker "$n"
   rm -rf "$(slot_dir "$n")"
 }
@@ -491,7 +513,7 @@ reap_orphans() {
     registered "$n" || continue
     wt="$(registry_get "$n" worktree)"
     [ ! -d "$wt" ] || continue
-    lock_acquire "$(slot_lock "$n")" || die "cannot reap slot $n"
+    lock_acquire "$(slot_lock "$n")" 5 || continue
     teardown_slot "$n"
     lock_release "$(slot_lock "$n")"
     echo "stack: reaped slot $n (worktree gone: $wt)"
@@ -532,7 +554,7 @@ sweep_expired() {
     lock_acquire "$(slot_lock "$n")" 5 || continue
     if registered "$n" && expired "$n"; then
       stop_expired "$n"
-      launchctl bootout "$GUI_DOMAIN/$(job_label "$n" timer)" 2>/dev/null || true
+      bootout_job "$n" timer
     fi
     lock_release "$(slot_lock "$n")"
   done
@@ -680,6 +702,8 @@ start_job() {
     service_fail "$n" "$svc" "launchctl bootstrap failed"
 }
 
+# The web job runs next dev directly: the app's own dev script first rebuilds a tracked
+# generated file, which would dirty the worktree and block /land's removal.
 start_services() {
   local n="$1" wt="$2"
   start_job "$n" backend "$wt/backend" "PATH=$PATH" "HOME=$HOME" -- \
@@ -728,7 +752,7 @@ start_stack() {
   sweep_expired "$(slot_for_worktree "$wt")"
   claim_slot "$wt"
   n="$slot"
-  lock_acquire "$(slot_lock "$n")" || die "slot $n is busy with another /stack command"
+  lock_acquire "$(slot_lock "$n")" 2 || die "this worktree's stack (slot $n) is busy with another /stack command; retry when it finishes"
   lock_release "$(global_lock)"
   if [ "$mode" = up ] && [ "$(slot_state "$n")" = running ]; then
     set_deadline "$n"
@@ -811,10 +835,6 @@ cmd_url() {
   web_url "$n"
 }
 
-cmd_up() { start_stack up; }
-
-cmd_restart() { start_stack restart; }
-
 # A worktree already gone from disk is matched by its parent's realpath, else literally.
 worktree_key() {
   local parent
@@ -826,16 +846,22 @@ worktree_key() {
   fi
 }
 
+remove_slot() {
+  local n="$1" wt
+  lock_acquire "$(global_lock)" || die "cannot take the global lock"
+  lock_acquire "$(slot_lock "$n")" || die "cannot take slot $n's lock"
+  stop_without_docker "$n"
+  wt="$(registry_get "$n" worktree)"
+  teardown_slot "$n"
+  echo "removed slot $n ($wt)"
+}
+
 cmd_down_worktree() {
   local wt n
   wt="$(worktree_key "$1")"
   n="$(slot_for_worktree "$wt")"
   [ -n "$n" ] || return 0
-  require_docker
-  lock_acquire "$(global_lock)" || die "cannot take the global lock"
-  lock_acquire "$(slot_lock "$n")" || die "cannot take slot $n's lock"
-  teardown_slot "$n"
-  echo "removed slot $n ($wt)"
+  remove_slot "$n"
 }
 
 cmd_down() {
@@ -851,7 +877,7 @@ cmd_down() {
     echo "usage: stack.sh down [slot | --worktree <path>]  (slot is 1-9)" >&2
     exit 2
   fi
-  local n="${1:-}" wt
+  local n="${1:-}"
   if [ -z "$n" ]; then
     n="$(slot_for_worktree "$worktree")"
     if [ -z "$n" ]; then
@@ -862,24 +888,19 @@ cmd_down() {
     echo "slot $n has no stack"
     return 0
   fi
-  require_docker
-  lock_acquire "$(global_lock)" || die "cannot take the global lock"
-  lock_acquire "$(slot_lock "$n")" || die "cannot take slot $n's lock"
-  wt="$(registry_get "$n" worktree)"
-  teardown_slot "$n"
-  echo "removed slot $n ($wt)"
+  remove_slot "$n"
 }
 
 cmd="${1:-}"
 case "$cmd" in
-  "" | -h | --help) usage ;;
-  up) cmd_up ;;
-  restart) cmd_restart ;;
+  -h | --help) usage ;;
+  "" | status) cmd_status ;;
+  up) start_stack up ;;
+  restart) start_stack restart ;;
   down)
     shift
     cmd_down "$@"
     ;;
-  status) cmd_status ;;
   logs) cmd_logs ;;
   url) cmd_url ;;
   check) cmd_check ;;
