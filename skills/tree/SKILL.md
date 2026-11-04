@@ -1,9 +1,9 @@
 ---
 name: tree
-description: Create a git worktree for an issue or task on its own branch, in a sibling directory, ready for a dedicated Claude Code session
+description: Create a git worktree for an issue or task on its own branch, in a sibling directory, and move the current session into it
 user-invocable: true
 argument-hint: "[issue-number]"
-allowed-tools: Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
+allowed-tools: Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList, EnterWorktree
 ---
 
 Create a git worktree — a second working directory attached to the same repo, checked out to its own new branch — so this piece of work can be developed without checking out a different branch in the primary checkout (which stays on `main`). One worktree per branch. When the branch is merged, `/land` removes the worktree.
@@ -21,6 +21,7 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
 3. "Construct branch name" (activeForm: "Building branch name...")
 4. "Create worktree" (activeForm: "Creating worktree...")
 5. "Symlink docs directory" (activeForm: "Linking docs...")
+6. "Enter worktree" (activeForm: "Entering worktree...")
 
 ## Steps
 
@@ -95,7 +96,19 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
     gh issue comment $ARGUMENTS --repo <owner>/<repo> --body-file <temp-file>
     ```
 
-11. **Output next steps.** If every step-9 symlink was verified present:
+11. **Move the session into the worktree.** Call `EnterWorktree` with `path` set to `{absolute-worktree-path}` (load it via `ToolSearch` first if it is deferred). `git worktree add` already put the path in `git worktree list`, which the first entry requires; because the path sits outside `.claude/worktrees/`, the first entry asks the user for approval once. After the switch, CLAUDE.md, settings, and hook `cwd` follow the session into the worktree, so the attn dashboard files it under the worktree's lane at its next hook event.
+
+    If every step-9 symlink was verified present, output:
+    ```
+    Worktree created and session moved into:
+      {absolute-worktree-path}
+    ```
+
+    In the per-subdir case, list which subdirs were symlinked and add: "A doc subdir created in the primary later won't auto-appear here — symlink it the same way if needed."
+
+    If any symlink was **not** verified (step 9 failed), print the warning before calling `EnterWorktree`: "Worktree created, but the `docs/` symlink(s) failed — these files won't be visible from this worktree until you create the link(s) manually: `<the exact ln -s command(s)>`." Then switch and print the same block.
+
+    If `EnterWorktree` fails or the user declines it, print its error and fall back to:
     ```
     Worktree created:
       {absolute-worktree-path}
@@ -104,16 +117,11 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
       cd {absolute-worktree-path}
       claude
     ```
-    Recommend starting a fresh Claude Code session in the new directory rather than continuing in this one — the session's project context (CLAUDE.md, skills, memory) is resolved from cwd, and a dedicated session keeps it matched to this branch alone.
-
-    In the per-subdir case, list which subdirs were symlinked and add: "A doc subdir created in the primary later won't auto-appear here — symlink it the same way if needed."
-
-    If any symlink was **not** verified (step 9 failed), print the same block but replace "Next:" with a warning first: "Worktree created, but the `docs/` symlink(s) failed — these files won't be visible from this worktree until you create the link(s) manually: `<the exact ln -s command(s)>`." Then the same `cd` / `claude` next steps.
 
 ## Rules
 
 - Always detect the repository from the current git directory — never hardcode a repo
-- Must be run from the primary checkout, never from inside an existing worktree
+- Must be run from the primary checkout, never from inside an existing worktree — from a worktree session, `EnterWorktree` can only target `.claude/worktrees/`, so the sibling path would be unreachable anyway
 - Always branch from the up-to-date default branch, never from arbitrary HEAD
 - The short description must be 2–4 words, kebab-case
 - One worktree per branch — never reuse an existing worktree for a new branch

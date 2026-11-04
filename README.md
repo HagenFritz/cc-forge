@@ -32,7 +32,7 @@ Skills are named by what they do to an artifact: producers take the name of what
 | `/work` | Executes a plan unit by unit: one Opus subagent per unit, strictly serial, with the orchestrator reviewing each diff, committing, and stamping the issue. Records a work doc in `docs/work/` — changes, tests to revisit, decisions, and deviation cards from a blind scope observer that flags but never blocks. Writes no tests and runs no suite | You have a plan and want it implemented |
 | `/test-plan` | Proposes the test cases for the branch: three lenses in parallel — spec (no file tools), blast-radius, surface — into a synthesizer that tags each case `manual` (judgment), `browser` (interaction and exact outcomes), or `auto` (DOM-free logic), applies the keep and drop rules, turns the work doc's tests to revisit into revise cases, and writes `docs/tests/*.md` with a Drop List; a read-only judge then marks each kept case keep or cut in the document, a cut case staying in place with its reason. Stops for review; writes no test files | Work is done and you want a reviewable list of what to test |
 | `/test-plan-walk` | **Optional.** Walks a test plan one `T-NNN` case at a time as compact cards with a recommendation and the judge's line, skipping the cases the judge cut, then keep / explain / cut / term. Cut takes one of nine coded reasons; `/test-plan-run` never runs a cut case. Writes `**Walk:**` inline so it's resumable | You want to cut the tests not worth writing before any of them run |
-| `/test-plan-run` | Runs one scope of a reviewed test plan — `auto` writes the tests through an outside-observer writer that never sees the diff and runs the assurance filters (collect, pass, N reruns), `browser` drives the flows, `manual` walks the cards one at a time. Records `Status:`, a `**Filter:**` line, and a `## Receipts` block in the doc, and reports receipts rather than "tests pass". Leaves the tests uncommitted for `/ship` | `/test-plan-run [auto\|browser\|manual]`; no argument runs auto then browser |
+| `/test-plan-run` | Runs one scope of a reviewed test plan — `auto` writes the tests through an outside-observer writer that never sees the diff and runs the assurance filters (collect, pass, N reruns), `browser` drives the flows (against the worktree's `/stack` when one is configured), `manual` walks the cards one at a time. Records `Status:`, a `**Filter:**` line, and a `## Receipts` block in the doc, and reports receipts rather than "tests pass". Leaves the tests uncommitted for `/ship` | `/test-plan-run [auto\|browser\|manual]`; no argument runs auto then browser |
 | `/grind` | Builds **one phase** of a plan **autonomously on one branch** and ends at **one ready PR**: per slice, Opus builds (into one run-level work doc, with the scope observer) → after the last slice, one review fleet pass (tests ignored) → `/grind` triages → Opus fixes → one judged test plan → opens the PR. Never watches CI or merges; any failure but the test plan judge's stops the run, a 90-minute timer stops it cleanly, and re-running resumes | A plan you trust, built unattended into a PR you review — continue in a new session in the worktree: `/review-walk → /review-push → /test-plan-walk → /test-plan-run → /ship → /land` |
 | `/deep-review` | Exhaustive multi-agent code review; writes a review doc | Complex, risky, or large changes |
 | `/quick-review` | The lite sibling of `/deep-review`: a fixed roster of correctness + simplicity, plus at most one language reviewer picked by the diff's dominant extension (files changed, not lines). Same review doc, so the downstream skills consume it unchanged. Reviews what's checked out here — never creates a worktree or switches branches | A small diff where the full fleet is overkill |
@@ -55,12 +55,12 @@ Skills are named by what they do to an artifact: producers take the name of what
 | Skill | What it does | When to use |
 |---|---|---|
 | `/branch-from-issue` | Creates and checks out a branch from an issue number, in the **current** directory | Starting issue work, no isolation needed |
-| `/tree` | Creates a git worktree on its own branch at `../<repo>-worktrees/<branch>/`, with `docs/` symlinked in | Work you want in its own directory, e.g. several branches at once |
+| `/tree` | Creates a git worktree on its own branch at `../<repo>-worktrees/<branch>/`, with `docs/` symlinked in, and moves the session into it | Work you want in its own directory, e.g. several branches at once |
 | `/issue-from-context` (alias `/ifc`) | Creates a GitHub issue from conversation context. `--prefix <str>` prepends a title prefix; `--who <names>` assigns teammates by first name | Something worth tracking surfaced mid-conversation |
 | `/read-issue` | Fetches an issue and presents a structured digest | You want an issue summarized in-session |
 | `/triage-issue` | Investigates whether an issue is still present, fixed, or needs digging; writes to `docs/triage/` | Verifying a report still reproduces |
 | `/ship` | Commits per file (tests included), pushes — the suite runs once, in CI, off that push — and creates a PR whose pre-merge checklist holds only what CI cannot run | Work is done and tests are written |
-| `/land` | Merges an open PR with zero prompts: runs the PR's pre-merge checklist, waits on CI, squash-merges, removes the worktree, syncs `main`, stamps the issue. Red halts | A PR is ready to merge |
+| `/land` | Merges an open PR with zero prompts: runs the PR's pre-merge checklist, waits on CI, squash-merges, tears down the worktree's `/stack` and removes the worktree, syncs `main`, stamps the issue. Red halts | A PR is ready to merge |
 
 GitHub skills shell out to `gh`; have it installed and authenticated.
 
@@ -87,6 +87,7 @@ GitHub skills shell out to `gh`; have it installed and authenticated.
 
 | Skill | What it does | When to use |
 |---|---|---|
+| `/stack` | Runs a configured app worktree's own web, LangGraph backend, and Postgres on a slot 1–9 with its own ports (web `300N`, backend `2024+N`, Postgres `5435+N`), as launchd jobs that outlive the session and stop 12 hours after the last start, keeping the data. The database is seeded once from main's with the copy's background work neutralized; app specifics live in a gitignored `skills/stack/stack.local.conf` copied from `skills/stack/stack.example.conf`. No argument shows `status` for every stack | `/stack [up\|down [slot]\|restart\|status\|logs]` when a worktree needs its own running app |
 | `/lorem` | Generates deterministic lorem ipsum at an exact count of chars, words (default), or paragraphs — the same input always gives the same text — and copies it to the clipboard. `tokens` is an estimate measured by Haiku 5.5's token counter and needs `ANTHROPIC_API_KEY` in the repo-root `.env` | `/lorem <n> [chars\|words\|paragraphs\|tokens]` when you need filler text of a known size |
 
 ### Learning
@@ -123,10 +124,10 @@ Subagents live in `agents/`, grouped by category. Skills reference them as `forg
 
 **Worktree-isolated** (primary checkout stays on `main`):
 ```
-/brainstorm → [/brainstorm-walk] → /blueprint → [/blueprint-deepen] → [/blueprint-walk] → /tree <issue> → [new session] → /work → /test-plan → [/test-plan-walk] → /test-plan-run → /ship → /quick-review | /deep-review → [/review-sweep] → /review-walk → /review-push → /land
+/brainstorm → [/brainstorm-walk] → /blueprint → [/blueprint-deepen] → [/blueprint-walk] → /tree <issue> → /work → /test-plan → [/test-plan-walk] → /test-plan-run → /ship → /quick-review | /deep-review → [/review-sweep] → /review-walk → /review-push → /land
 ```
 
-`/tree` replaces `/branch-from-issue` when you want the branch in its own directory; `/land` removes the worktree on merge.
+`/tree` replaces `/branch-from-issue` when you want the branch in its own directory, and moves the session into it; `/land` tears down its `/stack` and removes the worktree on merge.
 
 ## Structure
 

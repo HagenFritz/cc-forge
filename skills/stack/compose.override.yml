@@ -1,0 +1,5 @@
+services:
+  __DB_SERVICE__:
+    container_name: ${STACK_CONTAINER:?}
+    ports: !override
+      - "${STACK_DB_PORT:?}:5432"

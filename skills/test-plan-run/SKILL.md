@@ -124,9 +124,11 @@ Everything here runs **before any agent is dispatched, any test file is written,
 
 Drive each `browser` case through Playwright or the Chrome tools, in document order, one case at a time: perform its `**Steps:**`, compare against its `**Expected result:**`, and record a `Status:` from the spec's five. A case whose environment is unavailable is `blocked`, not `fail`.
 
+When `${CLAUDE_SKILL_DIR}/../stack/stack.sh check` exits 0, resolve the base URL first with `${CLAUDE_SKILL_DIR}/../stack/stack.sh url` and drive every case against it: a `localhost:3000` or a bare path in a case's steps resolves against that URL, because `:3000` is the main checkout's port and driving it would test the wrong code. `url` exits 1 → mark each browser case `blocked` with a `**Notes:**` line saying to run `/stack up`, and drive nothing. Outside a configured `/stack` worktree (`check` exits non-zero), cases are driven as written.
+
 A browser run writes **no `**Filter:**` line** — that slot is the assurance filters' signature and a driven flow has no filter behind it. Anything worth noting about a case goes in its `**Notes:**` field.
 
-Receipts for a browser run carry the per-case outcome in place of a runner's counts; there is no command and no exit code to report, and the fields that do not apply are stated as not applicable rather than invented.
+Receipts for a browser run carry the per-case outcome in place of a runner's counts; there is no command and no exit code to report, and the fields that do not apply are stated as not applicable rather than invented. A run driven against the stack names its base URL in the block.
 
 #### `manual`
 
