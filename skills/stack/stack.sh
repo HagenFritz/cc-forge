@@ -53,7 +53,11 @@ if [ ! -f "$CONFIG" ]; then
   esac
 else
   . "$CONFIG"
-  STACK_ENV_STRIPPED="^(DB_PORT|WEB_API_URL|LANGSMITH_PROJECT|LANGCHAIN_PROJECT|[A-Z_]*_DATABASE_URL|$CREDENTIALS_URL_VAR)="
+  WEB_ENV="${WEB_ENV:-}"
+  BACKEND_ENV="${BACKEND_ENV:-}"
+  STACK_ENV_STRIPPED="^(DB_PORT|WEB_API_URL|LANGSMITH_PROJECT|LANGCHAIN_PROJECT|[A-Z_]*_DATABASE_URL|$CREDENTIALS_URL_VAR$(
+    printf '%s\n' "$BACKEND_ENV" | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/|\1/p' | tr -d '\n'
+  ))="
 fi
 
 held_locks=""
@@ -636,6 +640,20 @@ await_ports_free() {
   done
 }
 
+# Prints config list $2's non-blank KEY=VALUE lines with slot $1's {web_port}, {backend_port},
+# {db_port}, and {web_url} filled in.
+slot_env() {
+  local n="$1" l
+  while IFS= read -r l; do
+    [ -n "$l" ] || continue
+    l="${l//\{web_port\}/$(web_port "$n")}"
+    l="${l//\{backend_port\}/$(backend_port "$n")}"
+    l="${l//\{db_port\}/$(db_port "$n")}"
+    l="${l//\{web_url\}/$(web_url "$n")}"
+    printf '%s\n' "$l"
+  done <<<"$2"
+}
+
 write_env_files() {
   local n="$1" wt="$2" src="$MAIN/backend/.env.docker" tmp var project
   tmp="$(slot_dir "$n")/env.tmp"
@@ -650,6 +668,7 @@ write_env_files() {
         project="$(env_value "$src" "$var")"
         if [ -n "$project" ]; then echo "$var=$project-wt$n"; fi
       done
+      slot_env "$n" "$BACKEND_ENV"
     } >"$tmp"
   )
   mv "$tmp" "$wt/backend/.env.stack"
@@ -705,12 +724,16 @@ start_job() {
 # The web job runs next dev directly: the app's own dev script first rebuilds a tracked
 # generated file, which would dirty the worktree and block /land's removal.
 start_services() {
-  local n="$1" wt="$2"
+  local n="$1" wt="$2" l
+  local extra=()
+  while IFS= read -r l; do
+    if [ -n "$l" ]; then extra+=("$l"); fi
+  done <<<"$(slot_env "$n" "$WEB_ENV")"
   start_job "$n" backend "$wt/backend" "PATH=$PATH" "HOME=$HOME" -- \
     "$(command -v uv)" run --frozen --env-file .env.stack langgraph dev --config langgraph.local.json \
     --no-browser --n-jobs-per-worker 10 --port "$(backend_port "$n")"
   start_job "$n" web "$wt/web" "PATH=$PATH" "HOME=$HOME" \
-    "AUTH_URL=$(web_url "$n")" "API_URL=http://127.0.0.1:$(backend_port "$n")" -- \
+    "AUTH_URL=$(web_url "$n")" "API_URL=http://127.0.0.1:$(backend_port "$n")" ${extra[@]+"${extra[@]}"} -- \
     "$wt/web/node_modules/.bin/next" dev -p "$(web_port "$n")"
 }
 
@@ -776,6 +799,8 @@ start_stack() {
   db_start "$n" "$wt" "$wt/backend/.env.stack"
   echo "stack: checking web env..."
   node "$wt/web/scripts/check-env.mjs" 2>&1 | tee -a "$weblog" || service_fail "$n" web "check-env.mjs failed"
+  # A stale build cache can send next dev into a reload loop; every start rebuilds it.
+  rm -rf "$wt/web/.next"
   echo "stack: starting backend and web..."
   start_services "$n" "$wt"
   await_service "$n" backend "$(backend_port "$n")" "http://127.0.0.1:$(backend_port "$n")/ok"
