@@ -5,8 +5,8 @@ description: >
   review-walk, and test-plan-walk. Owns the rules every walk obeys identically: walk
   order, the action self-loop contract, the computed-recommendation rules, the
   edit-anchoring and re-read discipline, the claim-first rule, the term-capture side
-  buffer, and the summary-and-stamp shape. Not
-  user-invocable; the walks cite it and restate none of it.
+  buffer, and the summary-and-stamp shape. Not user-invocable; the walks cite it and
+  restate none of it.
 user-invocable: false
 disable-model-invocation: true
 ---
