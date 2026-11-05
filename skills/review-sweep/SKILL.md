@@ -25,9 +25,9 @@ that are cheap and certain: it reads the cited code, applies the small fixes, cl
 findings its evidence settles — a misread, a problem already fixed, a duplicate, a problem
 tracked elsewhere — recommends won't-fix where it judges a real problem should not be fixed,
 and leaves every remaining finding `open` with a one-line reason a human can act on. It is the
-unattended sibling of `/review-walk` — same doc, same `Status:`
-vocabulary, no questions — and the conservative inverse of `/grind`'s accept-by-default
-triage: here, **surfacing is the default and implementing is the exception.**
+unattended sibling of `/review-walk` — same doc, same `Status:` vocabulary, no questions — and the
+conservative inverse of `/grind`'s accept-by-default triage: here, **surfacing is the default and
+implementing is the exception.**
 
 It produces no findings, re-reviews nothing, runs no tests, and never touches git history. Every
 edit lands in the working tree, uncommitted, for the user to read — verifying them is the user's
@@ -587,57 +587,64 @@ members.
    changed. Write that sentence in what-changed terms drawn from the `Fix:` intent and the real diff
    hunk — not a paste of the reviewer's problem statement.
 
-4. **`wont-fix`.** Per finding: id, title, and the reason, labelled as **misread** or
-   **protected-artifact**. The two are different claims and the report keeps them apart.
+4. **`wont-fix`.** Per finding: id, title, its code, and the `Skip reason:` text. Each code is a
+   different claim, so the report labels every close by its code and never lumps them together.
 
-5. **Surfaced** (`open` + `Sweep:`). Per finding: id, title, the `**Plain English:**` field
-   **verbatim** from the doc, and the `Sweep:` reason. This is the section the user actually reads to
-   decide what to do next, and the reviewer's own plain-English line is better at that than any
-   summary of it.
+5. **Recommended won't-fix** (`open` + `Sweep: recommend wont-fix`). Per finding: id, title, the
+   recommended code, and the reason. These are not repeated under Surfaced.
 
-6. **Prior and already-swept counts.** Two numbers with one line each: findings that arrived with a
+6. **Surfaced** (every other `open` + `Sweep:`). Per finding: id, title, the `**Plain English:**`
+   field **verbatim** from the doc, and the `Sweep:` reason. This is the section the user actually
+   reads to decide what to do next, and the reviewer's own plain-English line is better at that than
+   any summary of it.
+
+7. **Prior and already-swept counts.** Two numbers with one line each: findings that arrived with a
    terminal status (prior decisions, not this run's) and findings already carrying a `Sweep:` line
    from an earlier run.
 
-7. **Anything left unclean.** An untracked file the sweep could not remove during a revert, or any
+8. **Anything left unclean.** An untracked file the sweep could not remove during a revert, or any
    path a revert left in an unexpected state. Every one with an **absolute path** and the command
    that recovers it.
 
-8. **Uncommitted-state reminder.** One line that the sweep committed nothing, plus the touched set
+9. **Uncommitted-state reminder.** One line that the sweep committed nothing, plus the touched set
    listed as the files the sweep edited. No file holds both user edits and sweep edits — a
    baseline-dirty file is never touched (the `dirty file` gate) — so this list is exactly what the
    user is reviewing on top of their own in-flight work.
 
-9. **Next steps.**
-    - `/review-walk <absolute doc path>` — with the count it will walk (the surfaced findings; the
-      terminal ones are already decided).
+10. **Next steps.**
+    - `/review-walk <absolute doc path>` — with the count it will walk (the recommended and surfaced
+      findings together; the terminal ones are already decided).
     - Then `/review-push` when `gh pr view --json number` finds an open PR for the current branch,
       or `/ship` when it does not.
 
-**Zero implemented is a successful terminal state.** The report prints in full, the surfaced section
-carries the run's value, and nothing about the wording treats it as a failure.
+**Zero implemented is a successful terminal state.** The report prints in full, the closes,
+recommendations, and surfaced findings carry the run's value, and nothing about the wording treats
+it as a failure.
 
 ## Step 6: Stamp the Run
 
-Fires on **every** terminal outcome — including zero implemented. A run that produced a report produced a stamp. Issue-number resolution (including the
-silent skip when none resolves), posting mechanics, marker encoding, and failure handling are
-defined in [the issue-log spec](../issue-log/SKILL.md).
+Fires on **every** terminal outcome — including zero implemented. A run that produced a report
+produced a stamp. Issue-number resolution (including the silent skip when none resolves), posting
+mechanics, marker encoding, and failure handling are defined in
+[the issue-log spec](../issue-log/SKILL.md).
 
 Compose the body below, write it to a temp file with the Write tool, and post:
 
 ```markdown
-<!-- cc-forge-log v1: {"skill":"review-sweep","event":"sweep-complete","implemented":<n>,"skipped":<n>,"surfaced":<n>,"paths":["docs/reviews/<file>.md"]} -->
+<!-- cc-forge-log v1: {"skill":"review-sweep","event":"sweep-complete","implemented":<n>,"skipped":<n>,"surfaced":<n>,"recommended":<n>,"paths":["docs/reviews/<file>.md"]} -->
 
 ### 🧹 /review-sweep — <n> implemented, <n> surfaced
 
 **Doc:** docs/reviews/<file>.md
 **Implemented:** <n> — <P1-2, P3-1>
-**Won't fix:** <n> — <n> misread, <n> protected-artifact
+**Won't fix:** <n> — <n> misread, <n> already-fixed, <n> duplicate, <n> tracked-elsewhere, <n> protected-artifact
+**Recommended won't-fix:** <n> — <n> not-worth-it, <n> accepted-risk, <n> pre-existing, <n> by-design
 **Surfaced:** <n> — left open for a human
 
 <details><summary>Surfaced findings</summary>
 
 - **P2-1 <title>** — <Sweep: reason>
+- **P2-3 <title>** — recommend wont-fix: not-worth-it — <why>
 - **P3-4 <title>** — <Sweep: reason>
 
 </details>
@@ -648,11 +655,16 @@ gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
 ```
 
 - The marker carries **counts only**: `implemented` is the `done` count, `skipped` is the `wont-fix`
-  count, `surfaced` is the `open`-plus-`Sweep:` count. Titles and reasons are free text that can
-  carry `--`, so they live in the body. Prior-decision and already-swept counts are body-only too —
-  they are not this run's outcomes.
-- Omit `**Won't fix:**` when nothing was closed out, and drop the `<details>` block when nothing was
-  surfaced.
+  count across all five codes, `surfaced` is the `open`-plus-`Sweep:` count — recommendations
+  included — and `recommended` is the subset of `surfaced` carrying a `recommend wont-fix` line.
+  The report's Surfaced section lists recommendations separately, so it holds `surfaced` minus
+  `recommended`; the marker's `surfaced` and that section are not the same number. Titles and
+  reasons are free text that can carry `--`, so they live in the body. Prior-decision and
+  already-swept counts are body-only too — they are not this run's outcomes.
+- `**Won't fix:**` and `**Recommended won't-fix:**` list only the codes with a non-zero count, and
+  each line is omitted when its count is zero. The `<details>` list holds every surfaced finding,
+  recommendations included with their `recommend wont-fix: <code> — <why>` reason, so it matches
+  `surfaced`; drop the block when nothing was surfaced.
 - With zero implemented the stamp still posts, reading `0 implemented, <n> surfaced`.
 
 ## Rules

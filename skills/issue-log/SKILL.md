@@ -78,7 +78,7 @@ Optional keys:
 | deep-review | `review-written` | 🔍 | Severity counts + the findings table from the terminal summary (per-P1/P2 rows, P3 roll-up) |
 | quick-review | `review-written` | ⚡ | Same shape as deep-review's row: severity counts + the findings table from the terminal summary |
 | review-walk | `review-walk-complete` | 🚶 | Summary line + every walked issue as "what — status: why"; tracking refs for deferred items filed as issues; terms added to the glossary |
-| review-sweep | `sweep-complete` | 🧹 | Counts implemented / skipped / surfaced (marker keys); doc path; surfaced findings listed as "id: title — reason" in the body |
+| review-sweep | `sweep-complete` | 🧹 | Counts implemented / skipped / surfaced / recommended (marker keys; `recommended` is a subset of `surfaced`); doc path; surfaced findings, recommendations included, listed as "id: title — reason" in the body |
 | test-plan | `test-plan-written` | 🧪 | Doc path, case counts by mode plus revise count (no cut case counted), dropped count, the judge line (the doc's `judged:` value), lenses that contributed |
 | test-plan-walk | `test-plan-walk-complete` | 🚶 | Summary line + counts of cases kept and cut; cut counts per reason code; terms added to the glossary |
 | test-plan-run | `tests-run` | 🧾 | Doc path, scope (`scope` in the marker), result counts, revised counts, receipts line, discarded tests |
