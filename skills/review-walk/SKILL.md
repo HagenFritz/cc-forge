@@ -3,9 +3,10 @@ name: review-walk
 description: >
   Walk through a code-review document interactively, one finding at a time in
   P1 → P2 → P3 order. Reads a review file produced by /deep-review or /quick-review,
-  renders each finding as a compact card (category, files, confidence, one-sentence
-  problem, one-sentence fix per option), then takes implement / defer / won't fix /
-  add term / explain — or free text. Defer files a tracking issue through
+  reads the cited code when it reaches each finding and renders it as a compact card
+  (category, files, confidence, one-sentence problem, one-sentence fix per option, a
+  recommendation computed from the code naming the reply to type, and a TLDR), then
+  takes implement / defer / won't fix / add term / explain — or free text. Defer files a tracking issue through
   /issue-from-context; won't fix records a coded reason. `Status:` is updated inline
   in the doc so progress is durable and resumable. Triggers on phrases like "walk the
   review", "step through the review", "review-walk", or passing a path to a
@@ -22,10 +23,11 @@ is the source of truth — `Status:` updates live in the doc, so walks resume cl
 across sessions.
 
 This skill **consumes** review docs produced by `/deep-review` or `/quick-review`. It does
-not run reviewers or produce new findings. It follows
+not run reviewers or produce new findings. At each finding it reads the cited code and
+puts a `Recommendation:` line and a `TLDR:` line on the card. It follows
 [the walk-protocol spec](../walk-protocol/SKILL.md) for order, resume, the action
-self-loop contract, edit anchoring, and term capture; only what is specific to a review
-doc is written here.
+self-loop contract, the computed recommendation, edit anchoring, and term capture; only
+what is specific to a review doc is written here.
 
 **Invoking the walk is the confirmation.** There is no "proceed?" prompt, no "ready?"
 prompt, and no per-group gate. The walk never calls `AskUserQuestion`: every question is a
@@ -68,7 +70,42 @@ Parse every finding's `Status:` line:
 
 Open with one line — `Walking <path>: N findings, n remaining.` — then render the first card.
 
-## Step 3: The Card
+## Step 3: Read, Recommend, Render
+
+### The recommendation
+
+Per [the walk-protocol's computed recommendation](../walk-protocol/SKILL.md#a-computed-recommendation).
+Before the card renders, read the card's `Files:` at the finding's line numbers, as the code
+is now, then make one call. Its inputs:
+
+- the finding's fields;
+- the cited code as it is now;
+- the finding's `Sweep:` or `Grind:` line, a sweep recommendation included;
+- every verdict already recorded on other findings in this doc, so a finding an earlier fix
+  made moot gets a fresh call.
+
+The call is one of three, and names only what the doc offers:
+
+- **implement** — the doc's `Fix:`; when the card has lettered options, it names one.
+- **defer** — a real problem whose right fix does not belong in this change. The walk still
+  never defers on its own: only the user's reply files an issue.
+- **won't fix** — one of the eight codes, under [the evidence standards](#evidence-standards).
+  `protected-artifact` is never recommended; that rule runs as it always has (see Rules).
+
+A better fix than the doc describes goes in the reason as a note, never as a new option; the
+user gives instructions if they want it.
+
+- **The cited code cannot be found** → no call is guessed. The line says so, says what was
+  looked for, and names no reply: `Recommendation: none — <what was looked for, not found>`.
+- **The finding is `in-progress` on arrival** (Step 2, rule 1) → the tree may hold a
+  half-applied edit, so the call is never won't-fix `already-fixed` or `misread`, and the
+  Recommendation line says the tree may be mid-edit.
+
+**Computed once per card render.** A self-loop (`explain`, `term`, free text) re-shows the
+action line and the Recommendation stands. When an `explain` or free-text exchange changes
+the call, re-render the whole card, with the new Recommendation, before taking a reply.
+
+### The card
 
 Every finding gets exactly this card.
 
@@ -82,6 +119,8 @@ Sweep: <reason>            ← only when the doc carries a Sweep: or Grind: line
 Problem: <one sentence>
 Concept: <one sentence>
 Fix: <one sentence — why this fix>
+Recommendation: <reply> — <call>: <why>
+TLDR: <the issue>. <what the Recommendation would do>.
 
 1. implement
 2. defer
@@ -101,9 +140,12 @@ Rules per line:
   the doc's `File(s):` and any other path the `Fix:` names as something to change. Tangential
   files count; the list is every file this finding touches.
 - **Sweep / Grind** — one sentence, only when present: why the unattended run left this
-  for a human, rewritten from the doc's `Sweep:` or `Grind:` line rather than pasted.
-- **Problem** — one sentence, written from `Plain English:` and `Problem:`. The finding's
-  TLDR, aimed squarely at this code: what is wrong, where.
+  for a human, rewritten from the doc's `Sweep:` or `Grind:` line rather than pasted. A
+  sweep recommendation ([the sweep's vocabulary](../review-sweep/SKILL.md#the-sweep-line))
+  reads as what the sweep recommended: won't-fix, the code, and the sweep's reason. The
+  walk's own Recommendation may differ from it.
+- **Problem** — one sentence, written from `Plain English:` and `Problem:`, aimed at this
+  code: what is wrong, where.
 - **Concept** — one sentence naming the general principle this finding is an instance of,
   said the way you would tell a colleague what kind of problem it is without pointing at
   the code. Name the pattern, the engineering principle, or the computer-science idea
@@ -127,12 +169,21 @@ Rules per line:
   B. <one sentence> — <why this one>
   ```
 
-**Every summary sentence on the card — Sweep, Problem, Concept, each Fix — follows
-[`/tldr`'s rules](../tldr/SKILL.md) with N = 1.** Short common words over long ones,
-active voice, a concrete subject: "the check runs too early" beats "there is a temporal
-ordering issue with the validation invocation." Drop hedging and background, never facts.
+- **Recommendation** — `<reply>` is the literal text to type: `1`, `1 B`, `2`, or `3`.
+  `<call>` is `implement`, `implement option B`, `defer`, or `wont-fix, <code>`. `<why>` is
+  one sentence: `Recommendation: 1 B — implement option B: <why>`,
+  `Recommendation: 3 — wont-fix, not-worth-it: <why>`.
+- **TLDR** — directly under the Recommendation, at most two sentences: first the issue, then
+  what the Recommendation would do about it — the change to make, the issue to file, or why
+  to leave it alone.
+
+**Every summary sentence on the card — Sweep, Problem, Concept, each Fix, the
+Recommendation's why — follows [`/tldr`'s rules](../tldr/SKILL.md) with N = 1, and the TLDR
+line follows them with N = 2.** Short common words over long ones, active voice, a concrete
+subject: "the check runs too early" beats "there is a temporal ordering issue with the
+validation invocation." Drop hedging and background, never facts.
 Identifiers, error strings, and file paths are kept exact and never paraphrased; any other
-term is said in ordinary words. One sentence is the ceiling, not a target.
+term is said in ordinary words. The cap is a ceiling, not a target.
 
 - **The action list** is plain text, never `AskUserQuestion`, with a blank line above it so
   it stands apart from the card. The user answers with the number (`1`–`5`), the verb, or
@@ -270,8 +321,8 @@ finding.
 
 ### Explain
 
-Read the cited files (the card's `Files:` list, anchored at the finding's line numbers)
-and answer in **at most three sentences**, under [`/tldr`'s rules](../tldr/SKILL.md) with
+Draw on the read already done for the card, and read further only when the question needs
+it. Answer in **at most three sentences**, under [`/tldr`'s rules](../tldr/SKILL.md) with
 N = 3: what the code does today, why that is a problem, and the Concept line expanded —
 where the principle comes from or how to spot it next time. Pick the three that matter
 most; a quoted line of code does not count against the cap. If the user asks again, answer
@@ -421,3 +472,4 @@ review doc's path rides in `paths`.
 - Respect the Protected Artifacts rule from `/deep-review`: never apply a fix that would
   delete or gitignore files under `docs/brainstorms/`, `docs/plans/`, or
   `docs/solutions/`. Such a finding is automatic `wont-fix — protected-artifact`; say so.
+  This rule is unchanged by the Recommendation: such a finding gets none.

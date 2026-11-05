@@ -3,8 +3,9 @@ name: walk-protocol
 description: >
   Shared specification for the four walk skills — brainstorm-walk, blueprint-walk,
   review-walk, and test-plan-walk. Owns the rules every walk obeys identically: walk
-  order, the action self-loop contract, the edit-anchoring and re-read discipline, the
-  claim-first rule, the term-capture side buffer, and the summary-and-stamp shape. Not
+  order, the action self-loop contract, the computed-recommendation rules, the
+  edit-anchoring and re-read discipline, the claim-first rule, the term-capture side
+  buffer, and the summary-and-stamp shape. Not
   user-invocable; the walks cite it and restate none of it.
 user-invocable: false
 disable-model-invocation: true
@@ -87,6 +88,18 @@ That is the entire point of the side buffer: learning must not cost the review t
 terminal decline is **won't fix**. Never introduce an action named *skip* that closes
 an item, and never introduce one named *won't fix* that defers. A walk may offer no
 skip verb at all.
+
+## A computed recommendation
+
+Used only by the walks that put a recommendation on the card — `review-walk` and
+`test-plan-walk`; a walk that shows none skips this section. Each such walk owns its
+inputs, its calls, and how the line renders. What is shared:
+
+- **Computed when the walk reaches the item** — never in an up-front pass over the doc.
+- **Shown on the card, never written to the doc.** It is not a verdict and never touches
+  the state field.
+- **It never acts.** Only the user's reply records a verdict, edits code, or files
+  anything; a recommendation the user ignores leaves no trace.
 
 ## Write protocol
 
