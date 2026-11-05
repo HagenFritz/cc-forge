@@ -3,13 +3,14 @@ name: review-walk
 description: >
   Walk through a code-review document interactively, one finding at a time in
   P1 → P2 → P3 order. Reads a review file produced by /deep-review or /quick-review,
-  renders each finding as a compact card (category, files, confidence, one-sentence
-  problem, one-sentence fix per option), then takes implement / defer / won't fix /
-  add term / explain — or free text. Defer files a tracking issue through
-  /issue-from-context; won't fix records a coded reason. `Status:` is updated inline
-  in the doc so progress is durable and resumable. Triggers on phrases like "walk the
-  review", "step through the review", "review-walk", or passing a path to a
-  docs/reviews/*.md file.
+  reads the cited code when it reaches each finding and renders it as a compact card
+  (category, files, confidence, one-sentence problem, one-sentence fix per option, a
+  recommendation computed from the code naming the reply to type, and a TLDR), then
+  takes implement / defer / won't fix / add term / explain — or free text. Defer files
+  a tracking issue through /issue-from-context; won't fix records a coded reason.
+  `Status:` is updated inline in the doc so progress is durable and resumable. Triggers
+  on phrases like "walk the review", "step through the review", "review-walk", or
+  passing a path to a docs/reviews/*.md file.
 user-invocable: true
 argument-hint: "[path to docs/reviews/*.md]"
 allowed-tools: Bash, Read, Edit, Write, Agent, Skill
@@ -22,10 +23,11 @@ is the source of truth — `Status:` updates live in the doc, so walks resume cl
 across sessions.
 
 This skill **consumes** review docs produced by `/deep-review` or `/quick-review`. It does
-not run reviewers or produce new findings. It follows
+not run reviewers or produce new findings. At each finding it reads the cited code and
+puts a `Recommendation:` line and a `TLDR:` line on the card. It follows
 [the walk-protocol spec](../walk-protocol/SKILL.md) for order, resume, the action
-self-loop contract, edit anchoring, and term capture; only what is specific to a review
-doc is written here.
+self-loop contract, the computed recommendation, edit anchoring, and term capture; only
+what is specific to a review doc is written here.
 
 **Invoking the walk is the confirmation.** There is no "proceed?" prompt, no "ready?"
 prompt, and no per-group gate. The walk never calls `AskUserQuestion`: every question is a
@@ -68,7 +70,32 @@ Parse every finding's `Status:` line:
 
 Open with one line — `Walking <path>: N findings, n remaining.` — then render the first card.
 
-## Step 3: The Card
+## Step 3: Read, Recommend, Render
+
+### The recommendation
+
+Per [the walk-protocol's computed recommendation](../walk-protocol/SKILL.md#a-computed-recommendation).
+Before the card renders, read the card's `Files:` at the finding's line numbers, as the code
+is now, then make one call. Its inputs:
+
+- the finding's fields;
+- the cited code as it is now;
+- the finding's `Sweep:` or `Grind:` line, a sweep recommendation included;
+- every verdict already recorded on other findings in this doc, so a finding an earlier fix
+  made moot gets a fresh call.
+
+The call is one of three, and names only what the doc offers:
+
+- **implement** — the doc's `Fix:`; when the card has lettered options, it names one.
+- **defer** — a real problem whose right fix does not belong in this change. The walk still
+  never defers on its own: only the user's reply files an issue.
+- **won't fix** — one of the eight codes, under [the evidence standards](#evidence-standards).
+
+A better fix than the doc describes goes in the reason as a note, never as a new option; the
+user gives instructions if they want it. When the cited code cannot be found, no call is
+guessed: the line reads `Recommendation: none — <what was looked for, not found>`.
+
+### The card
 
 Every finding gets exactly this card.
 
@@ -82,6 +109,8 @@ Sweep: <reason>            ← only when the doc carries a Sweep: or Grind: line
 Problem: <one sentence>
 Concept: <one sentence>
 Fix: <one sentence — why this fix>
+Recommendation: <reply> — <call>: <why>
+TLDR: <the issue>. <what the Recommendation would do>.
 
 1. implement
 2. defer
@@ -101,9 +130,12 @@ Rules per line:
   the doc's `File(s):` and any other path the `Fix:` names as something to change. Tangential
   files count; the list is every file this finding touches.
 - **Sweep / Grind** — one sentence, only when present: why the unattended run left this
-  for a human, rewritten from the doc's `Sweep:` or `Grind:` line rather than pasted.
-- **Problem** — one sentence, written from `Plain English:` and `Problem:`. The finding's
-  TLDR, aimed squarely at this code: what is wrong, where.
+  for a human, rewritten from the doc's `Sweep:` or `Grind:` line rather than pasted. A
+  sweep recommendation ([the sweep's vocabulary](../review-sweep/SKILL.md#the-sweep-line))
+  reads as what the sweep recommended: won't-fix, the code, and the sweep's reason. The
+  walk's own Recommendation may differ from it.
+- **Problem** — one sentence, written from `Plain English:` and `Problem:`, aimed at this
+  code: what is wrong, where.
 - **Concept** — one sentence naming the general principle this finding is an instance of,
   said the way you would tell a colleague what kind of problem it is without pointing at
   the code. Name the pattern, the engineering principle, or the computer-science idea
@@ -127,12 +159,21 @@ Rules per line:
   B. <one sentence> — <why this one>
   ```
 
-**Every summary sentence on the card — Sweep, Problem, Concept, each Fix — follows
-[`/tldr`'s rules](../tldr/SKILL.md) with N = 1.** Short common words over long ones,
-active voice, a concrete subject: "the check runs too early" beats "there is a temporal
-ordering issue with the validation invocation." Drop hedging and background, never facts.
+- **Recommendation** — `<reply>` is the literal text to type: `1`, `1 B`, `2`, or `3`.
+  `<call>` is `implement`, `implement option B`, `defer`, or `wont-fix, <code>`. `<why>` is
+  one sentence: `Recommendation: 1 B — implement option B: <why>`,
+  `Recommendation: 3 — wont-fix, not-worth-it: <why>`.
+- **TLDR** — directly under the Recommendation, at most two sentences: first the issue, then
+  what the Recommendation would do about it — the change to make, the issue to file, or why
+  to leave it alone.
+
+**Every summary sentence on the card — Sweep, Problem, Concept, each Fix, the
+Recommendation's why — follows [`/tldr`'s rules](../tldr/SKILL.md) with N = 1, and the TLDR
+line follows them with N = 2.** Short common words over long ones, active voice, a concrete
+subject: "the check runs too early" beats "there is a temporal ordering issue with the
+validation invocation." Drop hedging and background, never facts.
 Identifiers, error strings, and file paths are kept exact and never paraphrased; any other
-term is said in ordinary words. One sentence is the ceiling, not a target.
+term is said in ordinary words. The cap is a ceiling, not a target.
 
 - **The action list** is plain text, never `AskUserQuestion`, with a blank line above it so
   it stands apart from the card. The user answers with the number (`1`–`5`), the verb, or
@@ -149,7 +190,7 @@ Map the reply to one action:
 |-------|--------|
 | `1`, `implement`, `do it`, `fix`, or instructions describing a change | **Implement** (§5). Instructions that modify the fix are followed — the user is choosing the code, not the walk. When the card has more than one Fix option, the reply names it by letter after the action (`1 B` = implement option B); bare `1` → ask which, in one line of text, and wait. |
 | `2`, `defer`, `issue`, `file it`, `later` | **Defer** (§5). |
-| `3`, `wont-fix`, `won't fix`, `skip`, `no`, optionally followed by a reason number | **Won't fix** (§5). A reason given in the reply pre-answers the reason question. |
+| `3`, `wont-fix`, `won't fix`, `skip`, `no`, optionally followed by a reason number | **Won't fix** (§5). A reason given in the reply pre-answers the reason question. On a card whose Recommendation is `wont-fix, <code>`, a bare reply accepts it: the recommended code and reason are recorded with no reason list. |
 | `4 <x>`, `term <x>`, `add term`, `what is <x>` | **Add term** (§5). Self-loop. |
 | `5`, `explain`, `why`, `more`, a question about the finding | **Explain** (§5). Self-loop. |
 | anything else | The "just tell me" path: the user is giving direction or asking something the verbs don't cover. Answer it in as few sentences as it needs and re-show the action line. Self-loop. |
@@ -169,7 +210,8 @@ The review doc is the durable progress store. Every advancing action mutates the
 2. Apply the fix. If the user picked a lettered option or gave instructions, follow those;
    otherwise follow the doc's `Fix:`. Do not invent scope. If the fix is unclear, ask in one
    line of text before editing.
-3. Set `Status: done` and append an `Applied:` line directly below it:
+3. Set `Status: done` and append an `Applied:` line directly below it, or below the
+   finding's `Sweep:` or `Grind:` line when it has one (**Edit anchoring rule**):
 
    ```
      **Status:** `done`
@@ -198,7 +240,8 @@ walk. There is no defer-reason question.
    title, the body, the label, and its own preview-and-confirm; the walk adds nothing to
    the issue. If the user cancels inside `/issue-from-context`, reset `Status:` to `open`
    and re-show the action line — a cancelled issue is not a deferral.
-3. On success, set `Status: deferred` and append the tracking line directly below it:
+3. On success, set `Status: deferred` and append the tracking line directly below it, or
+   below the finding's `Sweep:` or `Grind:` line when it has one (**Edit anchoring rule**):
 
    ```
      **Status:** `deferred`
@@ -215,7 +258,8 @@ walk. There is no defer-reason question.
 Terminal: this is a decision, not a deferral. The reason code is the one piece of
 structured data the walk collects deliberately — it is what later mining of review docs
 uses to make `/review-sweep` more autonomous — so it is asked as a plain-text numbered list,
-unless the user's reply already carried the number (`3 2`, `wont-fix duplicate P2-3`):
+unless the user's reply already carried the number (`3 2`, `wont-fix duplicate P2-3`) or
+accepted the Recommendation (below):
 
 ```
 Why won't-fix?
@@ -236,15 +280,19 @@ Render it in a fenced block so the two columns keep their alignment.
 - **already-fixed** — real, but no longer present: fixed by another finding's implementation, a later commit, or code that has since been removed
 - **duplicate** — the same finding as another in this doc; name it (`7 P2-3` → `duplicate — same as P2-3`)
 - **tracked-elsewhere** — already covered by an issue, a plan, or an idea doc
-- **protected-artifact** — the fix would delete or gitignore a protected file (see Rules).
-  Automatic, never offered on the line.
 
 **The answer is one of these eight, and nothing else.** A number or the full code, optionally
 followed by a note (`3 too small to matter`). A reply that starts with none of the eight
 is not a reason — re-show the list and wait; never guess a code from prose, and there is no
 `other`.
 
-Then set `Status: wont-fix` and append the reason directly below it:
+**Accepting the Recommendation.** When the card's Recommendation is `wont-fix, <code>`, a bare
+won't-fix reply records that code and the Recommendation's reason, written per
+[Skip reason format](#skip-reason-format), and the list is not shown. `3` followed by a number
+or code overrides it, as on any card.
+
+Then set `Status: wont-fix` and append the reason directly below it, or below the
+finding's `Sweep:` or `Grind:` line when it has one (**Edit anchoring rule**):
 
 ```
   **Status:** `wont-fix`
@@ -262,8 +310,8 @@ finding.
 
 ### Explain
 
-Read the cited files (the card's `Files:` list, anchored at the finding's line numbers)
-and answer in **at most three sentences**, under [`/tldr`'s rules](../tldr/SKILL.md) with
+Draw on the read already done for the card, and read further only when the question needs
+it. Answer in **at most three sentences**, under [`/tldr`'s rules](../tldr/SKILL.md) with
 N = 3: what the code does today, why that is a problem, and the Concept line expanded —
 where the principle comes from or how to spot it next time. Pick the three that matter
 most; a quoted line of code does not count against the cap. If the user asks again, answer
@@ -272,22 +320,25 @@ finding.
 
 ### Skip reason format
 
-`Skip reason:` is `<code> — <free text>`, one line, directly under `Status:`
-(`/grind`'s `Defer reason:` borrows the same shape).
+`Skip reason:` is `<code> — <free text>`, one line, directly under `Status:` or under a
+`Sweep:` or `Grind:` line that sits there (`/grind`'s `Defer reason:` borrows the same shape).
 
-**These code lists are the whole convention, not just this walk's.** `/review-sweep` writes
-`Skip reason:` with two of the codes (`misread`, `protected-artifact`); `/grind` writes both
-fields with the full lists. One field, one vocabulary, whoever wrote it, so the codes stay
-countable across a pile of review docs. Adding or renaming a code here changes it for all
-three; tell the writers apart by the `**Sweep:**` or `**Grind:**` signature line, never by
-the code.
+**These code lists are the whole convention, not just this walk's.** Every writer of
+`Skip reason:` or `Defer reason:` draws from them, and each writer's own skill lists the
+codes it writes. One field, one vocabulary, whoever wrote it, so the codes stay countable
+across a pile of review docs. Adding or renaming a code here changes it for every writer;
+tell the writers apart by the `**Sweep:**` or `**Grind:**` signature line, never by the
+code.
 
 - **Skip reason codes** — the won't-fix list above.
 - **Defer reason codes** — the walk writes none (it records a `Tracking:` line instead);
   `/grind` is their only writer and [defines them](../grind/SKILL.md#5-triage-and-fix).
 - **The code** is the one the user's number names. Then ` — ` and the user's note, kept
   **verbatim**, if they added one; if none, the line is the code alone. Never rewrite,
-  shorten, or "improve" what they typed, and never invent a note they did not give.
+  shorten, or "improve" what they typed, and never invent a note they did not give. The one
+  exception is an accepted Recommendation ([Won't fix](#wont-fix)): the line is
+  `<code> — as recommended: <why>`, where `<why>` is the Recommendation's reason, written as
+  reason text a skill composes (below); `as recommended:` marks it as the walk's words.
 - **Verbatim means their wording is unchanged — not that the bytes are written unaltered.**
   The reason line sits directly beside the `Status:` line every downstream parser anchors
   on, so before writing it: collapse the text to one line (newlines become spaces) and
@@ -297,6 +348,25 @@ the code.
   bold-field-label shape matching `^\*\*[A-Za-z ]+:\*\*`. An unescaped `**Status:**` in a
   pasted snippet makes `/review-push` count an extra issue and a sweep re-run read the
   wrong status.
+- **Reason text a skill composes**, rather than the user typing it, is one line and is
+  neutralized exactly as above; an em dash inside it becomes a comma, since the ` — ` after
+  the code is what separates the code from the text.
+
+#### Evidence standards
+
+What `/review-sweep` and this walk's Recommendation must show to use a code. They never bind
+the user's own verdict in the walk, and they do not bind `/grind`. Without the evidence, the
+code is not used.
+
+- **misread** — the cited code was read and does not have the problem; the reason says what
+  the code actually does.
+- **already-fixed** — the reason names the `done` finding in this doc whose fix removed the
+  problem. A problem absent with no such finding is `misread`.
+- **tracked-elsewhere** — the reason gives the reference the finding or the cited code names:
+  an issue number or a doc path.
+- **pre-existing** — the branch's diff does not touch the cited code or anything that calls it.
+- **by-design** — the reason cites what was read: a comment, a convention file, a doc.
+- **Any other code** — a one-line reason a human can check.
 
 ### Edit anchoring rule
 
@@ -317,6 +387,12 @@ line between them included in `old_string`).
 
 **Status:** `in-progress`
 ```
+
+The verdict line the walk adds — `Applied:`, `Tracking:`, or `Skip reason:` — goes directly
+below `Status:`, except when the finding carries a `**Sweep:**` or `**Grind:**` line: then it
+goes below that line, which stays directly under `Status:`. Unattended runs read that pair,
+so the walk never splits it. Write the status change and the verdict line in one `Edit`,
+with the signature line included in `old_string` when the finding has one.
 
 ## Step 6: Final Summary
 
@@ -374,8 +450,8 @@ review doc's path rides in `paths`.
 - **Walk order is fixed: `P1-* → P2-* → P3-*`, every finding on its own card with its own
   reply.** Never reorder, never batch, never offer a group-level verdict.
 - **Add term and Explain never advance the walk.** They touch neither `Status:` nor code.
+- **An accepted won't-fix recommendation writes its reason** on `Skip reason:`, marked
+  `as recommended:`. Nothing else of the Recommendation reaches the doc, per
+  [the walk-protocol](../walk-protocol/SKILL.md#a-computed-recommendation).
 - **Only the user defers, and defer always files an issue.** The walk never defers on its
   own, and never files an issue except as the user's chosen Defer action.
-- Respect the Protected Artifacts rule from `/deep-review`: never apply a fix that would
-  delete or gitignore files under `docs/brainstorms/`, `docs/plans/`, or
-  `docs/solutions/`. Such a finding is automatic `wont-fix — protected-artifact`; say so.

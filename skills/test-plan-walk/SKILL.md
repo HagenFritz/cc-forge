@@ -99,7 +99,8 @@ case asserts.
 
 ### The recommendation
 
-Computed when the walk reaches the case — never in an up-front pass. Its inputs:
+Per [the walk-protocol's computed recommendation](../walk-protocol/SKILL.md#a-computed-recommendation).
+Its inputs:
 
 - the case's fields;
 - the diff;
@@ -110,8 +111,7 @@ Computed when the walk reaches the case — never in an up-front pass. Its input
 - the doc's `**Judge:**` lines — this case's own, and every judge cut whose text names
   this case as the one standing in its place.
 
-The call is `keep` or `cut — <code>`, using [the cut codes](#the-cut-codes). It is shown on
-the card and never written to the doc.
+The call is `keep` or `cut — <code>`, using [the cut codes](#the-cut-codes).
 
 ### The claim
 
