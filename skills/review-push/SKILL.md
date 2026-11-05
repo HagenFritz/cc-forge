@@ -9,7 +9,7 @@ description: >
   "review-push", or being run right after /review-walk on a PR branch.
 user-invocable: true
 argument-hint: "[path to docs/reviews/*.md]"
-allowed-tools: Bash, AskUserQuestion, Read, Grep, Glob
+allowed-tools: Bash, AskUserQuestion, Read, Write, Grep, Glob
 ---
 
 # Review Push
@@ -104,7 +104,10 @@ This skill **reads** the review doc — it never edits it. `/review-walk` owns t
       - **Post comment** (description: "Post this comment on the PR") — carries the stub preview
       - **Edit** (description: "Revise the comment body, then re-confirm")
       - **Skip comment** (description: "Fixes are already pushed; just don't comment")
-    - On **Post comment**: `gh pr comment <N> --body "<comment>"`.
+    - On **Post comment**: write the comment to a temp file with the Write tool, then
+      `gh pr comment <N> --body-file <temp-file>`. Never inline the body in shell, per
+      [the issue-log spec's posting rule](../issue-log/SKILL.md#posting) — skip reasons quote
+      code, and backticks or `$(` inside a double-quoted `--body` are run by the shell.
     - On **Edit**: first print the full composed comment as ordinary message text (not in a `preview` field) so the user can read what they are revising — print it at most once per revision round, and skip the print if this round's body has already been printed. Then treat the input as revision notes, regenerate the comment accordingly, and re-ask with the updated stub.
 15. **Report the final state:** the PR URL from step 4 (so it's one click away), commits pushed (or "already pushed"), comment posted (or skipped), and the reminder: "The worktree that shipped this PR is now behind — `git pull --ff-only origin <branch>` there before `/land`."
 

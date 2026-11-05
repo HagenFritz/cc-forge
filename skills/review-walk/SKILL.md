@@ -90,20 +90,10 @@ The call is one of three, and names only what the doc offers:
 - **defer** — a real problem whose right fix does not belong in this change. The walk still
   never defers on its own: only the user's reply files an issue.
 - **won't fix** — one of the eight codes, under [the evidence standards](#evidence-standards).
-  `protected-artifact` is never recommended; that rule runs as it always has (see Rules).
 
 A better fix than the doc describes goes in the reason as a note, never as a new option; the
-user gives instructions if they want it.
-
-- **The cited code cannot be found** → no call is guessed. The line says so, says what was
-  looked for, and names no reply: `Recommendation: none — <what was looked for, not found>`.
-- **The finding is `in-progress` on arrival** (Step 2, rule 1) → the tree may hold a
-  half-applied edit, so the call is never won't-fix `already-fixed` or `misread`, and the
-  Recommendation line says the tree may be mid-edit.
-
-**Computed once per card render.** A self-loop (`explain`, `term`, free text) re-shows the
-action line and the Recommendation stands. When an `explain` or free-text exchange changes
-the call, re-render the whole card, with the new Recommendation, before taking a reply.
+user gives instructions if they want it. When the cited code cannot be found, no call is
+guessed: the line reads `Recommendation: none — <what was looked for, not found>`.
 
 ### The card
 
@@ -200,7 +190,7 @@ Map the reply to one action:
 |-------|--------|
 | `1`, `implement`, `do it`, `fix`, or instructions describing a change | **Implement** (§5). Instructions that modify the fix are followed — the user is choosing the code, not the walk. When the card has more than one Fix option, the reply names it by letter after the action (`1 B` = implement option B); bare `1` → ask which, in one line of text, and wait. |
 | `2`, `defer`, `issue`, `file it`, `later` | **Defer** (§5). |
-| `3`, `wont-fix`, `won't fix`, `skip`, `no`, optionally followed by a reason number | **Won't fix** (§5). A reason given in the reply pre-answers the reason question. On a card whose Recommendation is `wont-fix, <code>`, a bare `3`, `wont-fix`, or `won't fix` accepts it: the recommended code and reason are recorded with no reason list. Bare `skip` or `no` still shows the list. |
+| `3`, `wont-fix`, `won't fix`, `skip`, `no`, optionally followed by a reason number | **Won't fix** (§5). A reason given in the reply pre-answers the reason question. On a card whose Recommendation is `wont-fix, <code>`, a bare reply accepts it: the recommended code and reason are recorded with no reason list. |
 | `4 <x>`, `term <x>`, `add term`, `what is <x>` | **Add term** (§5). Self-loop. |
 | `5`, `explain`, `why`, `more`, a question about the finding | **Explain** (§5). Self-loop. |
 | anything else | The "just tell me" path: the user is giving direction or asking something the verbs don't cover. Answer it in as few sentences as it needs and re-show the action line. Self-loop. |
@@ -288,31 +278,18 @@ Render it in a fenced block so the two columns keep their alignment.
 - **accepted-risk** — real and understood; consciously carried as-is
 - **pre-existing** — real, but not introduced by this change
 - **already-fixed** — real, but no longer present: fixed by another finding's implementation, a later commit, or code that has since been removed
-- **duplicate** — the same finding as another in this doc; name it (`7 P2-3` → `duplicate — same as P2-3`).
-  An unattended close or a recommendation names an earlier finding that is not `wont-fix`.
-- **tracked-elsewhere** — already covered by an open issue, a plan, or an idea doc that
-  describes this same problem. An unattended close or a recommendation never cites the
-  branch's own linked issue, a pull request, or the plan or requirements doc this branch
-  implements (all close or go stale at merge), or anything under `docs/tests/` (review
-  consumers do not read it).
-- **protected-artifact** — the fix would delete or gitignore a protected file (see Rules).
-  Automatic, never offered on the line.
+- **duplicate** — the same finding as another in this doc; name it (`7 P2-3` → `duplicate — same as P2-3`)
+- **tracked-elsewhere** — already covered by an issue, a plan, or an idea doc
 
 **The answer is one of these eight, and nothing else.** A number or the full code, optionally
 followed by a note (`3 too small to matter`). A reply that starts with none of the eight
 is not a reason — re-show the list and wait; never guess a code from prose, and there is no
-`other`. A `duplicate <id>` answer is refused the same way, with one line saying why, when
-`<id>` is itself closed as a duplicate of the finding on this card: the pair would close
-against each other and the problem would be tracked nowhere.
+`other`.
 
-**Accepting the Recommendation.** When the card's Recommendation — the one last shown — is
-`wont-fix, <code>`, a bare `3`, `wont-fix`, or `won't fix` records that code and the
-Recommendation's reason, written per [Skip reason format](#skip-reason-format), and the list
-is never shown. Bare `no` and `skip` show the list, so disagreeing with a recommendation
-never records its code. `3` followed by a number or code overrides it, as on any card. `3`
-followed by text that starts with none of the eight keeps the recommended code and records
-the text as the user's note. On any other Recommendation, a bare `3` asks for the reason as
-above.
+**Accepting the Recommendation.** When the card's Recommendation is `wont-fix, <code>`, a bare
+won't-fix reply records that code and the Recommendation's reason, written per
+[Skip reason format](#skip-reason-format), and the list is not shown. `3` followed by a number
+or code overrides it, as on any card.
 
 Then set `Status: wont-fix` and append the reason directly below it, or below the
 finding's `Sweep:` or `Grind:` line when it has one (**Edit anchoring rule**):
@@ -361,9 +338,7 @@ code.
   shorten, or "improve" what they typed, and never invent a note they did not give. The one
   exception is an accepted Recommendation ([Won't fix](#wont-fix)): the line is
   `<code> — as recommended: <why>`, where `<why>` is the Recommendation's reason, written as
-  reason text a skill composes (below); `as recommended:` marks it as the walk's words. For
-  `duplicate` the why begins `same as <id>`; for `tracked-elsewhere` it begins with the
-  reference. A note the user typed after `3` on an accept is theirs: verbatim, no lead-in.
+  reason text a skill composes (below); `as recommended:` marks it as the walk's words.
 - **Verbatim means their wording is unchanged — not that the bytes are written unaltered.**
   The reason line sits directly beside the `Status:` line every downstream parser anchors
   on, so before writing it: collapse the text to one line (newlines become spaces) and
@@ -379,29 +354,19 @@ code.
 
 #### Evidence standards
 
-What an unattended close or a recommendation must show to use each code. They bind
-`/review-sweep`, its closes and its recommendations, and a recommendation this walk computes.
-They never bind the user's own verdict in the walk, which may be any of the eight codes with
-any note, and they do not bind `/grind`. Without the evidence, the code is not used.
-`protected-artifact` stays automatic, under its own rule.
+What `/review-sweep` and this walk's Recommendation must show to use a code. They never bind
+the user's own verdict in the walk, and they do not bind `/grind`. Without the evidence, the
+code is not used.
 
-- **misread** — the cited code was read and affirmatively does not have the problem; the
-  reason says what the code actually does.
-- **already-fixed** — a `done` finding in this doc whose fix removed the problem, named on
-  the line. A problem absent with no such finding is `misread`, not `already-fixed`. Git
-  history is no evidence: the doc records a date, not a reviewed commit.
-- **duplicate** — names, by id, an earlier finding in this doc that is not `wont-fix`.
-- **tracked-elsewhere** — an explicit reference the finding text or the cited code names,
-  verified: an issue confirmed open, or an existing doc under `docs/plans/` or
-  `docs/ideation/`, that describes this same problem. No issue search; the definition's
-  exclusions hold.
-- **pre-existing** — a diff from the merge base with the review's base branch, working tree
-  included, shows the cited lines untouched. The base is the PR's base branch when the
-  doc's `target:` resolves to a PR, else the default branch; when it cannot be resolved,
-  the code is not used.
-- **by-design** — the reason cites what was actually read: a comment, a convention file, a
-  doc the finding names.
-- **not-worth-it**, **accepted-risk** — a one-line reason a human can check.
+- **misread** — the cited code was read and does not have the problem; the reason says what
+  the code actually does.
+- **already-fixed** — the reason names the `done` finding in this doc whose fix removed the
+  problem. A problem absent with no such finding is `misread`.
+- **tracked-elsewhere** — the reason gives the reference the finding or the cited code names:
+  an issue number or a doc path.
+- **pre-existing** — the branch's diff does not touch the cited code or anything that calls it.
+- **by-design** — the reason cites what was read: a comment, a convention file, a doc.
+- **Any other code** — a one-line reason a human can check.
 
 ### Edit anchoring rule
 
@@ -426,7 +391,8 @@ line between them included in `old_string`).
 The verdict line the walk adds — `Applied:`, `Tracking:`, or `Skip reason:` — goes directly
 below `Status:`, except when the finding carries a `**Sweep:**` or `**Grind:**` line: then it
 goes below that line, which stays directly under `Status:`. Unattended runs read that pair,
-so the walk never splits it.
+so the walk never splits it. Write the status change and the verdict line in one `Edit`,
+with the signature line included in `old_string` when the finding has one.
 
 ## Step 6: Final Summary
 
@@ -484,12 +450,8 @@ review doc's path rides in `paths`.
 - **Walk order is fixed: `P1-* → P2-* → P3-*`, every finding on its own card with its own
   reply.** Never reorder, never batch, never offer a group-level verdict.
 - **Add term and Explain never advance the walk.** They touch neither `Status:` nor code.
-- **The card's Recommendation line is never written to the doc**, per
-  [the walk-protocol](../walk-protocol/SKILL.md#a-computed-recommendation). The reason of an
-  accepted won't-fix recommendation is: on `Skip reason:`, marked `as recommended:`.
+- **An accepted won't-fix recommendation writes its reason** on `Skip reason:`, marked
+  `as recommended:`. Nothing else of the Recommendation reaches the doc, per
+  [the walk-protocol](../walk-protocol/SKILL.md#a-computed-recommendation).
 - **Only the user defers, and defer always files an issue.** The walk never defers on its
   own, and never files an issue except as the user's chosen Defer action.
-- Respect the Protected Artifacts rule from `/deep-review`: never apply a fix that would
-  delete or gitignore files under `docs/brainstorms/`, `docs/plans/`, or
-  `docs/solutions/`. Such a finding is automatic `wont-fix — protected-artifact`; say so.
-  This rule is unchanged by the Recommendation: such a finding gets none.

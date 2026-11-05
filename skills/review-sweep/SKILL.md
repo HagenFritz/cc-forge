@@ -3,11 +3,11 @@ name: review-sweep
 description: >
   Take the quick wins from a code-review document unattended. Reads a review file
   produced by /deep-review, reads the cited code for each finding in doc order,
-  implements only the cheap-and-certain fixes, closes `wont-fix` the findings its
-  evidence settles — reviewer misreads, already-fixed problems, duplicates, and
-  problems tracked elsewhere — recommends won't-fix on a real finding it judges should
-  not be fixed, and leaves everything else `open` with a durable `Sweep:` reason line
-  explaining why a human still has to look. Zero prompts — invoking it is the confirmation.
+  implements only the cheap-and-certain fixes, closes `wont-fix` the reviewer misreads,
+  the problems another finding already fixed, and the ones tracked elsewhere, recommends
+  won't-fix on a real finding it judges should not be fixed, and leaves everything else
+  `open` with a durable `Sweep:` reason line explaining why a human still has to look.
+  Zero prompts — invoking it is the confirmation.
   Edits are inline and uncommitted; it never commits, pushes, or files issues.
   Triggers on phrases like "sweep the review", "review-sweep", "quick wins from the
   review", or passing a path to a docs/reviews/*.md file.
@@ -22,9 +22,9 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob
 
 `/review-sweep` consumes a review doc from `docs/reviews/` and takes exactly the findings
 that are cheap and certain: it reads the cited code, applies the small fixes, closes out the
-findings its evidence settles — a misread, a problem already fixed, a duplicate, a problem
-tracked elsewhere — recommends won't-fix where it judges a real problem should not be fixed,
-and leaves every remaining finding `open` with a one-line reason a human can act on. It is the
+reviewer's misreads, the problems another finding already fixed, and the ones tracked elsewhere,
+recommends won't-fix where it judges a real problem should not be fixed, and leaves every remaining finding `open` with a
+one-line reason a human can act on. It is the
 unattended sibling of `/review-walk` — same doc, same `Status:` vocabulary, no questions — and the
 conservative inverse of `/grind`'s accept-by-default triage: here, **surfacing is the default and
 implementing is the exception.**
@@ -44,8 +44,8 @@ Typical flow: `/deep-review` → `/review-sweep` → `/review-walk` over what th
 3. **Read the code before any verdict.** A reviewer working from a diff misjudges context the
    surrounding file makes obvious — the same rule `/grind`'s triage runs under (see
    [grind's triage](../grind/SKILL.md#5-triage-and-fix)). Only evidence becomes `wont-fix` — the
-   code does not have the problem, another finding fixed or already raises it, or an open issue
-   or a doc tracks it; uncertainty surfaces.
+   code does not have the problem, another finding's fix removed it, or the finding names where
+   it is tracked; uncertainty surfaces.
 4. **When in doubt, surface.** Doubt about an edit or a close leaves the finding `open`, and a
    won't-fix recommendation is a positive judgment, never a hedge. A missed quick win costs one
    line in the report. A wrong unattended edit or close costs the user's trust in the run.
@@ -101,10 +101,9 @@ a skill that edits code unattended has no safe way to proceed on a broken premis
 
 3. **Dirty baseline.** `git status --porcelain` once, at this moment, capturing modified, staged,
    and untracked paths. This is the **dirty baseline**: it is never re-read, and it is what makes
-   every later scope check and revert exact. A finding citing a path in this set that reaches the
-   edit gates is surfaced there with `dirty file: <path>` — the user's in-flight work is never
-   touched, and the sweep never has to disentangle its edits from theirs. A close on such a path
-   gets one extra check at the read (3c).
+   every later scope check and revert exact. Any finding citing a path in this set is surfaced
+   with `dirty file: <path>` — the user's in-flight work is never touched, and the sweep never has
+   to disentangle its edits from theirs.
 
    `docs/reviews/` is gitignored in this repo, so the sweep's own `Status:` writes never appear in
    `git status`. The doc needs no exclusion from the baseline or from any later scope check.
@@ -160,7 +159,7 @@ to.
 |---|-----------|---------|
 | 1 | `Status:` is `done`, `deferred`, or `wont-fix` | Skip. Count as a **prior decision**, not this run's. |
 | 2 | `Status:` is `open` and it carries a `**Sweep:**` line | Skip. Count as **already swept** — unless this run's preflight wrote the line, which counts as surfaced this run. No second `Sweep:` line is ever written. |
-| 3 | The fix would delete or gitignore a protected artifact | `wont-fix` + `**Skip reason:** protected-artifact — <path>` (see step 4). |
+| 3 | Any cited path is in the dirty baseline | Surface: `dirty file: <path>`. Nothing is read or edited. |
 | 4 | Any cited path cannot be resolved, or resolves to a directory (see 3a) | Surface: `stale citation`. |
 | 5 | Any cited path is a **sensitive path** (see 3a) | Surface: `sensitive path: <path>`. **Do not read the code.** |
 
@@ -168,8 +167,8 @@ to.
 
 Every finding stage 1 did not stop has its code read, per [3c](#3c-read-the-code) — including one
 no reviewer rated and one rated `low`. The read closes it on evidence (`misread`, `already-fixed`,
-`duplicate`, `tracked-elsewhere`), surfaces it (`stale citation`), leaves it `open` with a won't-fix
-recommendation, or finds the problem real with no objection and sends it on to stage 3.
+`tracked-elsewhere`), surfaces it (`stale citation`), leaves it `open` with a won't-fix recommendation, or finds the
+problem real with no objection and sends it on to stage 3.
 
 ### Stage 3: Edit gates
 
@@ -178,21 +177,17 @@ Reached only by a finding 3c read and found real with no objection. Each gate su
 
 | # | Condition | Outcome |
 |---|-----------|---------|
-| 1 | `Confidence rationale:` is `not stated by reviewer`, or `Confidence:` is absent | Surface: `confirmed at unrated confidence`. |
-| 2 | `Confidence:` is `low` | Surface: `confirmed at low confidence`. |
-| 3 | Any cited path is in the dirty baseline | Surface: `dirty file: <path>`. Nothing is edited. |
-| 4 | Any cited path is contested by a P1 left `open` (see 3b) | Surface: `overlaps surfaced P1-<N>`. |
-| 5 | A prerequisite id names no finding, or names one that neither ended `done` nor was closed `already-fixed` | Surface: `depends on: <id>`, naming the first such prerequisite. |
+| 1 | `Confidence:` is `low`, or no reviewer rated it (`Confidence rationale:` is `not stated by reviewer`, or `Confidence:` is absent) | Surface: `confirmed at low confidence`. |
+| 2 | Any cited path is contested by a P1 left `open` (see 3b) | Surface: `overlaps surfaced P1-<N>`. |
+| 3 | A prerequisite id names no finding, or names one that did not end `done` | Surface: `depends on: <id>`, naming the first such prerequisite. |
 
 A finding that passes every gate goes to the implement rule (3d), its preconditions (3e), and the
 implement steps (3f).
 
-The unrated gate exists because a missing `Confidence:` is not the same as a low one.
-[The synthesizer](../../agents/review/review-synthesizer.md) fills an unstated confidence with
-`medium` and records `not stated by reviewer` as the rationale — so without this gate, a
-finding **no reviewer rated** would be indistinguishable from a verified pattern match at the
-implement rule and, at Small effort on P1 or P2, would be edited unattended. The rationale string is
-the only signal that distinguishes them, so the sweep reads it.
+An unrated finding counts as `low` because [the synthesizer](../../agents/review/review-synthesizer.md)
+fills an unstated confidence with `medium` and records `not stated by reviewer` as the rationale.
+Without the gate, a finding no reviewer vouched for would be edited unattended at Small effort on
+P1 or P2.
 
 ### 3a. Extracting the cited paths
 
@@ -217,9 +212,7 @@ pointing at a workflow file is sensitive on the strength of its target, not its 
 
 Line numbers in the field are **hints only**. Earlier fixes in this run shift them.
 
-**This file is where the sensitive-path rule is defined**, unlike the protected-artifact exit's
-rule, which lives in [`/review-walk`](../review-walk/SKILL.md) and is cited from here. It is
-**sweep-only**: `/grind` also edits unattended, through its own fix-agent dispatch, and honors no
+**This file is where the sensitive-path rule is defined.** It is **sweep-only**: `/grind` also edits unattended, through its own fix-agent dispatch, and honors no
 equivalent check — a known gap, stated here rather than left implicit, and a candidate for a
 follow-up that gives grind the same guard.
 
@@ -236,8 +229,7 @@ case-insensitively:
 
 These are the files where a wrong unattended edit does the most damage — a migration runs against
 production on the next push, a workflow or config change alters what CI and deploys do. The sweep
-never edits them; the finding surfaces unread, and these are the only findings the sweep leaves
-unread by choice.
+never edits them; the finding surfaces unread.
 
 **This is a name heuristic and claims no completeness.** It matches how these files are usually
 laid out, not what they are: a migration directory the project configured somewhere else walks
@@ -256,7 +248,7 @@ is prose-only and contributes almost none of it.)*
 When a **P1** is left `open` for any reason — a won't-fix recommendation included — its cited paths
 become **contested** for the rest of the run, and every later finding citing one of them surfaces
 with `overlaps surfaced P1-<N>`. The sweep does not edit a file whose most serious known problem is
-still unadjudicated. A P1 the sweep closes `wont-fix` contests nothing.
+still unadjudicated.
 
 This applies to P1 only. In a small repo where one file holds everything, a surfaced P2 or P3
 must not block every remaining Small fix in that file.
@@ -273,35 +265,18 @@ Then take the first row that matches:
 | 1 | The described code cannot be found at or near the citation | Surface: `stale citation`. |
 | 2 | The problem is absent, and a `done` finding in this doc removed it | `wont-fix` + `**Skip reason:** already-fixed — <names that finding and what its fix did>`. |
 | 3 | The problem is absent otherwise — the reviewer misread the code | `wont-fix` + `**Skip reason:** misread — <one line on what the code actually does>`. |
-| 4 | The same problem at the same code as an earlier finding in this doc | `wont-fix` + `**Skip reason:** duplicate — same as <id>`. |
-| 5 | An issue or doc named by the finding or the cited code, verified, already covers it | `wont-fix` + `**Skip reason:** tracked-elsewhere — <the reference>`. |
-| 6 | The problem is real, and the sweep judges it should not be fixed | Stays `open` + `**Sweep:** recommend wont-fix: <code> — <why>`. No `Skip reason:` line. |
-| 7 | The problem is real, with no objection | Continue to stage 3's edit gates. |
+| 4 | The finding or the cited code names the issue or doc that tracks this problem | `wont-fix` + `**Skip reason:** tracked-elsewhere — <the reference>`. |
+| 5 | The problem is real, and the sweep judges it should not be fixed | Stays `open` + `**Sweep:** recommend wont-fix: <code> — <why>`. No `Skip reason:` line. |
+| 6 | The problem is real, with no objection | Continue to stage 3's edit gates. |
 
-Rows 2 to 5 are closes, written per step 4. What each code means, and the evidence a row needs
-before it matches, are `/review-walk`'s: the code definitions under
-[Won't fix](../review-walk/SKILL.md#wont-fix) and the
-[evidence standards](../review-walk/SKILL.md#evidence-standards). A row whose evidence the read
-cannot show does not match, and the finding moves to the next row. The reason text follows
-[the rule for skill-composed text](../review-walk/SKILL.md#skip-reason-format). Because a
-`duplicate` only ever names an earlier finding, doc order keeps the one at the higher or equal
-tier.
+Rows 2 to 4 are closes, written per step 4. What each code means and what it must show are
+`/review-walk`'s: the code definitions under [Won't fix](../review-walk/SKILL.md#wont-fix) and the
+[evidence standards](../review-walk/SKILL.md#evidence-standards). The reason text follows
+[the rule for skill-composed text](../review-walk/SKILL.md#skip-reason-format).
 
-Three mechanics are the sweep's own:
-
-- **An absence close on a dirty file** (rows 2 and 3, a cited path in the dirty baseline) needs the
-  problem absent from `HEAD` as well — `git show HEAD:<path>`. When `HEAD` still has it, the user's
-  uncommitted edit is what removed it: nothing is closed, and the finding surfaces
-  `dirty file: <path>`.
-- **A `gh` failure during a `tracked-elsewhere` check** means "not tracked": row 5 does not match
-  and the finding moves on. It never stops the run.
-- **The base for `pre-existing`** comes from preflight's `target:` check, which already knows
-  whether the doc targets a PR. When the base cannot be resolved, no `pre-existing` recommendation
-  is written.
-
-**The recommendation (row 6)** names one of `not-worth-it`, `accepted-risk`, `pre-existing`, or
+**The recommendation (row 5)** names one of `not-worth-it`, `accepted-risk`, `pre-existing`, or
 `by-design`, and its reason is one line a human can check. It is a positive judgment, not a
-fallback for doubt: when the sweep is unsure, it writes none, and the finding goes on to row 7
+fallback for doubt: when the sweep is unsure, it writes none, and the finding goes on to row 6
 exactly as if no recommendation had been considered. It changes no status — it is the finding's
 one `Sweep:` line, written in one `Edit` — and these four codes never close a finding, at any
 tier.
@@ -455,13 +430,9 @@ line per finding, ever — a re-run skips a finding that already has one rather 
 second.
 
 The reason comes from this fixed vocabulary. The reason is the instruction: it tells the human what
-they are being asked to do. Every reason belongs to a finding left `open` except the terminal
-signatures — `implemented` on a landed fix and the `wont-fix` closes, one per code the sweep closes
-on — which record what the sweep did rather than asking the human to adjudicate anything.
-
-A terminal status is the sweep's own decision only when its `Sweep:` token is `implemented` or
-`wont-fix`. Any other `Sweep:` line on a terminal finding — a surface reason or a recommendation —
-means the sweep left it `open`, and the later verdict was the walk's.
+they are being asked to do. Every reason belongs to a finding left `open` except the two terminal
+signatures — `implemented` on a landed fix and `wont-fix` on a close — which record what the sweep
+did rather than asking the human to adjudicate anything.
 
 **The line's grammar is `**Sweep:** <token>[: <value>][ — <free text>]`** — always one line. The
 token comes from the table below and is the only part a reader may key on. `<value>` is the bounded
@@ -469,17 +440,9 @@ argument some tokens take (a path, a finding id, a reason code). `<free text>` i
 dash is what separates it from the token, so **an em dash inside the free text becomes a comma** —
 otherwise the line has two plausible splits and neither reader nor script can tell which is right.
 
-**Closes are the one exception to that split.** On a close (`wont-fix — <code>`) the word after the
-dash is not prose: it echoes the code, and the `Skip reason:` line below is the key. On a
-recommendation the code is the token's bounded value (`recommend wont-fix: <code>`), since no
-`Skip reason:` line carries it.
-
 | Reason | What it means | What the human does |
 |--------|---------------|---------------------|
-| `confirmed at unrated confidence` | Real, confirmed in the code — but no reviewer stated a confidence, and the synthesizer's `medium` default is not a reviewer's judgment, so the sweep never lands it unattended. | Decide it in the walk; the problem is real, only the fix is unvouched for. |
-| `confirmed at low confidence` | Real, confirmed in the code — but the reviewer flagged low confidence, and the sweep never lands a `low` finding unattended. | Decide it in the walk; the problem is real despite the reviewer's doubt. |
-| `unrated confidence` | **Retired** — no run writes it now; older docs still carry it. No reviewer stated a confidence, and the sweep did not read the code. | Read it and decide — nobody has vouched for it yet. |
-| `low confidence` | **Retired** — no run writes it now; older docs still carry it. The reviewer flagged low confidence, and the sweep did not read the code. | Read it and decide — it may well be noise. |
+| `confirmed at low confidence` | Real, confirmed in the code — but the reviewer's confidence was `low`, or no reviewer rated it, and the sweep never lands such a finding unattended. | Decide it in the walk; the problem is real, only the fix is unvouched for. |
 | `outside the sweep rule` | Real, confirmed in the code, too large to land unattended. | Fix it deliberately; it is a genuine finding. |
 | `unverified at P3` | Real, confirmed in the code, and **small** — but the reviewer's confidence was `medium` and the sweep lands `medium` only at P1 or P2. Nothing about it is large. | Glance at it and apply it if you agree; these are usually seconds of work. |
 | `excluded category: architecture` | Real, confirmed in the code, Medium effort at P1/P2 with high confidence — but a structural change the sweep never lands unattended. | Decide it in the walk: implement, defer, or won't-fix. The sweep took no position. |
@@ -494,50 +457,19 @@ recommendation the code is the token's bounded value (`recommend wont-fix: <code
 | `interrupted` | A previous sweep run died mid-fix on this finding. | Check the working tree for a half-applied edit before doing anything else. |
 | `recommend wont-fix: <code> — <why>` | Real, confirmed in the code, and the sweep judges it should not be fixed; `<code>` is `not-worth-it`, `accepted-risk`, `pre-existing`, or `by-design`. Status stays `open`, and no `Skip reason:` line is written. | Accept the recommendation in the walk or decide otherwise — the sweep closed nothing. |
 | `implemented — <what changed>` | The fix landed (`done`); the sweep made this edit. The free text is required here, however small the change. | Read the diff. It is uncommitted and in the working tree. |
-| `wont-fix — misread` | The sweep read the code and closed the finding out (`wont-fix`); the `Skip reason:` line below says what the code actually does. | Check the call if you doubt it; otherwise nothing. |
-| `wont-fix — already-fixed` | The sweep closed the finding out (`wont-fix`) because a `done` finding in this doc removed the problem; the `Skip reason:` line names it. | Check that finding's fix if you doubt it; otherwise nothing. |
-| `wont-fix — duplicate` | The sweep closed the finding out (`wont-fix`) as the same problem as an earlier finding; the `Skip reason:` line names it. | Nothing — the earlier finding carries the problem. |
-| `wont-fix — tracked-elsewhere` | The sweep closed the finding out (`wont-fix`) because a verified open issue or existing doc covers it; the `Skip reason:` line gives the reference. | Nothing here — the problem is tracked there. |
-| `wont-fix — protected-artifact` | The sweep closed the finding out (`wont-fix`) because its fix would delete or gitignore a protected path. | Nothing — the rule is absolute. |
-
-**Confirmed recommendation.** A finding carrying `**Sweep:** recommend wont-fix: <code>` that ends
-`wont-fix` with the same code on its `Skip reason:` line is a confirmed recommendation. Any other
-ending — another code, `done`, `deferred`, or still `open` — is not.
+| `wont-fix` | The sweep closed the finding out (`wont-fix`) on evidence; the `Skip reason:` line below carries the code (`misread`, `already-fixed`, or `tracked-elsewhere`) and the evidence. | Check the call if you doubt it; otherwise nothing. |
 
 ### `wont-fix` and `Skip reason:`
 
 `wont-fix` closes a finding out. It is a decision the sweep made, so it carries the sweep's
 `**Sweep:**` signature directly under `Status:` like every other decided finding, with a
-`**Skip reason:**` line following it. The sweep closes on five codes, one example each:
+`**Skip reason:**` line following it. The sweep closes on three codes — `misread`, `already-fixed`,
+`tracked-elsewhere` — and the code lives on `Skip reason:` alone:
 
 ```
 **Status:** `wont-fix` <!-- open | in-progress | done | deferred | wont-fix -->
-**Sweep:** wont-fix — misread
+**Sweep:** wont-fix
 **Skip reason:** misread — sanitize() is already applied at dash.js:317 on this path.
-```
-
-```
-**Status:** `wont-fix` <!-- open | in-progress | done | deferred | wont-fix -->
-**Sweep:** wont-fix — already-fixed
-**Skip reason:** already-fixed — P2-1's fix merged the two planners, so the drift is gone.
-```
-
-```
-**Status:** `wont-fix` <!-- open | in-progress | done | deferred | wont-fix -->
-**Sweep:** wont-fix — duplicate
-**Skip reason:** duplicate — same as P1-2
-```
-
-```
-**Status:** `wont-fix` <!-- open | in-progress | done | deferred | wont-fix -->
-**Sweep:** wont-fix — tracked-elsewhere
-**Skip reason:** tracked-elsewhere — #212, open, tracks this retry backoff.
-```
-
-```
-**Status:** `wont-fix` <!-- open | in-progress | done | deferred | wont-fix -->
-**Sweep:** wont-fix — protected-artifact
-**Skip reason:** protected-artifact — the fix would gitignore docs/plans/.
 ```
 
 **Write `Status:`, `Sweep:`, and `Skip reason:` in a single `Edit` call, never two or three** — the
@@ -549,11 +481,6 @@ as the user's verdict, and nothing later can tell it was the sweep's.
 the evidence an unattended close must show (3c). One field, one code set, whoever wrote it, which
 is what makes counting them across a pile of review docs meaningful. Tell the writer apart by the
 adjacent `**Sweep:**` or `**Grind:**` signature, never by the code.
-
-`protected-artifact` needs no read: it is `/review-walk`'s
-[Protected Artifacts rule](../review-walk/SKILL.md), so a finding whose fix would delete or gitignore
-a protected path is automatically `wont-fix` (the protected-artifact exit) and is called out in the
-report, whatever its tier, effort, or confidence.
 
 Nothing else earns a `wont-fix` from the sweep. `not-worth-it`, `accepted-risk`, `pre-existing`, and
 `by-design` never close a finding, at any tier: the sweep writes them only as a recommendation
@@ -608,7 +535,7 @@ members.
 
 9. **Uncommitted-state reminder.** One line that the sweep committed nothing, plus the touched set
    listed as the files the sweep edited. No file holds both user edits and sweep edits — a
-   baseline-dirty file is never touched (the `dirty file` gate) — so this list is exactly what the
+   baseline-dirty file is never touched (the `dirty file` exit) — so this list is exactly what the
    user is reviewing on top of their own in-flight work.
 
 10. **Next steps.**
@@ -631,13 +558,13 @@ mechanics, marker encoding, and failure handling are defined in
 Compose the body below, write it to a temp file with the Write tool, and post:
 
 ```markdown
-<!-- cc-forge-log v1: {"skill":"review-sweep","event":"sweep-complete","implemented":<n>,"skipped":<n>,"surfaced":<n>,"recommended":<n>,"paths":["docs/reviews/<file>.md"]} -->
+<!-- cc-forge-log v1: {"skill":"review-sweep","event":"sweep-complete","implemented":<n>,"skipped":<n>,"surfaced":<n>,"paths":["docs/reviews/<file>.md"]} -->
 
 ### 🧹 /review-sweep — <n> implemented, <n> surfaced
 
 **Doc:** docs/reviews/<file>.md
 **Implemented:** <n> — <P1-2, P3-1>
-**Won't fix:** <n> — <n> misread, <n> already-fixed, <n> duplicate, <n> tracked-elsewhere, <n> protected-artifact
+**Won't fix:** <n> — <n> misread, <n> already-fixed, <n> tracked-elsewhere
 **Recommended won't-fix:** <n> — <n> not-worth-it, <n> accepted-risk, <n> pre-existing, <n> by-design
 **Surfaced:** <n> — left open for a human
 
@@ -655,16 +582,13 @@ gh issue comment <issue> --repo <owner>/<repo> --body-file <temp-file>
 ```
 
 - The marker carries **counts only**: `implemented` is the `done` count, `skipped` is the `wont-fix`
-  count across all five codes, `surfaced` is the `open`-plus-`Sweep:` count — recommendations
-  included — and `recommended` is the subset of `surfaced` carrying a `recommend wont-fix` line.
-  The report's Surfaced section lists recommendations separately, so it holds `surfaced` minus
-  `recommended`; the marker's `surfaced` and that section are not the same number. Titles and
+  count, `surfaced` is the `open`-plus-`Sweep:` count, recommendations included. Titles and
   reasons are free text that can carry `--`, so they live in the body. Prior-decision and
   already-swept counts are body-only too — they are not this run's outcomes.
-- `**Won't fix:**` and `**Recommended won't-fix:**` list only the codes with a non-zero count, and
-  each line is omitted when its count is zero. The `<details>` list holds every surfaced finding,
-  recommendations included with their `recommend wont-fix: <code> — <why>` reason, so it matches
-  `surfaced`; drop the block when nothing was surfaced.
+- `**Won't fix:**` counts its codes from each close's `Skip reason:` line. It and
+  `**Recommended won't-fix:**` list only the codes with a non-zero count, and each line is omitted
+  when its count is zero. The `<details>` list holds every finding left `open`, recommendations
+  included; drop the block when there are none.
 - With zero implemented the stamp still posts, reading `0 implemented, <n> surfaced`.
 
 ## Rules
