@@ -169,7 +169,8 @@ The review doc is the durable progress store. Every advancing action mutates the
 2. Apply the fix. If the user picked a lettered option or gave instructions, follow those;
    otherwise follow the doc's `Fix:`. Do not invent scope. If the fix is unclear, ask in one
    line of text before editing.
-3. Set `Status: done` and append an `Applied:` line directly below it:
+3. Set `Status: done` and append an `Applied:` line directly below it, or below the
+   finding's `Sweep:` or `Grind:` line when it has one (**Edit anchoring rule**):
 
    ```
      **Status:** `done`
@@ -198,7 +199,8 @@ walk. There is no defer-reason question.
    title, the body, the label, and its own preview-and-confirm; the walk adds nothing to
    the issue. If the user cancels inside `/issue-from-context`, reset `Status:` to `open`
    and re-show the action line — a cancelled issue is not a deferral.
-3. On success, set `Status: deferred` and append the tracking line directly below it:
+3. On success, set `Status: deferred` and append the tracking line directly below it, or
+   below the finding's `Sweep:` or `Grind:` line when it has one (**Edit anchoring rule**):
 
    ```
      **Status:** `deferred`
@@ -234,8 +236,13 @@ Render it in a fenced block so the two columns keep their alignment.
 - **accepted-risk** — real and understood; consciously carried as-is
 - **pre-existing** — real, but not introduced by this change
 - **already-fixed** — real, but no longer present: fixed by another finding's implementation, a later commit, or code that has since been removed
-- **duplicate** — the same finding as another in this doc; name it (`7 P2-3` → `duplicate — same as P2-3`)
-- **tracked-elsewhere** — already covered by an issue, a plan, or an idea doc
+- **duplicate** — the same finding as another in this doc; name it (`7 P2-3` → `duplicate — same as P2-3`).
+  An unattended close or a recommendation names an earlier finding that is not `wont-fix`.
+- **tracked-elsewhere** — already covered by an open issue, a plan, or an idea doc that
+  describes this same problem. An unattended close or a recommendation never cites the
+  branch's own linked issue, a pull request, or the plan or requirements doc this branch
+  implements (all close or go stale at merge), or anything under `docs/tests/` (review
+  consumers do not read it).
 - **protected-artifact** — the fix would delete or gitignore a protected file (see Rules).
   Automatic, never offered on the line.
 
@@ -244,7 +251,8 @@ followed by a note (`3 too small to matter`). A reply that starts with none of t
 is not a reason — re-show the list and wait; never guess a code from prose, and there is no
 `other`.
 
-Then set `Status: wont-fix` and append the reason directly below it:
+Then set `Status: wont-fix` and append the reason directly below it, or below the
+finding's `Sweep:` or `Grind:` line when it has one (**Edit anchoring rule**):
 
 ```
   **Status:** `wont-fix`
@@ -272,15 +280,15 @@ finding.
 
 ### Skip reason format
 
-`Skip reason:` is `<code> — <free text>`, one line, directly under `Status:`
-(`/grind`'s `Defer reason:` borrows the same shape).
+`Skip reason:` is `<code> — <free text>`, one line, directly under `Status:` or under a
+`Sweep:` or `Grind:` line that sits there (`/grind`'s `Defer reason:` borrows the same shape).
 
-**These code lists are the whole convention, not just this walk's.** `/review-sweep` writes
-`Skip reason:` with two of the codes (`misread`, `protected-artifact`); `/grind` writes both
-fields with the full lists. One field, one vocabulary, whoever wrote it, so the codes stay
-countable across a pile of review docs. Adding or renaming a code here changes it for all
-three; tell the writers apart by the `**Sweep:**` or `**Grind:**` signature line, never by
-the code.
+**These code lists are the whole convention, not just this walk's.** Every writer of
+`Skip reason:` or `Defer reason:` draws from them, and each writer's own skill lists the
+codes it writes. One field, one vocabulary, whoever wrote it, so the codes stay countable
+across a pile of review docs. Adding or renaming a code here changes it for every writer;
+tell the writers apart by the `**Sweep:**` or `**Grind:**` signature line, never by the
+code.
 
 - **Skip reason codes** — the won't-fix list above.
 - **Defer reason codes** — the walk writes none (it records a `Tracking:` line instead);
@@ -297,6 +305,35 @@ the code.
   bold-field-label shape matching `^\*\*[A-Za-z ]+:\*\*`. An unescaped `**Status:**` in a
   pasted snippet makes `/review-push` count an extra issue and a sweep re-run read the
   wrong status.
+- **Reason text a skill composes**, rather than the user typing it, is one line and is
+  neutralized exactly as above; an em dash inside it becomes a comma, since the ` — ` after
+  the code is what separates the code from the text.
+
+#### Evidence standards
+
+What an unattended close or a recommendation must show to use each code. They bind
+`/review-sweep`, its closes and its recommendations, and a recommendation this walk computes.
+They never bind the user's own verdict in the walk, which may be any of the eight codes with
+any note, and they do not bind `/grind`. Without the evidence, the code is not used.
+`protected-artifact` stays automatic, under its own rule.
+
+- **misread** — the cited code was read and affirmatively does not have the problem; the
+  reason says what the code actually does.
+- **already-fixed** — a `done` finding in this doc whose fix removed the problem, named on
+  the line. A problem absent with no such finding is `misread`, not `already-fixed`. Git
+  history is no evidence: the doc records a date, not a reviewed commit.
+- **duplicate** — names, by id, an earlier finding in this doc that is not `wont-fix`.
+- **tracked-elsewhere** — an explicit reference the finding text or the cited code names,
+  verified: an issue confirmed open, or an existing doc under `docs/plans/` or
+  `docs/ideation/`, that describes this same problem. No issue search; the definition's
+  exclusions hold.
+- **pre-existing** — a diff from the merge base with the review's base branch, working tree
+  included, shows the cited lines untouched. The base is the PR's base branch when the
+  doc's `target:` resolves to a PR, else the default branch; when it cannot be resolved,
+  the code is not used.
+- **by-design** — the reason cites what was actually read: a comment, a convention file, a
+  doc the finding names.
+- **not-worth-it**, **accepted-risk** — a one-line reason a human can check.
 
 ### Edit anchoring rule
 
@@ -317,6 +354,11 @@ line between them included in `old_string`).
 
 **Status:** `in-progress`
 ```
+
+The verdict line the walk adds — `Applied:`, `Tracking:`, or `Skip reason:` — goes directly
+below `Status:`, except when the finding carries a `**Sweep:**` or `**Grind:**` line: then it
+goes below that line, which stays directly under `Status:`. Unattended runs read that pair,
+so the walk never splits it.
 
 ## Step 6: Final Summary
 
