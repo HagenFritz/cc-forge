@@ -95,9 +95,9 @@ a skill that edits code unattended has no safe way to proceed on a broken premis
 
 3. **Dirty baseline.** `git status --porcelain` once, at this moment, capturing modified, staged,
    and untracked paths. This is the **dirty baseline**: it is never re-read, and it is what makes
-   every later scope check and revert exact. Any finding citing a path in this set is surfaced
-   with `dirty file: <path>` — the user's in-flight work is never touched, and the sweep never has
-   to disentangle its edits from theirs.
+   every later scope check and revert exact. A finding citing a path in this set that reaches the
+   edit gates is surfaced there with `dirty file: <path>` — the user's in-flight work is never
+   touched, and the sweep never has to disentangle its edits from theirs.
 
    `docs/reviews/` is gitignored in this repo, so the sweep's own `Status:` writes never appear in
    `git status`. The doc needs no exclusion from the baseline or from any later scope check.
@@ -106,7 +106,7 @@ a skill that edits code unattended has no safe way to proceed on a broken premis
    it to `open` and add `**Sweep:** interrupted`. Never auto-resume it and never auto-revert its
    edits — a half-applied fix in the working tree is indistinguishable from the user's own work.
    Report these at the top of the run, and count them as **surfaced this run** — the `Sweep:` line
-   is this run's, so loop condition 2 skips them without counting them already swept.
+   is this run's, so the already-swept skip passes over them without counting them already swept.
 
    `/grind` also leaves `in-progress` on an accepted finding its fix agent did not address,
    signed `**Grind:** accepted — not fixed: <reason>`. A grind doc targets grind's run branch, so
@@ -116,7 +116,7 @@ a skill that edits code unattended has no safe way to proceed on a broken premis
 5. **Unsigned terminal findings.** Any finding at `Status: done` carrying none of a `**Sweep:**`,
    `**Grind:**`, or `**Applied:**` line is unattributable — the signature convention reads it as the user's,
    and no later run can tell whether a fix actually landed. Never edit it and never re-open it:
-   triage condition 1 skips it as a prior decision, which is correct. Report it at the top of the
+   the prior-decision skip passes over it, which is correct. Report it at the top of the
    run as an anomaly with its id, so the user can check the working tree against the doc.
 
 6. **Dependencies.** Read every finding's `**Depends on:**` line. Take only the text before the
@@ -133,31 +133,57 @@ Walk the findings **in doc order** — the order they appear under `## Issues`, 
 Doc order is what guarantees a P1 is adjudicated before any later finding that shares its files,
 and that a finding's prerequisites are decided before it.
 
-For each finding, evaluate the conditions below **in this exact order, first match wins.** A
-finding matching several conditions is reported under the first one that matched; the order is
-cheapest-and-most-decisive first, so nothing reads code it did not have to.
+Each finding passes through three stages, in order:
+
+1. **Unread exits** — decided from the doc and the file system alone, before any code is read.
+2. **Read and verdict** — the code is read ([3c](#3c-read-the-code)) and the finding is closed,
+   surfaced, or found real.
+3. **Edit gates** — a real finding is held when something other than the problem itself stops an
+   edit. Only a finding that passes every gate reaches [the implement rule](#3d-the-implement-rule).
+
+Inside each stage, evaluate the conditions **in the listed order, first match wins**, and a match
+ends the finding's triage. A finding matching several conditions is reported under the first one
+that matched; the order is cheapest-and-most-decisive first, so nothing reads code it did not have
+to.
+
+### Stage 1: Unread exits
 
 | # | Condition | Outcome |
 |---|-----------|---------|
 | 1 | `Status:` is `done`, `deferred`, or `wont-fix` | Skip. Count as a **prior decision**, not this run's. |
 | 2 | `Status:` is `open` and it carries a `**Sweep:**` line | Skip. Count as **already swept** — unless this run's preflight wrote the line, which counts as surfaced this run. No second `Sweep:` line is ever written. |
 | 3 | The fix would delete or gitignore a protected artifact | `wont-fix` + `**Skip reason:** protected-artifact — <path>` (see step 4). |
-| 4 | `Confidence rationale:` is `not stated by reviewer`, or `Confidence:` is absent | Surface: `unrated confidence`. **Do not read the code.** |
-| 5 | `Confidence:` is `low` | Surface: `low confidence`. **Do not read the code.** |
-| 6 | Any cited path is in the dirty baseline | Surface: `dirty file: <path>`. Nothing is edited. |
-| 7 | Any cited path cannot be resolved, or resolves to a directory | Surface: `stale citation`. |
-| 8 | Any cited path is a **sensitive path** (see 3a) | Surface: `sensitive path: <path>`. **Do not read the code.** |
-| 9 | Any cited path is contested by a surfaced P1 | Surface: `overlaps surfaced P1-<N>`. |
-| 10 | A prerequisite id names no finding, or names one that did not end `done` | Surface: `depends on: <id>`, naming the first such prerequisite. |
+| 4 | Any cited path cannot be resolved, or resolves to a directory (see 3a) | Surface: `stale citation`. |
+| 5 | Any cited path is a **sensitive path** (see 3a) | Surface: `sensitive path: <path>`. **Do not read the code.** |
 
-Condition 4 exists because a missing `Confidence:` is not the same as a low one.
+### Stage 2: Read and verdict
+
+Every finding stage 1 did not stop has its code read, per [3c](#3c-read-the-code) — including one
+no reviewer rated and one rated `low`. The read either closes it (`misread`), surfaces it
+(`stale citation`), or finds the problem real and sends it on to stage 3.
+
+### Stage 3: Edit gates
+
+Reached only by a finding 3c read and found real. Each gate surfaces the finding `open`; the reason
+says what held it, not that the problem is in doubt.
+
+| # | Condition | Outcome |
+|---|-----------|---------|
+| 1 | `Confidence rationale:` is `not stated by reviewer`, or `Confidence:` is absent | Surface: `confirmed at unrated confidence`. |
+| 2 | `Confidence:` is `low` | Surface: `confirmed at low confidence`. |
+| 3 | Any cited path is in the dirty baseline | Surface: `dirty file: <path>`. Nothing is edited. |
+| 4 | Any cited path is contested by a surfaced P1 (see 3b) | Surface: `overlaps surfaced P1-<N>`. |
+| 5 | A prerequisite id names no finding, or names one that did not end `done` | Surface: `depends on: <id>`, naming the first such prerequisite. |
+
+A finding that passes every gate goes to the implement rule (3d), its preconditions (3e), and the
+implement steps (3f).
+
+The unrated gate exists because a missing `Confidence:` is not the same as a low one.
 [The synthesizer](../../agents/review/review-synthesizer.md) fills an unstated confidence with
-`medium` and records `not stated by reviewer` as the rationale — so without this condition, a
-finding **no reviewer rated** would be indistinguishable from a verified pattern match and, at
-Small effort on P1 or P2, would be edited unattended. The rationale string is the only signal that
-distinguishes them, so the sweep reads it.
-
-Only a finding that matches none of the conditions above reaches the code.
+`medium` and records `not stated by reviewer` as the rationale — so without this gate, a
+finding **no reviewer rated** would be indistinguishable from a verified pattern match at the
+implement rule and, at Small effort on P1 or P2, would be edited unattended. The rationale string is
+the only signal that distinguishes them, so the sweep reads it.
 
 ### 3a. Extracting the cited paths
 
@@ -166,30 +192,30 @@ resolve each against the repo root:
 
 - Resolves to an existing **file** → a cited path.
 - Resolves to nothing, or to a **directory** → the citation is unusable: surface with
-  `stale citation` (condition 7). Do not guess at a nearby file.
+  `stale citation` (the stage 1 exit). Do not guess at a nearby file.
 - A span that is plainly not a path — a symbol name, a function, a code fragment like
-  `sanitize()` — resolves to nothing and would trip condition 7 on its own. Only apply condition
-  7 when **no** span in the field resolves to a file; when at least one does, those files are the
-  citation and the non-path spans are prose. **A span that does not resolve but is path-shaped —
+  `sanitize()` — resolves to nothing and would trip the `stale citation` exit on its own. Only
+  apply that exit when **no** span in the field resolves to a file; when at least one does, those
+  files are the citation and the non-path spans are prose. **A span that does not resolve but is path-shaped —
   it contains a `/` or ends in an extension — is not prose**: it names a file the sweep cannot
   find, so the finding surfaces as `stale citation` even when a sibling span resolved. Otherwise a
   citation like ``File(s): `src/models.py` and db/migrate/003_x.rb`` silently drops the second
   path and the sweep edits believing its scope is confined.
 
 Resolve every cited path to its **real** path (following symlinks) as well as keeping the cited
-one. Both forms are checked against condition 8 — a link named `config/prod.conf` pointing at a
-workflow file is sensitive on the strength of its target, not its name.
+one. Both forms are checked against the sensitive-path exit — a link named `config/prod.conf`
+pointing at a workflow file is sensitive on the strength of its target, not its name.
 
 Line numbers in the field are **hints only**. Earlier fixes in this run shift them.
 
-**This file is where the sensitive-path rule is defined**, unlike condition 3's protected-artifact
+**This file is where the sensitive-path rule is defined**, unlike the protected-artifact exit's
 rule, which lives in [`/review-walk`](../review-walk/SKILL.md) and is cited from here. It is
 **sweep-only**: `/grind` also edits unattended, through its own fix-agent dispatch, and honors no
 equivalent check — a known gap, stated here rather than left implicit, and a candidate for a
 follow-up that gives grind the same guard.
 
-A cited path is **sensitive** (condition 8) when any of these hold, matched against the
-repo-relative path, case-insensitively:
+A cited path is **sensitive** when any of these hold, matched against the repo-relative path,
+case-insensitively:
 
 - **Schema and migrations** — a segment is `alembic`, `migrate`, or `schema`; any segment contains
   `migration`; a segment is `versions` under a `db` or `alembic` ancestor; or the extension is
@@ -201,7 +227,8 @@ repo-relative path, case-insensitively:
 
 These are the files where a wrong unattended edit does the most damage — a migration runs against
 production on the next push, a workflow or config change alters what CI and deploys do. The sweep
-never edits them; the finding surfaces unread, the same posture as low confidence.
+never edits them; the finding surfaces unread, and these are the only findings the sweep leaves
+unread by choice.
 
 **This is a name heuristic and claims no completeness.** It matches how these files are usually
 laid out, not what they are: a migration directory the project configured somewhere else walks
@@ -231,7 +258,7 @@ Anchor on the code the finding describes, not on the line number.
 
 | What the code shows | Outcome |
 |---------------------|---------|
-| The problem is really there | Continue to 3d. |
+| The problem is really there | Continue to stage 3's edit gates. |
 | The code affirmatively does **not** have this problem — the reviewer misread it | `wont-fix` + `**Skip reason:** misread — <one line on what the code actually does>`. |
 | The described code cannot be found at or near the citation | Surface: `stale citation`. |
 
@@ -324,8 +351,8 @@ In this order, no step skipped:
    never a bare `implemented` and never a dangling dash.
 
    **Write both lines in a single `Edit` call, never two.** A run killed between a `done` status
-   and its signature would leave a fix that triage condition 1 skips forever and that no later
-   reader can attribute — one atomic write is what makes that state unreachable.
+   and its signature would leave a fix that the prior-decision skip passes over forever and that
+   no later reader can attribute — one atomic write is what makes that state unreachable.
 
    Every finding the sweep lands carries this line. It is how a later reader — or a later
    analysis of the doc — tells a sweep fix from a `/review-walk` fix: the walk never writes
@@ -396,8 +423,10 @@ line has two plausible splits and neither reader nor script can tell which is ri
 
 | Reason | What it means | What the human does |
 |--------|---------------|---------------------|
-| `unrated confidence` | No reviewer stated a confidence; the synthesizer's `medium` default is not a reviewer's judgment. The sweep did not read the code. | Read it and decide — nobody has vouched for it yet. |
-| `low confidence` | The reviewer flagged low confidence; the sweep did not read the code. | Read it and decide — it may well be noise. |
+| `confirmed at unrated confidence` | Real, confirmed in the code — but no reviewer stated a confidence, and the synthesizer's `medium` default is not a reviewer's judgment, so the sweep never lands it unattended. | Decide it in the walk; the problem is real, only the fix is unvouched for. |
+| `confirmed at low confidence` | Real, confirmed in the code — but the reviewer flagged low confidence, and the sweep never lands a `low` finding unattended. | Decide it in the walk; the problem is real despite the reviewer's doubt. |
+| `unrated confidence` | **Retired** — no run writes it now; older docs still carry it. No reviewer stated a confidence, and the sweep did not read the code. | Read it and decide — nobody has vouched for it yet. |
+| `low confidence` | **Retired** — no run writes it now; older docs still carry it. The reviewer flagged low confidence, and the sweep did not read the code. | Read it and decide — it may well be noise. |
 | `outside the sweep rule` | Real, confirmed in the code, too large to land unattended. | Fix it deliberately; it is a genuine finding. |
 | `unverified at P3` | Real, confirmed in the code, and **small** — but the reviewer's confidence was `medium` and the sweep lands `medium` only at P1 or P2. Nothing about it is large. | Glance at it and apply it if you agree; these are usually seconds of work. |
 | `excluded category: architecture` | Real, confirmed in the code, Medium effort at P1/P2 with high confidence — but a structural change the sweep never lands unattended. | Decide it in the walk: implement, defer, or won't-fix. The sweep took no position. |
@@ -493,8 +522,8 @@ members.
 
 8. **Uncommitted-state reminder.** One line that the sweep committed nothing, plus the touched set
    listed as the files the sweep edited. No file holds both user edits and sweep edits — a
-   baseline-dirty file is never touched (condition 6) — so this list is exactly what the user is
-   reviewing on top of their own in-flight work.
+   baseline-dirty file is never touched (the `dirty file` gate) — so this list is exactly what the
+   user is reviewing on top of their own in-flight work.
 
 9. **Next steps.**
     - `/review-walk <absolute doc path>` — with the count it will walk (the surfaced findings; the
