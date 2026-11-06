@@ -23,7 +23,7 @@ The rule covers skills that read or write a `docs/` artifact. Skills whose objec
 
 `lorem/` is the first skill to bundle a script: `generate.cjs` sits beside its `SKILL.md` and is invoked as `node ${CLAUDE_SKILL_DIR}/generate.cjs`, which is also the only command its `allowed-tools` grants. It touches no `docs/` artifact, so it is outside the producer/consumer naming rule.
 
-`stack/` bundles `stack.sh`, `compose.override.yml`, and `stack.example.conf` (copied to the gitignored `stack.local.conf`, which holds every app-specific value); the skill invokes `${CLAUDE_SKILL_DIR}/stack.sh`, the only command its `allowed-tools` grants, and `land/`, `test-plan/`, and `test-plan-run/` reach the same script as `${CLAUDE_SKILL_DIR}/../stack/stack.sh`. It touches no `docs/` artifact, so it is outside the producer/consumer naming rule.
+`stack/` bundles `stack.sh`, `compose.override.yml`, and `stack.example.conf` (copied to `~/.config/cc-forge/stack.conf`, outside every checkout, which holds every app-specific value); the skill invokes `${CLAUDE_SKILL_DIR}/stack.sh`, the only command its `allowed-tools` grants, and `land/`, `test-plan/`, and `test-plan-run/` reach the same script as `${CLAUDE_SKILL_DIR}/../stack/stack.sh`. It touches no `docs/` artifact, so it is outside the producer/consumer naming rule.
 
 `later/` is the first skill to shell out to an external CLI rather than a bundled script: it runs `attn items`, which must be on PATH, and its `allowed-tools` grants only `attn items *` and one exact `date` format string (a bare `date *` would also allow `date -f <file>`). It touches no `docs/` artifact, so it is outside the producer/consumer naming rule.
 

@@ -20,7 +20,7 @@ FAIL_LINES=20
 STACK_TTL=43200
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 OVERRIDE="$SCRIPT_DIR/compose.override.yml"
-CONFIG="$SCRIPT_DIR/stack.local.conf"
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/cc-forge/stack.conf"
 DUMP_TRAILER="PostgreSQL database cluster dump complete"
 
 usage() {
@@ -28,7 +28,7 @@ usage() {
 usage: stack.sh <command>
   up                       start this worktree's stack on its slot (claims one if needed)
   restart                  reinstall, re-migrate, and restart on the same slot, keeping data
-  down [slot]              remove this worktree's stack, or the given slot's (1-9)
+  down [slot]              remove this worktree's stack, or the given slot's
   down --worktree <path>   remove that worktree's stack; silent when it has none
   status                   every stack: slot, state, time left, ports, branch, worktree (default)
   logs                     tail of this worktree's service logs
@@ -44,16 +44,27 @@ die() {
 
 # Without a config, /land's teardown call and other skills' check call stay silent no-ops.
 if [ ! -f "$CONFIG" ]; then
+  if [ -f "$SCRIPT_DIR/stack.local.conf" ]; then
+    echo "stack: config moved: mv $SCRIPT_DIR/stack.local.conf $CONFIG" >&2
+  fi
   case "${1:-}" in
     check) exit 1 ;;
     down) if [ "${2:-}" = --worktree ]; then exit 0; fi ;;
   esac
   case "${1:-}" in
-    "" | up | restart | down | status | logs | url) die "no stack configured (copy stack.example.conf to stack.local.conf)" ;;
+    "" | up | restart | down | status | logs | url) die "no stack configured (copy $SCRIPT_DIR/stack.example.conf to $CONFIG)" ;;
   esac
 else
   . "$CONFIG"
-  STACK_ENV_STRIPPED="^(DB_PORT|WEB_API_URL|LANGSMITH_PROJECT|LANGCHAIN_PROJECT|[A-Z_]*_DATABASE_URL|$CREDENTIALS_URL_VAR)="
+  if [ -z "${WEB_ORIGIN:-}" ]; then WEB_ORIGIN='http://localhost:{web_port}'; fi
+  WEB_TLS_CERT="${WEB_TLS_CERT:-}"
+  WEB_TLS_KEY="${WEB_TLS_KEY:-}"
+  WEB_ENV="${WEB_ENV:-}"
+  BACKEND_ENV="${BACKEND_ENV:-}"
+  # BACKEND_ENV's keys are stripped too, so the generated env file holds each once, with the slot's value.
+  STACK_ENV_STRIPPED="^(DB_PORT|WEB_API_URL|LANGSMITH_PROJECT|LANGCHAIN_PROJECT|[A-Z_]*_DATABASE_URL|$CREDENTIALS_URL_VAR$(
+    printf '%s\n' "$BACKEND_ENV" | sed -n 's/^[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)=.*/|\1/p' | tr -d '\n'
+  ))="
 fi
 
 held_locks=""
@@ -107,7 +118,7 @@ require_worktree_or_main() {
 web_port() { echo $((WEB_PORT_BASE + $1)); }
 backend_port() { echo $((BACKEND_PORT_BASE + $1)); }
 db_port() { echo $((DB_PORT_BASE + $1)); }
-web_url() { echo "http://localhost:$(web_port "$1")"; }
+web_url() { printf '%s\n' "${WEB_ORIGIN//\{web_port\}/$(web_port "$1")}"; }
 
 container_name() { echo "$NAME_PREFIX-db-wt$1"; }
 compose_project() { echo "$NAME_PREFIX-wt$1"; }
@@ -260,7 +271,7 @@ claim_slot() {
     slot="$n"
     return 0
   done
-  echo "stack: all nine slots are taken:" >&2
+  echo "stack: every slot ($SLOTS) is taken:" >&2
   for n in $SLOTS; do
     if registered "$n"; then
       echo "  slot $n: $(registry_get "$n" worktree)" >&2
@@ -604,6 +615,10 @@ preflight() {
       die "this branch's backend/langgraph.json predates per-slot local ports; rebase onto main"
   done
   [ -f "$wt/backend/scripts/local_db.py" ] || die "branch predates backend/scripts/local_db.py — rebase"
+  if [ -n "$WEB_TLS_CERT$WEB_TLS_KEY" ]; then
+    [ -f "$WEB_TLS_CERT" ] && [ -f "$WEB_TLS_KEY" ] ||
+      die "WEB_TLS_CERT or WEB_TLS_KEY is missing; create them once with mkcert (see stack.example.conf)"
+  fi
   start_docker
 }
 
@@ -636,6 +651,19 @@ await_ports_free() {
   done
 }
 
+# Prints config list $2's non-blank KEY=VALUE lines, leading whitespace trimmed, with slot $1's
+# {web_port} and {web_url} filled in.
+slot_env() {
+  local n="$1" l
+  while IFS= read -r l; do
+    l="${l#"${l%%[![:space:]]*}"}"
+    [ -n "$l" ] || continue
+    l="${l//\{web_port\}/$(web_port "$n")}"
+    l="${l//\{web_url\}/$(web_url "$n")}"
+    printf '%s\n' "$l"
+  done <<<"$2"
+}
+
 write_env_files() {
   local n="$1" wt="$2" src="$MAIN/backend/.env.docker" tmp var project
   tmp="$(slot_dir "$n")/env.tmp"
@@ -650,12 +678,19 @@ write_env_files() {
         project="$(env_value "$src" "$var")"
         if [ -n "$project" ]; then echo "$var=$project-wt$n"; fi
       done
+      slot_env "$n" "$BACKEND_ENV"
     } >"$tmp"
   )
   mv "$tmp" "$wt/backend/.env.stack"
   jq '.env = ".env.stack"' "$wt/backend/langgraph.json" >"$tmp"
   mv "$tmp" "$wt/backend/langgraph.local.json"
   if [ ! -e "$wt/web/.env.local" ]; then ln -sfn "$MAIN/web/.env.local" "$wt/web/.env.local"; fi
+  # The shared .env.local's Vercel OIDC token expires every 12h; refreshing it needs .vercel/project.json.
+  if [ -f "$MAIN/web/.vercel/project.json" ] && [ ! -e "$wt/web/.vercel" ]; then
+    ln -sfn "$MAIN/web/.vercel" "$wt/web/.vercel"
+    git -C "$wt" check-ignore -q web/.vercel ||
+      echo "web/.vercel" >>"$(git -C "$wt" rev-parse --path-format=absolute --git-common-dir)/info/exclude"
+  fi
 }
 
 xml_escape() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
@@ -705,13 +740,26 @@ start_job() {
 # The web job runs next dev directly: the app's own dev script first rebuilds a tracked
 # generated file, which would dirty the worktree and block /land's removal.
 start_services() {
-  local n="$1" wt="$2"
+  local n="$1" wt="$2" l keys=" "
+  local extra=() tls=() web_env=()
+  if [ -n "$WEB_TLS_CERT" ]; then
+    tls=(--experimental-https --experimental-https-key "$WEB_TLS_KEY" --experimental-https-cert "$WEB_TLS_CERT")
+  fi
+  while IFS= read -r l; do
+    if [ -n "$l" ]; then
+      extra+=("$l")
+      keys="$keys${l%%=*} "
+    fi
+  done <<<"$(slot_env "$n" "$WEB_ENV")"
+  for l in "PATH=$PATH" "HOME=$HOME" "AUTH_URL=$(web_url "$n")" "API_URL=http://127.0.0.1:$(backend_port "$n")"; do
+    case "$keys" in *" ${l%%=*} "*) continue ;; esac
+    web_env+=("$l")
+  done
   start_job "$n" backend "$wt/backend" "PATH=$PATH" "HOME=$HOME" -- \
     "$(command -v uv)" run --frozen --env-file .env.stack langgraph dev --config langgraph.local.json \
     --no-browser --n-jobs-per-worker 10 --port "$(backend_port "$n")"
-  start_job "$n" web "$wt/web" "PATH=$PATH" "HOME=$HOME" \
-    "AUTH_URL=$(web_url "$n")" "API_URL=http://127.0.0.1:$(backend_port "$n")" -- \
-    "$wt/web/node_modules/.bin/next" dev -p "$(web_port "$n")"
+  start_job "$n" web "$wt/web" "${web_env[@]}" ${extra[@]+"${extra[@]}"} -- \
+    "$wt/web/node_modules/.bin/next" dev -p "$(web_port "$n")" ${tls[@]+"${tls[@]}"}
 }
 
 # Both dev servers move to another port when theirs is taken, so only the expected port counts.
@@ -776,6 +824,8 @@ start_stack() {
   db_start "$n" "$wt" "$wt/backend/.env.stack"
   echo "stack: checking web env..."
   node "$wt/web/scripts/check-env.mjs" 2>&1 | tee -a "$weblog" || service_fail "$n" web "check-env.mjs failed"
+  # A stale build cache can send next dev into a reload loop.
+  rm -rf "$wt/web/.next"
   echo "stack: starting backend and web..."
   start_services "$n" "$wt"
   await_service "$n" backend "$(backend_port "$n")" "http://127.0.0.1:$(backend_port "$n")/ok"
@@ -874,7 +924,7 @@ cmd_down() {
   elif [ "$#" -eq 1 ] && valid_slot "$1"; then
     require_worktree_or_main
   else
-    echo "usage: stack.sh down [slot | --worktree <path>]  (slot is 1-9)" >&2
+    echo "usage: stack.sh down [slot | --worktree <path>]  (slot is one of: $SLOTS)" >&2
     exit 2
   fi
   local n="${1:-}"

@@ -45,8 +45,8 @@ diverges, the divergence is called out in place.
   ambiguity if the file was edited mid-walk). It also orders same-day docs by their
   `NNN` sequence, which `mtime` gets wrong whenever an earlier doc was edited later.
 
-  The glob is repo-root-relative. Run it from the repo root; from a worktree, note that
-  `docs/` is a symlink to the primary checkout's, so the same command resolves there.
+  The glob is repo-root-relative. Run it from the repo root; in a `/tree` worktree it
+  resolves against the worktree's own copy of `docs/`, which `/tree` made at creation.
 
   Not every requirements doc carries an `NNN` sequence — the oldest ones are
   `YYYY-MM-DD-<slug>-requirements.md`. The sort still orders them correctly by date;

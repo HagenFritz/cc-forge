@@ -5,7 +5,7 @@ argument-hint: "[up|down [slot]|restart|status|logs]"
 allowed-tools: Bash(${CLAUDE_SKILL_DIR}/stack.sh *)
 ---
 
-Run the bundled script and relay what it prints. The script owns parsing, context checks, slots, ports, the 12-hour clock, and teardown; this skill only passes the arguments through. The app-specific values (main checkout, container names, the shared credentials database, what to neutralize in a copy) live in the gitignored `${CLAUDE_SKILL_DIR}/stack.local.conf`, copied from `${CLAUDE_SKILL_DIR}/stack.example.conf`; without it, every command but `check` and `down --worktree` stops with `stack: no stack configured`.
+Run the bundled script and relay what it prints. The script owns parsing, context checks, slots, ports, the 12-hour clock, and teardown; this skill only passes the arguments through. The app-specific values (main checkout, container names, the shared credentials database, what to neutralize in a copy) live in `~/.config/cc-forge/stack.conf`, outside every checkout, copied from `${CLAUDE_SKILL_DIR}/stack.example.conf`; without it, every command but `check` and `down --worktree` stops with `stack: no stack configured`.
 
 ```
 ${CLAUDE_SKILL_DIR}/stack.sh <command> [slot]

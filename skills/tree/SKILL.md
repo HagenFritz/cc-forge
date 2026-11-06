@@ -20,7 +20,7 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
 2. "Resolve branch context" (activeForm: "Resolving context...")
 3. "Construct branch name" (activeForm: "Building branch name...")
 4. "Create worktree" (activeForm: "Creating worktree...")
-5. "Symlink docs directory" (activeForm: "Linking docs...")
+5. "Copy docs directory" (activeForm: "Copying docs...")
 6. "Enter worktree" (activeForm: "Entering worktree...")
 
 ## Steps
@@ -77,11 +77,10 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
    - Branches off the fetched remote-tracking ref, not the local `{default-branch}`, so the new worktree always gets the state fetched in step 2 regardless of what the local ref points to or which worktree owns it.
    - This does not touch the primary checkout's working files or currently-checked-out branch.
 
-9. **Symlink `docs/` into the worktree.** Gitignored doc subdirs (brainstorms, plans, reviews, etc.) are not materialized by `git worktree add`, so the brainstorm/blueprint files this work depends on would be invisible from the worktree. Two cases, decided by what `git worktree add` produced:
-   - **`docs/` fully gitignored** (no `docs/` in the worktree, or an empty one — `rmdir` the empty one): symlink the whole directory — `ln -s {primary-checkout-root}/docs {worktree-path}/docs`. Verify with `[ -L {worktree-path}/docs ]`.
-   - **`docs/` partially tracked** (the worktree's `docs/` has tracked content — a symlink can't replace a real directory, and deleting tracked files would show as deletions on the branch): symlink each missing subdir instead. For every top-level subdirectory of `{primary-checkout-root}/docs/` that does **not** exist in `{worktree-path}/docs/` (absent = gitignored), run `ln -s {primary-checkout-root}/docs/{subdir} {worktree-path}/docs/{subdir}`. Verify each with `[ -L ]`. Tracked subdirs stay branch-local real directories — never symlink over them. The symlinks sit at gitignored paths, so git never sees them.
-   - **On any `ln -s` failure** (permissions, disk full, cross-device), do not silently continue: note exactly which links are missing so step 11's output reflects it.
-   - Whole-dir case: subdirectories created later (e.g. a new `docs/handoff/` entry) are visible automatically. Per-subdir case: a doc subdir created in the primary **after** this worktree needs its own symlink — note this in step 11's output. Removing the worktree (`git worktree remove`, which `/land` calls on merge) deletes the symlinks and leaves the primary checkout's real `docs/` untouched.
+9. **Copy `docs/` into the worktree.** Gitignored doc subdirs (brainstorms, plans, reviews, etc.) are not materialized by `git worktree add`, so the brainstorm this work starts from would be invisible from the worktree. Copy them in as real files, never symlinks: a session moved into the worktree (step 11) cannot write through a link into the primary checkout. From here on, every doc for this branch is written in the worktree.
+   - `mkdir -p {worktree-path}/docs`, then for every top-level subdirectory of `{primary-checkout-root}/docs/` that does **not** exist in `{worktree-path}/docs/` (absent = gitignored), `cp -R {primary-checkout-root}/docs/{subdir} {worktree-path}/docs/{subdir}`. Verify each is a real directory. Subdirs `git worktree add` already produced are tracked and stay branch-local — never copy over them.
+   - **On any copy failure** (permissions, disk full), do not silently continue: note exactly which subdirs are missing so step 11's output reflects it.
+   - The copy is a snapshot: a doc created in the primary **after** this worktree does not appear here. That is fine for the expected flow — brainstorm in the primary, `/tree`, then plan and build in the worktree — and step 11 says so. On land, `/land` copies back only docs the worktree changed (newer than main's), so the untouched snapshot never overwrites main.
 
 10. **Post an issue-log stamp on the GitHub issue** (only if an issue number was provided). Compose the body below, write it to a temp file with the Write tool, and post per [the issue-log spec](../issue-log/SKILL.md)'s posting rules:
     ```markdown
@@ -98,15 +97,15 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
 
 11. **Move the session into the worktree.** Call `EnterWorktree` with `path` set to `{absolute-worktree-path}` (load it via `ToolSearch` first if it is deferred). `git worktree add` already put the path in `git worktree list`, which the first entry requires; because the path sits outside `.claude/worktrees/`, the first entry asks the user for approval once. After the switch, CLAUDE.md, settings, and hook `cwd` follow the session into the worktree, so the attn dashboard files it under the worktree's lane at its next hook event.
 
-    If every step-9 symlink was verified present, output:
+    If every step-9 copy was verified present, output:
     ```
     Worktree created and session moved into:
       {absolute-worktree-path}
     ```
 
-    In the per-subdir case, list which subdirs were symlinked and add: "A doc subdir created in the primary later won't auto-appear here — symlink it the same way if needed."
+    Add one line: "`docs/` was copied in; write this branch's docs here."
 
-    If any symlink was **not** verified (step 9 failed), print the warning before calling `EnterWorktree`: "Worktree created, but the `docs/` symlink(s) failed — these files won't be visible from this worktree until you create the link(s) manually: `<the exact ln -s command(s)>`." Then switch and print the same block.
+    If any copy was **not** verified (step 9 failed), print the warning before calling `EnterWorktree`: "Worktree created, but copying `docs/` failed — these files won't be visible from this worktree until you copy them manually: `<the exact cp -R command(s)>`." Then switch and print the same block.
 
     If `EnterWorktree` fails or the user declines it, print its error and fall back to:
     ```
