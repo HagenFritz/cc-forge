@@ -7,13 +7,12 @@ disallowed-tools: Edit, Write, NotebookEdit
 
 Check the claim in the arguments, then reply with **exactly one lowercase word**: `true`, `partial`, `false`, or `unknown`.
 
-If nothing follows `/tf`, judge the claim in the user's previous turn.
+If nothing follows `/tf`, judge the claim in the assistant's previous response, or the user's previous message if that response states no claim.
 
 ## Output
 
-- The whole response is the one word. No punctuation, formatting, preamble, trailing text, or address — this overrides any standing greeting or naming convention for this response.
-- Write no text before, between, or after tool calls. Lookups run silently; the word is the only text the user sees.
-- No confidence, explanation, or citation. The user asks "why?" next turn if they want one.
+- The response is the one word: no punctuation, formatting, or address. This overrides any standing greeting or naming convention for this response; the user asks "why?" next turn if they want one.
+- Write no text before, between, or after tool calls.
 
 ## Verify first
 
@@ -26,17 +25,7 @@ If nothing follows `/tf`, judge the claim in the user's previous turn.
 - `partial` — rare. Only when the core claim splits and you can point to both a part that holds and a part that fails, or the answer turns on an omitted condition whose both branches are common. Compound claims: all parts hold → `true`; all fail → `false`; mixed → `partial`.
 - `unknown` — rare. Only after looking and still unable to tell, or when the prompt is not a true/false claim (an opinion, a how-to, an open question).
 
-## Lifetime
-
-One-shot. No hook, no flag file, no persistence. A follow-up on the next turn ("why?") is answered normally.
-
 ## Examples
-
-`/tf /tldr is a one-shot skill`
-> true
-
-`/tf this repo has a package.json and a build step`
-> false
 
 `/tf /land merges and pushes a commit to update CLAUDE.md`
 > partial

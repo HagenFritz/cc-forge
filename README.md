@@ -82,7 +82,7 @@ GitHub skills shell out to `gh`; have it installed and authenticated.
 | Skill | What it does | When to use |
 |---|---|---|
 | `/tldr` | Caps **one** response at N sentences in plain language; identifiers and paths never paraphrased | `/tldr <n> [question]` for a straight short answer |
-| `/tf` | Verifies a claim first, then answers **one** response with a single word: `true`, `false`, `partial`, or `unknown` | `/tf <question>` for a checked yes-or-no verdict |
+| `/tf` | Verifies a claim first, then answers **one** response with a single word: `true`, `partial`, `false`, or `unknown` | `/tf <question>` for a checked yes-or-no verdict |
 
 ### Utilities
 
