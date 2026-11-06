@@ -1,7 +1,7 @@
 ---
 name: later
-description: Capture a dated follow-up or an undated idea into attn, list what is due, and mark items done, dropped, snoozed, or edited. Invoke as `/later [text] [when]`; with no argument it lists what is due. Use when the user says "remind me", "follow up on", "later", "note this idea", "what's due", or invokes /later.
-argument-hint: "[text] [when] | done|drop|snooze|edit <which>"
+description: Capture a dated todo or an undated idea into attn, list them, and mark items done, dropped, snoozed, or edited. Invoke as `/later <text> [when]`, or `/later list|ideas|todos`. Use when the user says "remind me", "follow up on", "later", "note this idea", "what's due", "what's on my later list", "what ideas do I have", or invokes /later.
+argument-hint: "<text> [when] | list | ideas | todos | done|drop|snooze|edit <which>"
 allowed-tools: Bash(attn items *), Bash(date '+%Y-%m-%d %a %H:%M %Z')
 ---
 
@@ -30,7 +30,17 @@ ATTN_ITEM_END
 
 ## List
 
-No argument, or "what's due": run `attn items list` and show Due, then Upcoming, one line each (`#id text — date time`), then the idea count.
+When `$ARGUMENTS` is exactly one of these words, or the user asks the matching question, run `attn items list` and show one line per item (`#id text — date time`, date and time only on todos):
+
+- `list` ("what's on my later list"): Due, Upcoming, then Ideas.
+- `todos` ("what's due", "what do I have to do"): Due, then Upcoming.
+- `ideas` ("what ideas do I have"): Ideas, grouped by repo.
+
+A section with nothing in it reads `none`. With no argument at all, print the list for `list` and then this hint line:
+
+```
+/later <text> [when] · /later list · /later ideas · /later todos · /later done|drop|snooze|edit <which>
+```
 
 ## Act on an item
 
