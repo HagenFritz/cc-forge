@@ -89,7 +89,7 @@ GitHub skills shell out to `gh`; have it installed and authenticated.
 |---|---|---|
 | `/stack` | Runs a configured app worktree's own web, LangGraph backend, and Postgres on a slot 1–9 with its own ports (web `300N`, backend `2024+N`, Postgres `5435+N`), as launchd jobs that outlive the session and stop 12 hours after the last start, keeping the data. The database is seeded once from main's with the copy's background work neutralized; app specifics live in a gitignored `skills/stack/stack.local.conf` copied from `skills/stack/stack.example.conf`. No argument shows `status` for every stack | `/stack [up\|down [slot]\|restart\|status\|logs]` when a worktree needs its own running app |
 | `/lorem` | Generates deterministic lorem ipsum at an exact count of chars, words (default), or paragraphs — the same input always gives the same text — and copies it to the clipboard. `tokens` is an estimate measured by Haiku 5.5's token counter and needs `ANTHROPIC_API_KEY` in the repo-root `.env` | `/lorem <n> [chars\|words\|paragraphs\|tokens]` when you need filler text of a known size |
-| `/later` | Captures a dated follow-up or an undated idea into attn through its `attn items` CLI, resolving the when against the shell's date, and lists, closes, snoozes, or edits items by id. Mac-only; needs `attn` on PATH | `/later <text> [when]` to note something; `/later list`, `ideas`, or `todos` to see them |
+| `/later` | Captures a dated todo or an undated idea into attn, and lists, closes, snoozes, or edits them. Mac-only; needs `attn` on PATH | `/later <text> [when]` to note something; `/later list`, `ideas`, or `todos` to see them |
 
 ### Learning
 
