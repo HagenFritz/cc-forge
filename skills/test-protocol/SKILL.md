@@ -67,9 +67,9 @@ means `forge:test-plan:test-judge`; **the writer** means `forge:test-plan:test-w
 ## Prerequisites
 
 - A git repository. `git rev-parse --show-toplevel` resolves the repo root; `docs/tests/`
-  is always `<repo root>/docs/tests/`. Inside a `/tree` worktree that path is the
-  symlinked `docs/`, so writes land in the primary checkout — which is correct and
-  intended.
+  is always `<repo root>/docs/tests/`. Inside a `/tree` worktree that is the worktree's
+  own copied `docs/`; `/land` copies it back to the primary checkout before removing the
+  worktree.
 - GitHub CLI (`gh`) installed and authenticated, for the stamp only. An unauthenticated
   `gh` skips the stamp per [the issue-log spec](../issue-log/SKILL.md); it never stops a
   run.

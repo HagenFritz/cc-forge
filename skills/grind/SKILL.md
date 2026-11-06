@@ -72,7 +72,7 @@ A resume continues the run step 2 found. It reads no state from the issue — st
 
 - **Worktree.** It must exist at `../<repo>-worktrees/<branch>` with a clean tree; missing or dirty → stop (Stopping). Then start the clock as in step 2.
 - **Stamp** `grind-started` as in step 2, with `— resumed` in the heading.
-- **Build.** No work doc → the run stopped between the worktree and the doc, before anything was built: create the doc (skip `git worktree add` and the symlink) and build every unit from the first slice. Otherwise continue the doc per [the work-protocol spec's resume](../work-protocol/SKILL.md#resume): a unit with an `observed: <ordinal>` marker is done; group the rest into slices as step 2 does and continue step 3, telling each build agent its units may already have commits on the branch — build only what `git log` shows missing, and return a commit range for every unit it was given. All units observed but `status: in-progress` → run the wrap-up pass.
+- **Build.** No work doc → the run stopped between the worktree and the doc, before anything was built: create the doc (skip `git worktree add` and the `docs/` copy) and build every unit from the first slice. Otherwise continue the doc per [the work-protocol spec's resume](../work-protocol/SKILL.md#resume): a unit with an `observed: <ordinal>` marker is done; group the rest into slices as step 2 does and continue step 3, telling each build agent its units may already have commits on the branch — build only what `git log` shows missing, and return a commit range for every unit it was given. All units observed but `status: in-progress` → run the wrap-up pass.
 - **Review.** A review doc whose `target:` is the branch and that carries the structural anchors in [verification](../review-protocol/SKILL.md#verifying-the-review-document) → done. None → step 4. A clean review writes no doc, so it re-runs.
 - **Triage and fix.** In that doc, a finding with no `**Grind:**` line → triage it. A finding whose line starts `**Grind:** accepted —` but not `**Grind:** accepted — not fixed:` has a pending fix: dispatch the fix agent for those findings with the doc's fix base, telling it some may already be committed — check `git log <fix base>..origin/<branch>` and skip what is already fixed.
 - **Test plan.** A test doc whose `target:` is the branch and that carries the structural anchors in [verification](../test-protocol/SKILL.md#verifying-the-document) → done, whether or not it was judged: [the judge](../test-protocol/SKILL.md#the-judge) never runs on a document this invocation did not write. None → step 6; a run that legitimately wrote none re-runs it.
@@ -89,7 +89,7 @@ git fetch origin <default-branch>
 git worktree add --no-track -b <branch> ../<repo>-worktrees/<branch> origin/<default-branch>
 ```
 
-Symlink `docs/` from the primary checkout into the worktree, as `/tree` does. Create the work doc per [the work-protocol spec](../work-protocol/SKILL.md#the-document) with `target:` the branch and `base:` the worktree's HEAD.
+Copy `docs/` from the primary checkout into the worktree, as `/tree` does; `/land` copies the run's docs back on merge. Create the work doc per [the work-protocol spec](../work-protocol/SKILL.md#the-document) with `target:` the branch and `base:` the worktree's HEAD.
 
 For each slice, in order:
 

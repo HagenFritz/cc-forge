@@ -42,7 +42,7 @@ This review's working-tree policy is **review what is checked out here**:
 
 - It reviews the current branch **in the current directory**. Arranging the working tree is not its job.
 - It **never creates a worktree and never checks out a branch.** Neither `git worktree add`, nor `gh pr checkout`, nor any other switch.
-- Running **inside** an existing `/tree` worktree is normal and fully supported — that worktree is simply the current directory. `/tree` symlinks `docs/`, so the review doc still lands in the primary checkout's real `docs/reviews/`.
+- Running **inside** an existing `/tree` worktree is normal and fully supported — that worktree is simply the current directory. The review doc lands in the worktree's own `docs/reviews/`, which `/land` copies back to the primary checkout on merge.
 - When the argument names a target that is **not** the branch checked out here, stop and say so — name the requested target and the current branch, and suggest `/tree` or a manual checkout. Create nothing, switch nothing, and dispatch no agents.
 
 Creating isolation is `/deep-review`'s behavior, not a prerequisite for reviewing.
