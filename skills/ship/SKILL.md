@@ -44,8 +44,8 @@ Do NOT proceed with any commits or pushes on main/master.
 
 ### Phase 2: Understand the full branch
 
-5. Run `git fetch origin main:main` to refresh the local `main` ref before diffing against it (needed in worktrees, where `main` isn't the checked-out branch and can otherwise go stale). If it fails, check whether `main` is the currently checked-out branch (`git branch --show-current`) — if so, the local ref is already current and it's safe to skip. Otherwise the fetch failed for a real reason (network, auth, no `origin`); report it and stop rather than silently diffing against a possibly stale `main`. Then run `git log --oneline main..HEAD` to see all commits on this branch.
-6. Run `git diff main...HEAD` to see the full diff of the branch against main.
+5. Run `git fetch origin main` and diff against `origin/main`, never the local `main`. If the fetch fails, report it and stop. Then run `git log --oneline origin/main..HEAD`.
+6. Run `git diff origin/main...HEAD`.
 7. Read through the diff carefully — this is what informs the PR title and body.
 
 ### Phase 3: Push and create PR

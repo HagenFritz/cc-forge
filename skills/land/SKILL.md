@@ -26,9 +26,9 @@ Typical flow: open the PR with `/ship` → `/quick-review` or `/deep-review` →
 ### Phase 1: Resolve the PR
 
 1. Verify `gh` is available (`gh --version`). If not, stop: "GitHub CLI (`gh`) is required for /land. Install it and re-run."
-2. Run `git rev-parse --show-toplevel` for the repository root; scope all git/`gh` operations to it.
+2. Run `git rev-parse --show-toplevel` for the repository root; scope all git/`gh` operations to it. Capture `<owner>/<repo>` with `gh repo view --json nameWithOwner -q .nameWithOwner`.
 3. **Resolve the PR:**
-   - **With a PR number arg** (`/land 42`): `gh pr view <N> --json number,title,url,body,state,headRefName`. If `state` is not `OPEN`, stop: "PR #<N> is <state>, not open."
+   - **With a PR number arg** (`/land 42`): `gh pr view <N> --json number,title,url,body,state,headRefName,baseRefName`. `baseRefName` is `<base>` below — the branch steps 10–11 sync. If `state` is not `OPEN`, stop: "PR #<N> is <state>, not open."
    - **Without:** resolve the open PR for the current branch (`gh pr view --json ...`). If none, stop: "No open PR found for branch `<branch>`. Open one with /ship first, or pass a PR number."
 4. **Capture the linked issue** as `<issue>`: parse the PR body for an issue reference per [the issue-log spec](../issue-log/SKILL.md)'s issue-number resolution — a GitHub closing-keyword reference (written by humans and other tools, never by these skills) or a `Related to #N` line; fall back to the numeric second segment of `headRefName`. Verify it exists (`gh issue view <issue>`); unresolvable or missing → `<issue>` is empty and the Phase 5 stamp skips silently, per [the issue-log spec](../issue-log/SKILL.md).
 
@@ -50,12 +50,12 @@ Typical flow: open the PR with `/ship` → `/quick-review` or `/deep-review` →
 
 ### Phase 3: Merge
 
-8. `gh pr merge <N> --squash --delete-branch`.
-9. **Verify the merge actually happened** — `gh pr view <N> --json state,mergedAt`. On failure (branch protection, required reviews, conflicts): report the exact reason and stop; the PR stays open. Never claim "merged" on faith.
+8. `gh pr merge <N> --squash` — no `--delete-branch`: with it, `gh` also tries to check out `main` locally, which fails whenever another worktree holds `main` and aborts before the remote branch is deleted.
+9. **Verify the merge actually happened** — `gh pr view <N> --json state,mergedAt`. On failure (branch protection, required reviews, conflicts): report the exact reason and stop; the PR stays open. Never claim "merged" on faith. Once merged, **delete the remote branch** — only for a same-repo PR (`isCrossRepository` false, from step 5) whose `headRefName` is not the repo's default branch (`gh repo view --json defaultBranchRef -q .defaultBranchRef.name`): `gh api -X DELETE repos/<owner>/<repo>/git/refs/heads/<headRefName>`. A fork PR's `headRefName` names a branch in the fork, so the call would hit a same-named branch in this repo — skip it and report "fork branch not deleted". A failure here (including "Reference does not exist" from repo auto-delete) is a report line, never a halt.
 
 ### Phase 4: Clean up and sync
 
-10. **Worktree and local branch** (`gh pr merge --delete-branch` already removed the remote branch):
+10. **Worktree and local branch** (remote branch already deleted):
    - `git worktree list` — is `<headRefName>` checked out in a linked worktree?
    - **Worktree found, clean** (`git -C <path> status --short` empty, no `.git/MERGE_HEAD` or `.git/rebase-merge`). `status --short` never lists gitignored files, and `git worktree remove` deletes them without refusing, so preserve them first, in this order:
      1. **List the ignored docs, one file per entry:** `git -C <path> ls-files -oi --exclude-standard -z -- docs` — NUL-separated, so a path with spaces needs no unquoting, and every file is listed on its own. Drop any entry that is a symlink or sits under one (`[ -L ]` on the path or any parent inside `docs/`: older worktrees linked `docs/` into the main checkout, so those files already live there) and anything under `docs/reviews/.raw/` or `docs/tests/.raw/` (generated scratch). Copy only regular files.
@@ -65,8 +65,12 @@ Typical flow: open the PR with `/ship` → `/quick-review` or `/deep-review` →
 
      If the directory is already gone from disk (stale metadata), there is nothing to preserve: run the same `stack.sh down --worktree <path>` for its orphaned stack, then `git worktree remove <path>` then `git worktree prune`.
    - **Worktree found, dirty or mid-merge/rebase:** leave the worktree **and** the branch exactly as they are and report both — its stack is left running too, for its own timer to stop — with the manual commands (`git worktree remove <path>`, `git branch -D <headRefName>`) for when the user is done. Never `--force`.
+   - **Checked out in the main checkout** (the first `git worktree list` entry — the `/branch-from-issue` flow): `git -C <main checkout> checkout <base> && git -C <main checkout> pull --ff-only origin <base>`, then `git branch -D <headRefName>`. This is the one case where `/land` switches the main checkout's branch, because the branch it was on is the one being deleted. A failed checkout (dirty tree) leaves the branch in place and is reported with the manual commands.
    - **No worktree:** `git branch -D <headRefName>` (skip if the branch doesn't exist locally). If deletion fails, report the exact error and the manual command — don't fold it into a success report.
-11. **Sync the default branch:** `git checkout main && git pull` (or `master`). If the checkout fails because another worktree holds `main`, fall back to `git fetch origin main:main`. Any other failure (network, auth) is a real error — report it; don't claim the ref is current.
+11. **Sync `<base>`** — skip when step 10 already pulled it in the main checkout:
+   - **`<base>` checked out in a worktree** (per `git worktree list`; normally the main checkout): `git -C <that path> pull --ff-only origin <base>`. Git refuses to fetch into a branch another worktree holds, so pull where it is checked out.
+   - **No checkout holds `<base>`:** `git fetch origin <base>:<base>`. Never check anything out here — step 11 never changes which branch the main checkout is on.
+   - A failed pull or fetch (dirty tree, diverged history, network, auth) is a real error — report it with the manual command; don't claim the ref is current.
 
 ### Phase 5: Stamp the issue
 
@@ -81,7 +85,7 @@ Typical flow: open the PR with `/ship` → `/quick-review` or `/deep-review` →
     **Follow-ups:**
     - <known follow-up from this branch — omit the section when none>
     ```
-13. **Report the final state:** what gated the merge (pre-merge checks run/passed, CI, local suite, or ungated), merged, remote branch deleted, worktree removed or intentionally left (say which and why), one line per preserved file ("Preserved docs/<path> to the main checkout."), the stack torn down, none, or left running (and why — dirty worktree or a failed teardown), `main` checked out or fetched, stamp posted or skipped. A failed stamp is one report line plus the manual command — the merge already succeeded; roll nothing back.
+13. **Report the final state:** what gated the merge (pre-merge checks run/passed, CI, local suite, or ungated), merged, remote branch deleted, worktree removed or intentionally left (say which and why), one line per preserved file ("Preserved docs/<path> to the main checkout."), the stack torn down, none, or left running (and why — dirty worktree or a failed teardown), `main` pulled or not, stamp posted or skipped. A failed stamp is one report line plus the manual command — the merge already succeeded; roll nothing back. On a successful merge, end the report with the linked issue's URL (`gh issue view <issue> --json url -q .url`) on its own line.
 
 ## Rules
 

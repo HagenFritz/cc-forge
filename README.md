@@ -60,7 +60,7 @@ Skills are named by what they do to an artifact: producers take the name of what
 | `/read-issue` | Fetches an issue and presents a structured digest | You want an issue summarized in-session |
 | `/triage-issue` | Investigates whether an issue is still present, fixed, or needs digging; writes to `docs/triage/` | Verifying a report still reproduces |
 | `/ship` | Commits per file (tests included), pushes — the suite runs once, in CI, off that push — and creates a PR whose pre-merge checklist holds only what CI cannot run | Work is done and tests are written |
-| `/land` | Merges an open PR with zero prompts: runs the PR's pre-merge checklist, waits on CI, squash-merges, tears down the worktree's `/stack` and removes the worktree, syncs `main`, stamps the issue. Red halts | A PR is ready to merge |
+| `/land` | Merges an open PR with zero prompts: runs the PR's pre-merge checklist, waits on CI, squash-merges, tears down the worktree's `/stack` and removes the worktree, syncs `main`, stamps the issue and links it in the report. Red halts | A PR is ready to merge |
 
 GitHub skills shell out to `gh`; have it installed and authenticated.
 
