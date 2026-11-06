@@ -28,7 +28,7 @@ usage() {
 usage: stack.sh <command>
   up                       start this worktree's stack on its slot (claims one if needed)
   restart                  reinstall, re-migrate, and restart on the same slot, keeping data
-  down [slot]              remove this worktree's stack, or the given slot's (1-9)
+  down [slot]              remove this worktree's stack, or the given slot's
   down --worktree <path>   remove that worktree's stack; silent when it has none
   status                   every stack: slot, state, time left, ports, branch, worktree (default)
   logs                     tail of this worktree's service logs
@@ -44,6 +44,9 @@ die() {
 
 # Without a config, /land's teardown call and other skills' check call stay silent no-ops.
 if [ ! -f "$CONFIG" ]; then
+  if [ -f "$SCRIPT_DIR/stack.local.conf" ]; then
+    echo "stack: config moved: mv $SCRIPT_DIR/stack.local.conf $CONFIG" >&2
+  fi
   case "${1:-}" in
     check) exit 1 ;;
     down) if [ "${2:-}" = --worktree ]; then exit 0; fi ;;
@@ -53,13 +56,14 @@ if [ ! -f "$CONFIG" ]; then
   esac
 else
   . "$CONFIG"
-  WEB_ORIGIN="${WEB_ORIGIN:-http://localhost:{web_port}}"
+  if [ -z "${WEB_ORIGIN:-}" ]; then WEB_ORIGIN='http://localhost:{web_port}'; fi
   WEB_TLS_CERT="${WEB_TLS_CERT:-}"
   WEB_TLS_KEY="${WEB_TLS_KEY:-}"
   WEB_ENV="${WEB_ENV:-}"
   BACKEND_ENV="${BACKEND_ENV:-}"
+  # BACKEND_ENV's keys are stripped too, so the generated env file holds each once, with the slot's value.
   STACK_ENV_STRIPPED="^(DB_PORT|WEB_API_URL|LANGSMITH_PROJECT|LANGCHAIN_PROJECT|[A-Z_]*_DATABASE_URL|$CREDENTIALS_URL_VAR$(
-    printf '%s\n' "$BACKEND_ENV" | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/|\1/p' | tr -d '\n'
+    printf '%s\n' "$BACKEND_ENV" | sed -n 's/^[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)=.*/|\1/p' | tr -d '\n'
   ))="
 fi
 
@@ -606,7 +610,6 @@ preflight() {
   done
   [ -f "$MAIN/backend/.env.docker" ] || die "main has no backend/.env.docker; run make env in $MAIN/backend"
   [ -f "$MAIN/web/.env.local" ] || die "main has no web/.env.local; run pnpm env:pull in $MAIN/web"
-  [ -f "$MAIN/web/.vercel/project.json" ] || die "main has no web/.vercel/project.json; run vercel link in $MAIN/web"
   for n in $SLOTS; do
     grep -q "\"http://localhost:$(web_port "$n")\"" "$wt/backend/langgraph.json" 2>/dev/null ||
       die "this branch's backend/langgraph.json predates per-slot local ports; rebase onto main"
@@ -648,15 +651,14 @@ await_ports_free() {
   done
 }
 
-# Prints config list $2's non-blank KEY=VALUE lines with slot $1's {web_port}, {backend_port},
-# {db_port}, and {web_url} filled in.
+# Prints config list $2's non-blank KEY=VALUE lines, leading whitespace trimmed, with slot $1's
+# {web_port} and {web_url} filled in.
 slot_env() {
   local n="$1" l
   while IFS= read -r l; do
+    l="${l#"${l%%[![:space:]]*}"}"
     [ -n "$l" ] || continue
     l="${l//\{web_port\}/$(web_port "$n")}"
-    l="${l//\{backend_port\}/$(backend_port "$n")}"
-    l="${l//\{db_port\}/$(db_port "$n")}"
     l="${l//\{web_url\}/$(web_url "$n")}"
     printf '%s\n' "$l"
   done <<<"$2"
@@ -684,7 +686,11 @@ write_env_files() {
   mv "$tmp" "$wt/backend/langgraph.local.json"
   if [ ! -e "$wt/web/.env.local" ]; then ln -sfn "$MAIN/web/.env.local" "$wt/web/.env.local"; fi
   # The shared .env.local's Vercel OIDC token expires every 12h; refreshing it needs .vercel/project.json.
-  if [ ! -e "$wt/web/.vercel" ]; then ln -sfn "$MAIN/web/.vercel" "$wt/web/.vercel"; fi
+  if [ -f "$MAIN/web/.vercel/project.json" ] && [ ! -e "$wt/web/.vercel" ]; then
+    ln -sfn "$MAIN/web/.vercel" "$wt/web/.vercel"
+    git -C "$wt" check-ignore -q web/.vercel ||
+      echo "web/.vercel" >>"$(git -C "$wt" rev-parse --path-format=absolute --git-common-dir)/info/exclude"
+  fi
 }
 
 xml_escape() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
@@ -734,19 +740,25 @@ start_job() {
 # The web job runs next dev directly: the app's own dev script first rebuilds a tracked
 # generated file, which would dirty the worktree and block /land's removal.
 start_services() {
-  local n="$1" wt="$2" l
-  local extra=() tls=()
+  local n="$1" wt="$2" l keys=" "
+  local extra=() tls=() web_env=()
   if [ -n "$WEB_TLS_CERT" ]; then
     tls=(--experimental-https --experimental-https-key "$WEB_TLS_KEY" --experimental-https-cert "$WEB_TLS_CERT")
   fi
   while IFS= read -r l; do
-    if [ -n "$l" ]; then extra+=("$l"); fi
+    if [ -n "$l" ]; then
+      extra+=("$l")
+      keys="$keys${l%%=*} "
+    fi
   done <<<"$(slot_env "$n" "$WEB_ENV")"
+  for l in "PATH=$PATH" "HOME=$HOME" "AUTH_URL=$(web_url "$n")" "API_URL=http://127.0.0.1:$(backend_port "$n")"; do
+    case "$keys" in *" ${l%%=*} "*) continue ;; esac
+    web_env+=("$l")
+  done
   start_job "$n" backend "$wt/backend" "PATH=$PATH" "HOME=$HOME" -- \
     "$(command -v uv)" run --frozen --env-file .env.stack langgraph dev --config langgraph.local.json \
     --no-browser --n-jobs-per-worker 10 --port "$(backend_port "$n")"
-  start_job "$n" web "$wt/web" "PATH=$PATH" "HOME=$HOME" \
-    "AUTH_URL=$(web_url "$n")" "API_URL=http://127.0.0.1:$(backend_port "$n")" ${extra[@]+"${extra[@]}"} -- \
+  start_job "$n" web "$wt/web" "${web_env[@]}" ${extra[@]+"${extra[@]}"} -- \
     "$wt/web/node_modules/.bin/next" dev -p "$(web_port "$n")" ${tls[@]+"${tls[@]}"}
 }
 
@@ -812,7 +824,7 @@ start_stack() {
   db_start "$n" "$wt" "$wt/backend/.env.stack"
   echo "stack: checking web env..."
   node "$wt/web/scripts/check-env.mjs" 2>&1 | tee -a "$weblog" || service_fail "$n" web "check-env.mjs failed"
-  # A stale build cache can send next dev into a reload loop; every start rebuilds it.
+  # A stale build cache can send next dev into a reload loop.
   rm -rf "$wt/web/.next"
   echo "stack: starting backend and web..."
   start_services "$n" "$wt"

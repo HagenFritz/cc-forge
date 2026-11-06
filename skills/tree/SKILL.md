@@ -77,11 +77,10 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
    - Branches off the fetched remote-tracking ref, not the local `{default-branch}`, so the new worktree always gets the state fetched in step 2 regardless of what the local ref points to or which worktree owns it.
    - This does not touch the primary checkout's working files or currently-checked-out branch.
 
-9. **Copy `docs/` into the worktree.** Gitignored doc subdirs (brainstorms, plans, reviews, etc.) are not materialized by `git worktree add`, so the brainstorm this work starts from would be invisible from the worktree. Copy them in as real files, never symlinks: a session moved into the worktree (step 11) cannot write through a link into the primary checkout. From here on, every doc for this branch is written in the worktree, and `/land` copies them all back to the primary checkout before it removes the worktree. Two cases, decided by what `git worktree add` produced:
-   - **`docs/` fully gitignored** (no `docs/` in the worktree, or an empty one — `rmdir` the empty one): `cp -R {primary-checkout-root}/docs {worktree-path}/docs`. Verify with `[ -d {worktree-path}/docs ] && [ ! -L {worktree-path}/docs ]`.
-   - **`docs/` partially tracked** (the worktree's `docs/` has tracked content): for every top-level subdirectory of `{primary-checkout-root}/docs/` that does **not** exist in `{worktree-path}/docs/` (absent = gitignored), `cp -R {primary-checkout-root}/docs/{subdir} {worktree-path}/docs/{subdir}`. Verify each is a real directory. Tracked subdirs stay branch-local — never copy over them.
+9. **Copy `docs/` into the worktree.** Gitignored doc subdirs (brainstorms, plans, reviews, etc.) are not materialized by `git worktree add`, so the brainstorm this work starts from would be invisible from the worktree. Copy them in as real files, never symlinks: a session moved into the worktree (step 11) cannot write through a link into the primary checkout. From here on, every doc for this branch is written in the worktree.
+   - `mkdir -p {worktree-path}/docs`, then for every top-level subdirectory of `{primary-checkout-root}/docs/` that does **not** exist in `{worktree-path}/docs/` (absent = gitignored), `cp -R {primary-checkout-root}/docs/{subdir} {worktree-path}/docs/{subdir}`. Verify each is a real directory. Subdirs `git worktree add` already produced are tracked and stay branch-local — never copy over them.
    - **On any copy failure** (permissions, disk full), do not silently continue: note exactly which subdirs are missing so step 11's output reflects it.
-   - The copy is a snapshot: a doc created in the primary **after** this worktree does not appear here. That is fine for the expected flow — brainstorm in the primary, `/tree`, then plan and build in the worktree — and step 11 says so.
+   - The copy is a snapshot: a doc created in the primary **after** this worktree does not appear here. That is fine for the expected flow — brainstorm in the primary, `/tree`, then plan and build in the worktree — and step 11 says so. On land, `/land` copies back only docs the worktree changed (newer than main's), so the untouched snapshot never overwrites main.
 
 10. **Post an issue-log stamp on the GitHub issue** (only if an issue number was provided). Compose the body below, write it to a temp file with the Write tool, and post per [the issue-log spec](../issue-log/SKILL.md)'s posting rules:
     ```markdown
@@ -104,7 +103,7 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
       {absolute-worktree-path}
     ```
 
-    Add one line: "`docs/` was copied in; write this branch's docs here — `/land` copies them back to the primary checkout. Docs created in the primary from now on won't appear here."
+    Add one line: "`docs/` was copied in; write this branch's docs here."
 
     If any copy was **not** verified (step 9 failed), print the warning before calling `EnterWorktree`: "Worktree created, but copying `docs/` failed — these files won't be visible from this worktree until you copy them manually: `<the exact cp -R command(s)>`." Then switch and print the same block.
 

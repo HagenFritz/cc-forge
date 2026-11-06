@@ -56,7 +56,7 @@ every command, and is the **sole writer of the doc**; **the observer** means
 
 - A git repository. `git rev-parse --show-toplevel` resolves the repo root; `docs/work/`
   is always `<repo root>/docs/work/`. Inside a `/tree` worktree that is the worktree's own
-  copied `docs/`; `/land` copies it back to the primary checkout before removing the worktree.
+  `docs/`.
 - `docs/work/` is gitignored, scratch under `docs/work/.raw/` included. Work docs are
   local working artifacts, never committed.
 

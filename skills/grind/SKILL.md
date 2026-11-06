@@ -89,7 +89,7 @@ git fetch origin <default-branch>
 git worktree add --no-track -b <branch> ../<repo>-worktrees/<branch> origin/<default-branch>
 ```
 
-Copy `docs/` from the primary checkout into the worktree, as `/tree` does; `/land` copies the run's docs back on merge. Create the work doc per [the work-protocol spec](../work-protocol/SKILL.md#the-document) with `target:` the branch and `base:` the worktree's HEAD.
+Copy `docs/` from the primary checkout into the worktree, as `/tree` does. Create the work doc per [the work-protocol spec](../work-protocol/SKILL.md#the-document) with `target:` the branch and `base:` the worktree's HEAD.
 
 For each slice, in order:
 

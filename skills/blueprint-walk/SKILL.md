@@ -43,7 +43,7 @@ being walked hands its verdict to both halves, and nothing detects that.
   `NNN` sequence, which `mtime` gets wrong whenever an earlier plan was edited later.
 
   The glob is repo-root-relative. Run it from the repo root; in a `/tree` worktree it
-  resolves against the worktree's own copy of `docs/`, which `/tree` made at creation.
+  resolves against the worktree's own `docs/`.
 
 - If no plan docs exist, STOP and tell the user to run `/blueprint` first.
 - Confirm the resolved path back to the user before continuing:
