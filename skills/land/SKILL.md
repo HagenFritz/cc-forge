@@ -50,12 +50,13 @@ Typical flow: open the PR with `/ship` → `/quick-review` or `/deep-review` →
 
 ### Phase 3: Merge
 
-8. `gh pr merge <N> --squash --delete-branch`.
+8. `gh pr merge <N> --squash` — no `--delete-branch`: with it, `gh` also tries to check out `main` locally, which fails whenever another worktree holds `main` and aborts before the remote branch is deleted.
 9. **Verify the merge actually happened** — `gh pr view <N> --json state,mergedAt`. On failure (branch protection, required reviews, conflicts): report the exact reason and stop; the PR stays open. Never claim "merged" on faith.
+9a. **Delete the remote branch** — `gh api -X DELETE repos/<owner>/<repo>/git/refs/heads/<headRefName>`. A "Reference does not exist" error means the repo already auto-deleted it; treat that as deleted. Any other failure is one report line with the manual command, never a halt — the merge already succeeded.
 
 ### Phase 4: Clean up and sync
 
-10. **Worktree and local branch** (`gh pr merge --delete-branch` already removed the remote branch):
+10. **Worktree and local branch** (step 9a already removed the remote branch):
    - `git worktree list` — is `<headRefName>` checked out in a linked worktree?
    - **Worktree found, clean** (`git -C <path> status --short` empty, no `.git/MERGE_HEAD` or `.git/rebase-merge`). `status --short` never lists gitignored files, and `git worktree remove` deletes them without refusing, so preserve them first, in this order:
      1. **List the ignored docs, one file per entry:** `git -C <path> ls-files -oi --exclude-standard -z -- docs` — NUL-separated, so a path with spaces needs no unquoting, and every file is listed on its own. Drop any entry that is a symlink or sits under one (`[ -L ]` on the path or any parent inside `docs/`: older worktrees linked `docs/` into the main checkout, so those files already live there) and anything under `docs/reviews/.raw/` or `docs/tests/.raw/` (generated scratch). Copy only regular files.
@@ -66,7 +67,10 @@ Typical flow: open the PR with `/ship` → `/quick-review` or `/deep-review` →
      If the directory is already gone from disk (stale metadata), there is nothing to preserve: run the same `stack.sh down --worktree <path>` for its orphaned stack, then `git worktree remove <path>` then `git worktree prune`.
    - **Worktree found, dirty or mid-merge/rebase:** leave the worktree **and** the branch exactly as they are and report both — its stack is left running too, for its own timer to stop — with the manual commands (`git worktree remove <path>`, `git branch -D <headRefName>`) for when the user is done. Never `--force`.
    - **No worktree:** `git branch -D <headRefName>` (skip if the branch doesn't exist locally). If deletion fails, report the exact error and the manual command — don't fold it into a success report.
-11. **Sync the default branch:** `git checkout main && git pull` (or `master`). If the checkout fails because another worktree holds `main`, fall back to `git fetch origin main:main`. Any other failure (network, auth) is a real error — report it; don't claim the ref is current.
+11. **Sync the default branch** (`main`, or `master`), always against the main checkout — the first entry `git worktree list` prints — since the worktree `/land` ran from may be gone:
+   - **`main` checked out in a worktree** (per `git worktree list`; normally the main checkout): `git -C <that path> pull --ff-only`. Git refuses to fetch into a branch another worktree holds, so pull where it is checked out.
+   - **Otherwise:** `git -C <main checkout> checkout main && git -C <main checkout> pull --ff-only`.
+   - A failed pull (dirty tree, diverged history, network, auth) is a real error — report it with the manual command; don't claim the ref is current.
 
 ### Phase 5: Stamp the issue
 
@@ -81,7 +85,7 @@ Typical flow: open the PR with `/ship` → `/quick-review` or `/deep-review` →
     **Follow-ups:**
     - <known follow-up from this branch — omit the section when none>
     ```
-13. **Report the final state:** what gated the merge (pre-merge checks run/passed, CI, local suite, or ungated), merged, remote branch deleted, worktree removed or intentionally left (say which and why), one line per preserved file ("Preserved docs/<path> to the main checkout."), the stack torn down, none, or left running (and why — dirty worktree or a failed teardown), `main` checked out or fetched, stamp posted or skipped. A failed stamp is one report line plus the manual command — the merge already succeeded; roll nothing back.
+13. **Report the final state:** what gated the merge (pre-merge checks run/passed, CI, local suite, or ungated), merged, remote branch deleted, worktree removed or intentionally left (say which and why), one line per preserved file ("Preserved docs/<path> to the main checkout."), the stack torn down, none, or left running (and why — dirty worktree or a failed teardown), `main` pulled or not, stamp posted or skipped. A failed stamp is one report line plus the manual command — the merge already succeeded; roll nothing back. On a successful merge, end the report with the linked issue's URL (`https://github.com/<owner>/<repo>/issues/<issue>`) on its own line — or "No linked issue." when `<issue>` is empty.
 
 ## Rules
 
