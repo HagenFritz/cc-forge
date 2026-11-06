@@ -55,7 +55,7 @@ Skills are named by what they do to an artifact: producers take the name of what
 | Skill | What it does | When to use |
 |---|---|---|
 | `/branch-from-issue` | Creates and checks out a branch from an issue number, in the **current** directory | Starting issue work, no isolation needed |
-| `/tree` | Creates a git worktree on its own branch at `../<repo>-worktrees/<branch>/`, with `docs/` symlinked in, and moves the session into it | Work you want in its own directory, e.g. several branches at once |
+| `/tree` | Creates a git worktree on its own branch at `../<repo>-worktrees/<branch>/`, with `docs/` copied in, and moves the session into it | Work you want in its own directory, e.g. several branches at once |
 | `/issue-from-context` (alias `/ifc`) | Creates a GitHub issue from conversation context. `--prefix <str>` prepends a title prefix; `--who <names>` assigns teammates by first name | Something worth tracking surfaced mid-conversation |
 | `/read-issue` | Fetches an issue and presents a structured digest | You want an issue summarized in-session |
 | `/triage-issue` | Investigates whether an issue is still present, fixed, or needs digging; writes to `docs/triage/` | Verifying a report still reproduces |
@@ -87,7 +87,7 @@ GitHub skills shell out to `gh`; have it installed and authenticated.
 
 | Skill | What it does | When to use |
 |---|---|---|
-| `/stack` | Runs a configured app worktree's own web, LangGraph backend, and Postgres on a slot 1–9 with its own ports (web `300N`, backend `2024+N`, Postgres `5435+N`), as launchd jobs that outlive the session and stop 12 hours after the last start, keeping the data. The database is seeded once from main's with the copy's background work neutralized; app specifics live in a gitignored `skills/stack/stack.local.conf` copied from `skills/stack/stack.example.conf`. No argument shows `status` for every stack | `/stack [up\|down [slot]\|restart\|status\|logs]` when a worktree needs its own running app |
+| `/stack` | Runs a configured app worktree's own web, LangGraph backend, and Postgres on a slot 1–9 with its own ports (web `300N`, backend `2024+N`, Postgres `5435+N`), as launchd jobs that outlive the session and stop 12 hours after the last start, keeping the data. The database is seeded once from main's with the copy's background work neutralized; app specifics live in `~/.config/cc-forge/stack.conf`, outside every checkout, copied from `skills/stack/stack.example.conf`. No argument shows `status` for every stack | `/stack [up\|down [slot]\|restart\|status\|logs]` when a worktree needs its own running app |
 | `/lorem` | Generates deterministic lorem ipsum at an exact count of chars, words (default), or paragraphs — the same input always gives the same text — and copies it to the clipboard. `tokens` is an estimate measured by Haiku 5.5's token counter and needs `ANTHROPIC_API_KEY` in the repo-root `.env` | `/lorem <n> [chars\|words\|paragraphs\|tokens]` when you need filler text of a known size |
 
 ### Learning
