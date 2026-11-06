@@ -1,6 +1,6 @@
 # Skills
 
-Slash-command skills for Claude Code. Each subdirectory is one skill with a `SKILL.md` (YAML frontmatter — `name`, `description`, `argument-hint`, `allowed-tools`, plus `user-invocable: false` + `disable-model-invocation: true` for reference-only skills — followed by the workflow prose). Claude Code loads these from `~/.claude/skills/`; editing a file here goes live only after re-running the plugin install or copying the folder into `~/.claude/`.
+Slash-command skills for Claude Code. Each subdirectory is one skill with a `SKILL.md` (YAML frontmatter — `name`, `description`, `argument-hint`, `allowed-tools`, `disallowed-tools`, plus `user-invocable: false` + `disable-model-invocation: true` for reference-only skills — followed by the workflow prose). Claude Code loads these from `~/.claude/skills/`; editing a file here goes live only after re-running the plugin install or copying the folder into `~/.claude/`.
 
 A **git** pre-commit hook (distinct from the plugin hooks in `hooks/`) runs `scripts/sync-workflows.sh`, which regenerates `.devin/workflows/*.md` (gitignored) from every `SKILL.md` here — except reference-only skills (`user-invocable: false`), which are skipped.
 
@@ -26,6 +26,8 @@ The rule covers skills that read or write a `docs/` artifact. Skills whose objec
 `stack/` bundles `stack.sh`, `compose.override.yml`, and `stack.example.conf` (copied to the gitignored `stack.local.conf`, which holds every app-specific value); the skill invokes `${CLAUDE_SKILL_DIR}/stack.sh`, the only command its `allowed-tools` grants, and `land/`, `test-plan/`, and `test-plan-run/` reach the same script as `${CLAUDE_SKILL_DIR}/../stack/stack.sh`. It touches no `docs/` artifact, so it is outside the producer/consumer naming rule.
 
 `later/` is the first skill to shell out to an external CLI rather than a bundled script: it runs `attn items`, which must be on PATH, and its `allowed-tools` grants only `attn items *` and one exact `date` format string (a bare `date *` would also allow `date -f <file>`). It touches no `docs/` artifact, so it is outside the producer/consumer naming rule.
+
+`tf/` is the first skill to use `disallowed-tools`: it removes `Edit`, `Write`, and `NotebookEdit` for the turn that invokes it, and the list clears on the next message. `Bash` stays allowed and its read-only limit is a prose rule in the `SKILL.md`, because `disallowed-tools` removes whole tools and cannot split `Bash` into read-only and writing commands — and `/tf` needs `git log`, `grep`, and `gh … view` to verify a claim. It touches no `docs/` artifact, so it is outside the producer/consumer naming rule.
 
 `walk-protocol/` is the third reference skill: it owns every rule the four walks share — walk order and the no-batching rule, resume, the self-loop contract, the edit-anchoring and re-read discipline, claim-first, the destructive-action gate, the term-capture side buffer, the computed recommendation that `review-walk/` and `test-plan-walk/` put on the card, and the summary-and-stamp shape. The walks cite it and restate none of it; a rule that drifts between four files is worse than a rule stated once.
 
