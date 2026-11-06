@@ -20,7 +20,7 @@ FAIL_LINES=20
 STACK_TTL=43200
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 OVERRIDE="$SCRIPT_DIR/compose.override.yml"
-CONFIG="$SCRIPT_DIR/stack.local.conf"
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/cc-forge/stack.conf"
 DUMP_TRAILER="PostgreSQL database cluster dump complete"
 
 usage() {
@@ -49,10 +49,13 @@ if [ ! -f "$CONFIG" ]; then
     down) if [ "${2:-}" = --worktree ]; then exit 0; fi ;;
   esac
   case "${1:-}" in
-    "" | up | restart | down | status | logs | url) die "no stack configured (copy stack.example.conf to stack.local.conf)" ;;
+    "" | up | restart | down | status | logs | url) die "no stack configured (copy $SCRIPT_DIR/stack.example.conf to $CONFIG)" ;;
   esac
 else
   . "$CONFIG"
+  WEB_ORIGIN="${WEB_ORIGIN:-http://localhost:{web_port}}"
+  WEB_TLS_CERT="${WEB_TLS_CERT:-}"
+  WEB_TLS_KEY="${WEB_TLS_KEY:-}"
   WEB_ENV="${WEB_ENV:-}"
   BACKEND_ENV="${BACKEND_ENV:-}"
   STACK_ENV_STRIPPED="^(DB_PORT|WEB_API_URL|LANGSMITH_PROJECT|LANGCHAIN_PROJECT|[A-Z_]*_DATABASE_URL|$CREDENTIALS_URL_VAR$(
@@ -111,7 +114,7 @@ require_worktree_or_main() {
 web_port() { echo $((WEB_PORT_BASE + $1)); }
 backend_port() { echo $((BACKEND_PORT_BASE + $1)); }
 db_port() { echo $((DB_PORT_BASE + $1)); }
-web_url() { echo "http://localhost:$(web_port "$1")"; }
+web_url() { printf '%s\n' "${WEB_ORIGIN//\{web_port\}/$(web_port "$1")}"; }
 
 container_name() { echo "$NAME_PREFIX-db-wt$1"; }
 compose_project() { echo "$NAME_PREFIX-wt$1"; }
@@ -264,7 +267,7 @@ claim_slot() {
     slot="$n"
     return 0
   done
-  echo "stack: all nine slots are taken:" >&2
+  echo "stack: every slot ($SLOTS) is taken:" >&2
   for n in $SLOTS; do
     if registered "$n"; then
       echo "  slot $n: $(registry_get "$n" worktree)" >&2
@@ -603,11 +606,16 @@ preflight() {
   done
   [ -f "$MAIN/backend/.env.docker" ] || die "main has no backend/.env.docker; run make env in $MAIN/backend"
   [ -f "$MAIN/web/.env.local" ] || die "main has no web/.env.local; run pnpm env:pull in $MAIN/web"
+  [ -f "$MAIN/web/.vercel/project.json" ] || die "main has no web/.vercel/project.json; run vercel link in $MAIN/web"
   for n in $SLOTS; do
     grep -q "\"http://localhost:$(web_port "$n")\"" "$wt/backend/langgraph.json" 2>/dev/null ||
       die "this branch's backend/langgraph.json predates per-slot local ports; rebase onto main"
   done
   [ -f "$wt/backend/scripts/local_db.py" ] || die "branch predates backend/scripts/local_db.py — rebase"
+  if [ -n "$WEB_TLS_CERT$WEB_TLS_KEY" ]; then
+    [ -f "$WEB_TLS_CERT" ] && [ -f "$WEB_TLS_KEY" ] ||
+      die "WEB_TLS_CERT or WEB_TLS_KEY is missing; create them once with mkcert (see stack.example.conf)"
+  fi
   start_docker
 }
 
@@ -675,6 +683,8 @@ write_env_files() {
   jq '.env = ".env.stack"' "$wt/backend/langgraph.json" >"$tmp"
   mv "$tmp" "$wt/backend/langgraph.local.json"
   if [ ! -e "$wt/web/.env.local" ]; then ln -sfn "$MAIN/web/.env.local" "$wt/web/.env.local"; fi
+  # The shared .env.local's Vercel OIDC token expires every 12h; refreshing it needs .vercel/project.json.
+  if [ ! -e "$wt/web/.vercel" ]; then ln -sfn "$MAIN/web/.vercel" "$wt/web/.vercel"; fi
 }
 
 xml_escape() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
@@ -725,7 +735,10 @@ start_job() {
 # generated file, which would dirty the worktree and block /land's removal.
 start_services() {
   local n="$1" wt="$2" l
-  local extra=()
+  local extra=() tls=()
+  if [ -n "$WEB_TLS_CERT" ]; then
+    tls=(--experimental-https --experimental-https-key "$WEB_TLS_KEY" --experimental-https-cert "$WEB_TLS_CERT")
+  fi
   while IFS= read -r l; do
     if [ -n "$l" ]; then extra+=("$l"); fi
   done <<<"$(slot_env "$n" "$WEB_ENV")"
@@ -734,7 +747,7 @@ start_services() {
     --no-browser --n-jobs-per-worker 10 --port "$(backend_port "$n")"
   start_job "$n" web "$wt/web" "PATH=$PATH" "HOME=$HOME" \
     "AUTH_URL=$(web_url "$n")" "API_URL=http://127.0.0.1:$(backend_port "$n")" ${extra[@]+"${extra[@]}"} -- \
-    "$wt/web/node_modules/.bin/next" dev -p "$(web_port "$n")"
+    "$wt/web/node_modules/.bin/next" dev -p "$(web_port "$n")" ${tls[@]+"${tls[@]}"}
 }
 
 # Both dev servers move to another port when theirs is taken, so only the expected port counts.
@@ -899,7 +912,7 @@ cmd_down() {
   elif [ "$#" -eq 1 ] && valid_slot "$1"; then
     require_worktree_or_main
   else
-    echo "usage: stack.sh down [slot | --worktree <path>]  (slot is 1-9)" >&2
+    echo "usage: stack.sh down [slot | --worktree <path>]  (slot is one of: $SLOTS)" >&2
     exit 2
   fi
   local n="${1:-}"
