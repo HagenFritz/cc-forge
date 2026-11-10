@@ -8,13 +8,12 @@ const { execFileSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 
-const USAGE = 'usage: pull.cjs [--since <YYYY-MM-DD | YYYY-MM-DDTHH:MM>] [--out <path>]'
+const USAGE = 'usage: pull.cjs [--since <YYYY-MM-DD | YYYY-MM-DDTHH:MM>] --out <path>'
 const MAX_BUFFER = 256 * 1024 * 1024
 const PR_LIMIT = '1000'
 const PROD_PR_LIMIT = '300'
 const GRAPHQL_BATCH = 100
-const STATUS_RANK = { open: 0, 'main only': 1, 'in prod': 2 }
-const BODY_REF = /\b(?:related to|close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/i
+const BODY_REF = /\b(?:related to|close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d{1,9})\b/i
 const MARKER = /^<!-- cc-forge-log v(\d+): (\{.*\}) -->$/
 const DOC_DIRS = { work: 'work', plans: 'plan', reviews: 'review', brainstorms: 'brainstorm', tests: 'test' }
 const RETIRED_GRIND_EVENTS = new Set(['tests-run', 'pr-reviewed', 'pr-merged'])
@@ -22,7 +21,6 @@ const PLANNING_EVENTS = new Set([
   'requirements-written', 'brainstorm-walk-complete', 'plan-written', 'plan-deepened', 'blueprint-walk-complete', 'side-quest-filed',
 ])
 
-const warnings = []
 const notRead = []
 
 function usageError(msg) {
@@ -35,21 +33,16 @@ function die(msg) {
   process.exit(1)
 }
 
-function run(cmd, args, cwd) {
-  return execFileSync(cmd, args, { cwd, encoding: 'utf8', maxBuffer: MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] })
+const CHILD_ENV = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: 'ssh -o BatchMode=yes' }
+
+function run(cmd, args, cwd, timeout = cmd === 'gh' ? 60000 : 15000) {
+  return execFileSync(cmd, args, {
+    cwd, env: CHILD_ENV, encoding: 'utf8', maxBuffer: MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'], timeout, killSignal: 'SIGKILL',
+  })
 }
 
 function errText(err) {
   return String(err.stderr || err.message).trim().split('\n')[0]
-}
-
-function tryRun(what, cmd, args, cwd) {
-  try {
-    return run(cmd, args, cwd)
-  } catch (err) {
-    warnings.push(`${what}: ${errText(err)}`)
-    return null
-  }
 }
 
 function pad(n) {
@@ -91,17 +84,14 @@ function parseArgs(argv) {
     if (arg === '--since') {
       if (i + 1 >= argv.length) usageError('--since needs a value')
       since = argv[++i]
-    } else if (arg.startsWith('--since=')) {
-      since = arg.slice('--since='.length)
     } else if (arg === '--out') {
       if (i + 1 >= argv.length) usageError('--out needs a value')
       out = argv[++i]
-    } else if (arg.startsWith('--out=')) {
-      out = arg.slice('--out='.length)
     } else {
       usageError(`unknown argument "${arg}"`)
     }
   }
+  if (!out) usageError('--out is required')
   return { since, out }
 }
 
@@ -141,14 +131,15 @@ function resolveRepo() {
 function ghLogin() {
   try {
     return run('gh', ['api', 'user', '--jq', '.login']).trim()
-  } catch {
-    die('gh is not authenticated; run `gh auth login`, then retry')
+  } catch (err) {
+    const text = errText(err)
+    die(/auth|401|login/i.test(text) ? `gh is not authenticated (${text}); run \`gh auth login\`, then retry` : `gh api user failed (${text}); retry`)
   }
 }
 
 function fetchRefs(main) {
   try {
-    run('git', ['fetch', '--quiet', 'origin', 'main', 'prod'], main)
+    run('git', ['fetch', '--quiet', 'origin', 'main', 'prod'], main, 60000)
   } catch (err) {
     die(`git fetch origin main prod failed (${errText(err)}); deploy status would be stale, so the run stops — retry`)
   }
@@ -157,10 +148,9 @@ function fetchRefs(main) {
 function parseWorktrees(porcelain) {
   const out = []
   for (const block of porcelain.split(/\n\n+/)) {
-    const wt = { path: null, head: null, branch: null, detached: false, prunable: false, bare: false }
+    const wt = { path: null, branch: null, detached: false, prunable: false, bare: false }
     for (const line of block.split('\n')) {
       if (line.startsWith('worktree ')) wt.path = line.slice(9)
-      else if (line.startsWith('HEAD ')) wt.head = line.slice(5)
       else if (line.startsWith('branch ')) wt.branch = line.slice(7).replace(/^refs\/heads\//, '')
       else if (line === 'detached') wt.detached = true
       else if (line.startsWith('prunable')) wt.prunable = true
@@ -173,11 +163,11 @@ function parseWorktrees(porcelain) {
 
 function branchIssue(branch) {
   const seg = (branch || '').split('/')[1]
-  return seg && /^\d+$/.test(seg) ? Number(seg) : null
+  return seg && /^\d{1,9}$/.test(seg) ? Number(seg) : null
 }
 
 function pathIssue(path) {
-  const m = /\/(\d+)\/[^/]+\/?$/.exec(path)
+  const m = /\/(\d{1,9})\/[^/]+\/?$/.exec(path)
   return m ? Number(m[1]) : null
 }
 
@@ -194,25 +184,25 @@ function listOwnPrs(slug) {
   const out = run('gh', [
     'pr', 'list', '--repo', slug, '--author', '@me', '--state', 'all', '--limit', PR_LIMIT,
     '--json', 'number,title,url,state,baseRefName,headRefName,mergedAt,closedAt,mergeCommit',
-  ])
+  ], undefined, 120000)
   const prs = JSON.parse(out)
-  if (prs.length === Number(PR_LIMIT)) warnings.push(`gh pr list hit its ${PR_LIMIT}-PR limit; older PRs merged in the window could be missed`)
+  if (prs.length === Number(PR_LIMIT)) die(`gh pr list hit its ${PR_LIMIT}-PR limit; raise PR_LIMIT in pull.cjs`)
   return prs
 }
 
 function listProdMerges(slug) {
-  const out = tryRun('merged prod PRs', 'gh', [
+  const out = run('gh', [
     'pr', 'list', '--repo', slug, '--base', 'prod', '--state', 'merged', '--limit', PROD_PR_LIMIT,
     '--json', 'number,title,mergeCommit',
   ])
   const byOid = new Map()
-  for (const pr of out ? JSON.parse(out) : []) {
+  for (const pr of JSON.parse(out)) {
     if (pr.mergeCommit) byOid.set(pr.mergeCommit.oid, { number: pr.number, title: pr.title })
   }
   return byOid
 }
 
-// gh exits non-zero when any alias fails to resolve; the partial data is still on stdout.
+// gh exits non-zero when one alias names no issue; the rest of the data is still on stdout.
 function graphql(repo, fields) {
   const query = `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){${fields}}}`
   let out
@@ -220,17 +210,11 @@ function graphql(repo, fields) {
     out = run('gh', ['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${repo.owner}`, '-F', `name=${repo.name}`])
   } catch (err) {
     out = err.stdout
-    if (!out) {
-      warnings.push(`GitHub GraphQL read failed: ${errText(err)}`)
-      return {}
-    }
+    if (!out) throw err
   }
-  try {
-    return JSON.parse(out).data?.repository ?? {}
-  } catch {
-    warnings.push('GitHub GraphQL returned unreadable output')
-    return {}
-  }
+  const parsed = JSON.parse(out)
+  if (!parsed.data?.repository) die(`GitHub GraphQL failed: ${parsed.errors?.[0]?.message || 'no data'}`)
+  return parsed.data.repository
 }
 
 function batched(numbers, fieldFor) {
@@ -246,8 +230,8 @@ function fetchPrBodies(repo, numbers) {
   const data = batched(numbers, (chunk) =>
     graphql(repo, chunk.map((n) => `p${n}:pullRequest(number:${n}){body}`).join(' ')))
   for (const n of numbers) {
-    if (data[`p${n}`]) bodies.set(n, data[`p${n}`].body)
-    else warnings.push(`PR #${n}: body not read`)
+    if (!data[`p${n}`]) die(`PR #${n}: body not read`)
+    bodies.set(n, data[`p${n}`].body)
   }
   return bodies
 }
@@ -264,10 +248,10 @@ function fetchIssues(repo, numbers) {
 }
 
 function prodHistory(main, win) {
-  const fp = tryRun('prod first-parent history', 'git', ['rev-list', '--first-parent', `--since=${win.start}`, 'origin/prod'], main)
-  const range = tryRun('origin/main..origin/prod subjects', 'git', ['log', '--format=%H%x00%s', 'origin/main..origin/prod'], main)
+  const fp = run('git', ['rev-list', '--first-parent', `--since=${win.start}`, 'origin/prod'], main)
+  const range = run('git', ['log', '--format=%H%x00%s', 'origin/main..origin/prod'], main)
   const bySubjectPr = new Map()
-  for (const line of (range || '').split('\n').filter(Boolean)) {
+  for (const line of range.split('\n').filter(Boolean)) {
     const [sha, subject] = line.split('\0')
     for (const m of subject.matchAll(/\(#(\d+)\)/g)) {
       const n = Number(m[1])
@@ -275,7 +259,7 @@ function prodHistory(main, win) {
       bySubjectPr.get(n).push(sha)
     }
   }
-  return { firstParent: (fp || '').split('\n').filter(Boolean), bySubjectPr }
+  return { firstParent: fp.split('\n').filter(Boolean), bySubjectPr }
 }
 
 function isAncestor(main, a, b) {
@@ -283,7 +267,7 @@ function isAncestor(main, a, b) {
     run('git', ['merge-base', '--is-ancestor', a, b], main)
     return true
   } catch (err) {
-    if (err.status !== 1) warnings.push(`ancestry check ${a.slice(0, 9)}: ${errText(err)}`)
+    if (err.status !== 1) throw err
     return false
   }
 }
@@ -302,7 +286,7 @@ function earliestCarrier(main, firstParent, sha) {
       hi = mid - 1
     }
   }
-  return found === -1 ? null : firstParent[found]
+  return found
 }
 
 function deploy(main, pr, prod, carriers) {
@@ -312,18 +296,10 @@ function deploy(main, pr, prod, carriers) {
   const oid = pr.mergeCommit?.oid
   if (oid && isAncestor(main, oid, 'origin/prod')) candidates.push(oid)
   if (candidates.length === 0) return { deployStatus: 'main only', carriedBy: null }
-  let carrier = null
   let carrierIdx = -1
-  for (const sha of candidates) {
-    const c = earliestCarrier(main, prod.firstParent, sha)
-    const idx = c ? prod.firstParent.indexOf(c) : -1
-    if (idx > carrierIdx) {
-      carrier = c
-      carrierIdx = idx
-    }
-  }
+  for (const sha of candidates) carrierIdx = Math.max(carrierIdx, earliestCarrier(main, prod.firstParent, sha))
+  const carrier = carrierIdx === -1 ? null : prod.firstParent[carrierIdx]
   const carriedBy = carrier ? carriers.get(carrier) ?? null : null
-  if (carrier && !carriedBy) warnings.push(`PR #${pr.number}: prod merge ${carrier.slice(0, 9)} matches no merged prod PR`)
   return { deployStatus: 'in prod', carriedBy }
 }
 
@@ -331,20 +307,18 @@ function prState(pr) {
   return { OPEN: 'open', MERGED: 'merged', CLOSED: 'closed' }[pr.state]
 }
 
-function shapePr(pr, body, status, keyedBy) {
+function shapePr(pr, body, status) {
   return {
     number: pr.number,
     title: pr.title,
     url: pr.url,
     body,
     state: prState(pr),
-    base: pr.baseRefName,
     branch: pr.headRefName,
     mergedAt: pr.mergedAt || null,
     closedAt: pr.closedAt || null,
     deployStatus: status.deployStatus,
     carriedBy: status.carriedBy,
-    keyedBy,
   }
 }
 
@@ -357,35 +331,23 @@ function parseCommits(out) {
 
 function readWorktree(wt, email, win, mergedPrByBranch) {
   const where = wt.path
-  const last = parseCommits(tryRun(`${where}: last commit`, 'git', ['log', '-1', '--format=%H%x00%s%x00%aI%x00%ae'], where))[0]
-  const status = tryRun(`${where}: status`, 'git', ['--no-optional-locks', 'status', '--porcelain'], where)
-  const dirty = (status || '').split('\n').filter(Boolean).map((l) => l.slice(3))
+  const last = parseCommits(run('git', ['log', '-1', '--format=%H%x00%s%x00%aI%x00%ae'], where))[0]
+  const dirty = run('git', ['--no-optional-locks', 'status', '--porcelain'], where).split('\n').filter(Boolean).map((l) => l.slice(3))
   const merged = wt.branch ? mergedPrByBranch.get(wt.branch) : null
-  const own = parseCommits(tryRun(`${where}: branch commits`, 'git', ['log', '--format=%H%x00%s%x00%aI%x00%ae', 'origin/main..HEAD'], where))
+  const own = parseCommits(run('git', ['log', '--format=%H%x00%s%x00%aI%x00%ae', 'origin/main..HEAD'], where))
     .filter((c) => c.email.toLowerCase() === email)
     .filter((c) => inWindow(c.authorDate, win))
     .filter((c) => !merged || Date.parse(c.authorDate) > Date.parse(merged.mergedAt))
     .map(({ sha, subject, authorDate }) => ({ sha, subject, authorDate }))
-  let aheadBehind = null
-  let unpushed = null
-  if (!merged) {
-    const counts = tryRun(`${where}: ahead/behind`, 'git', ['rev-list', '--left-right', '--count', 'origin/main...HEAD'], where)
-    if (counts) {
-      const [behind, ahead] = counts.trim().split(/\s+/).map(Number)
-      aheadBehind = { ahead, behind }
-    }
-    const up = tryRun(`${where}: unpushed`, 'git', ['log', '--format=%H%x00%s%x00%aI%x00%ae', 'HEAD', '--not', '--remotes=origin'], where)
-    if (up !== null) unpushed = parseCommits(up).map(({ sha, subject }) => ({ sha, subject }))
-  }
+  // A squash merge leaves the branch permanently "unpushed", so a merged branch reports none.
+  const unpushed = merged ? null
+    : parseCommits(run('git', ['log', '--format=%H%x00%s%x00%aI%x00%ae', 'HEAD', '--not', '--remotes=origin'], where)).map(({ sha, subject }) => ({ sha, subject }))
   return {
     worktree: {
       path: wt.path,
       branch: wt.branch,
-      detached: wt.detached,
       mainCheckout: wt.mainCheckout,
       lastCommit: last ? { sha: last.sha, subject: last.subject, authorDate: last.authorDate } : null,
-      mergedPr: merged ? { number: merged.number, mergedAt: merged.mergedAt } : null,
-      aheadBehind,
       dirty,
       unpushed,
     },
@@ -411,19 +373,13 @@ function readInitiatives(main, slug) {
   try {
     names = fs.readdirSync(dir)
   } catch (err) {
-    if (err.code !== 'ENOENT') warnings.push(`${dir}: ${err.message}`)
+    if (err.code !== 'ENOENT') throw err
     return byParent
   }
   const local = (n) => (n.endsWith('.local.md') ? 1 : 0)
   for (const name of names.filter((n) => n.endsWith('.md')).sort((a, b) => local(a) - local(b) || a.localeCompare(b))) {
     const file = path.join(dir, name)
-    let fm
-    try {
-      fm = frontmatter(fs.readFileSync(file, 'utf8'))
-    } catch (err) {
-      notRead.push({ kind: 'skipped-doc', ref: file, reason: err.message })
-      continue
-    }
+    const fm = frontmatter(fs.readFileSync(file, 'utf8'))
     const m = /^(.+)#(\d+)$/.exec(fm.parent_issue || '')
     if (!m || m[1].toLowerCase() !== slug.toLowerCase()) continue
     const n = Number(m[2])
@@ -449,18 +405,14 @@ function scanDocs(root) {
     try {
       names = fs.readdirSync(abs)
     } catch (err) {
-      if (err.code !== 'ENOENT') warnings.push(`${abs}: ${err.message}`)
+      if (err.code !== 'ENOENT') throw err
       continue
     }
     for (const name of names) {
       if (!name.endsWith('.md') || name.startsWith('.')) continue
       const file = path.join(abs, name)
-      try {
-        const text = fs.readFileSync(file, 'utf8')
-        docs.push({ path: file, rel: `docs/${dir}/${name}`, name, kind, mtimeMs: fs.statSync(file).mtimeMs, fm: frontmatter(text), text: kind === 'plan' ? text : null })
-      } catch (err) {
-        notRead.push({ kind: 'skipped-doc', ref: file, reason: err.message })
-      }
+      const text = fs.readFileSync(file, 'utf8')
+      docs.push({ path: file, rel: `docs/${dir}/${name}`, name, kind, mtimeMs: fs.statSync(file).mtimeMs, fm: frontmatter(text), text: kind === 'plan' ? text : null })
     }
   }
   docScans.set(root, docs)
@@ -513,27 +465,17 @@ function groupDocs(group, roots, number, allowText) {
 // `since` filters on updated_at, so created_at is re-checked per comment.
 function fetchStamps(repo, login, win) {
   const since = new Date(win.startMs).toISOString()
-  const out = tryRun('issue-log stamps', 'gh', [
+  const out = run('gh', [
     'api', '--paginate', `repos/${repo.slug}/issues/comments?since=${since}&per_page=100`,
     '--jq', '.[] | {issue_url, html_url, created_at, user: {login: .user.login}, body}',
-  ])
+  ], undefined, 120000)
   const latest = new Map()
-  for (const line of (out || '').split('\n').filter(Boolean)) {
+  for (const line of out.split('\n').filter(Boolean)) {
     const c = JSON.parse(line)
     if (c.user.login !== login || Date.parse(c.created_at) < win.startMs) continue
     const m = MARKER.exec((c.body || '').split('\n')[0].replace(/\r$/, ''))
-    if (!m) continue
-    if (m[1] !== '1') {
-      warnings.push(`stamp ${c.html_url}: unknown marker version v${m[1]}, skipped`)
-      continue
-    }
-    let marker
-    try {
-      marker = JSON.parse(m[2])
-    } catch {
-      warnings.push(`stamp ${c.html_url}: marker JSON does not parse, skipped`)
-      continue
-    }
+    if (!m || m[1] !== '1') continue
+    const marker = JSON.parse(m[2])
     const { skill, event: rawEvent, ...fields } = marker
     const event = skill === 'review-walk' && rawEvent === 'walk-complete' ? 'review-walk-complete' : rawEvent
     if (skill === 'grind' && RETIRED_GRIND_EVENTS.has(event)) continue
@@ -577,13 +519,10 @@ function markActivity(group, win) {
 }
 
 function emptyGroup(extra) {
-  return { ...extra, active: false, lastActivity: null, deployStatus: null, prs: [], worktrees: [], commits: [], docs: [] }
+  return { ...extra, active: false, lastActivity: null, prs: [], worktrees: [], commits: [], docs: [] }
 }
 
 function rollUp(group) {
-  const ranks = group.prs.map((p) => p.deployStatus).filter((s) => s != null).map((s) => STATUS_RANK[s])
-  const min = ranks.length ? Math.min(...ranks) : null
-  group.deployStatus = min == null ? null : Object.keys(STATUS_RANK).find((k) => STATUS_RANK[k] === min)
   const seen = new Set()
   group.commits = group.commits
     .filter((c) => !seen.has(c.sha) && seen.add(c.sha))
@@ -597,16 +536,9 @@ function main() {
   const repo = resolveRepo()
   const login = ghLogin()
   fetchRefs(repo.main)
-  const fetchedAt = localIso(new Date())
-  const email = (tryRun('git user.email', 'git', ['config', 'user.email'], repo.main) || '').trim().toLowerCase()
-  if (!email) warnings.push('git user.email is unset; no local commits are counted')
+  const email = run('git', ['config', 'user.email'], repo.main).trim().toLowerCase()
 
-  let allPrs
-  try {
-    allPrs = listOwnPrs(repo.slug)
-  } catch (err) {
-    die(`gh pr list failed (${errText(err)}); retry`)
-  }
+  const allPrs = listOwnPrs(repo.slug)
 
   const mergedPrByBranch = new Map()
   for (const pr of allPrs) {
@@ -621,11 +553,7 @@ function main() {
   const prod = prodHistory(repo.main, win)
   const carriers = listProdMerges(repo.slug)
 
-  const worktrees = repo.worktrees.map((wt, i) => ({ ...wt, mainCheckout: i === 0 })).filter((wt) => {
-    if (wt.bare) return false
-    if (wt.prunable) warnings.push(`${wt.path}: registered worktree is missing on disk (prunable)`)
-    return !wt.prunable
-  })
+  const worktrees = repo.worktrees.map((wt, i) => ({ ...wt, mainCheckout: i === 0 })).filter((wt) => !wt.bare && !wt.prunable)
 
   const candidates = new Set()
   for (const pr of scoped) {
@@ -661,9 +589,9 @@ function main() {
     const status = deploy(repo.main, pr, prod, carriers)
     const fromBranch = branchIssue(pr.headRefName)
     const fromBody = bodyIssue(body)
-    if (fromBranch && issueInfo.has(fromBranch)) issueGroup(fromBranch).prs.push(shapePr(pr, body, status, 'branch'))
-    else if (fromBody && issueInfo.has(fromBody)) issueGroup(fromBody).prs.push(shapePr(pr, body, status, 'body'))
-    else unkeyedGroup(pr.headRefName).prs.push(shapePr(pr, body, status, null))
+    if (fromBranch && issueInfo.has(fromBranch)) issueGroup(fromBranch).prs.push(shapePr(pr, body, status))
+    else if (fromBody && issueInfo.has(fromBody)) issueGroup(fromBody).prs.push(shapePr(pr, body, status))
+    else unkeyedGroup(pr.headRefName).prs.push(shapePr(pr, body, status))
   }
 
   for (const wt of worktrees) {
@@ -704,28 +632,20 @@ function main() {
 
   const out = {
     window: { start: win.start, end: win.end, startWeekday: win.startWeekday, endWeekday: win.endWeekday, source: win.source },
-    login,
     repo: repo.slug,
-    mainCheckout: repo.main,
-    fetchedAt,
     issues: activeIssues,
     prodPrs: prodPrs.sort((a, b) => a.number - b.number),
     unkeyed: [...unkeyed.values()].map(rollUp).map((g) => markActivity(g, win)).filter((g) => g.active),
     idle,
     notRead,
-    warnings,
   }
-  const json = `${JSON.stringify(out, null, 2)}\n`
-  if (!args.out) {
-    process.stdout.write(json)
-    return
-  }
-  try {
-    fs.writeFileSync(args.out, json)
-  } catch (err) {
-    die(`cannot write ${args.out} (${errText(err)})`)
-  }
-  process.stdout.write(`stand-up: ${out.issues.length} issues, ${out.unkeyed.length} unkeyed, ${out.idle.length} idle, ${out.prodPrs.length} prod PRs, ${notRead.length} not read, ${warnings.length} warnings -> ${args.out}\n`)
+  fs.writeFileSync(args.out, `${JSON.stringify(out, null, 2)}\n`)
+  process.stdout.write(`stand-up: ${out.issues.length} issues, ${out.unkeyed.length} unkeyed, ${out.idle.length} idle, ${out.prodPrs.length} prod PRs -> ${args.out}\n`)
 }
 
-main()
+// Fail fast: any read that fails stops the run with one line.
+try {
+  main()
+} catch (err) {
+  die(errText(err))
+}

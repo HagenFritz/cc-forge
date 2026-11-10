@@ -26,7 +26,7 @@ Your dispatch prompt names the mode. If a value below is missing, say which and 
 Read each doc with `Read`. Take facts only from these parts:
 
 - **work** doc: the frontmatter and the `## Decisions` section.
-- **plan**: the `## Overview` and `## Open Questions` sections. A paused plan says so in its own prose, for example `**Paused (2026-10-29):** product questions are open` or a heading like `### Resolve Before Work (product, paused)`. The frontmatter `status:` is unreliable; never treat it as paused or done on its own. A plan whose text says `status: completed` and records its decisions is not a blocker.
+- **plan**: the `## Overview` and `## Open Questions` sections. A paused plan says so in its own prose, for example `**Paused (2026-01-08):** waiting on the pricing decision` or a heading like `### Resolve Before Work (product, paused)`. The frontmatter `status:` is unreliable; never treat it as paused or done on its own. A plan whose text says `status: completed` and records its decisions is not a blocker.
 - **review** doc: the `**Status:**` lines under each `### P<X>-<N>` heading.
 - **brainstorm** and **test** docs: the frontmatter and the first section only.
 - **PR bodies**: the whole body as passed. Never fetch anything.
@@ -64,14 +64,13 @@ Return exactly one fenced `json` block and nothing else:
 
 ```json
 {
-  "mode": "full",
   "facts": [
     {
       "fact": "One plain sentence.",
       "source": "/abs/path/to/doc.md",
       "category": "blocker",
       "sentence": "The exact sentence from the source, verbatim.",
-      "issue": 5462
+      "issue": 123
     }
   ],
   "notRead": [
@@ -80,7 +79,6 @@ Return exactly one fenced `json` block and nothing else:
 }
 ```
 
-- `mode` is `full` or `blockers-only`.
 - `source` is the doc's absolute path, or `PR #N` for a PR body.
 - `category` is `blocker`, `team-note` or `null`.
 - `sentence` is present only when `category` is set. Copy it verbatim, one sentence.

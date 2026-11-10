@@ -24,7 +24,7 @@ Page with `page: 1, 2, …` (25 rows per page) until a page returns fewer than 2
 1. Keep only rows whose `ReceivedDateTime` (UTC) is at or after the window start, compared as instants.
 2. Drop calendar responses: a subject that starts with `Accepted:`, `Declined:`, `Tentative:` or `Canceled:`, case-insensitive.
 3. Collapse threads. Normalize each subject by stripping leading `Re:`, `RE:`, `Fw:`, `FW:` and `Fwd:` prefixes, repeatedly, then trimming. Keep only the latest sent message per normalized subject. A later reply quotes the earlier one, so nothing is lost.
-4. Keep the 20 latest. Every message past 20 goes in `notRead` with the reason `over cap`.
+4. Keep the 20 latest. If more remain, add one `notRead` entry `{ "ref": "email", "reason": "<n> sent messages over cap" }`.
 
 ### 3. Open
 
@@ -39,12 +39,12 @@ The body holds the user's message on top and the earlier thread quoted below it,
 
 ### Worked case
 
-Window Thursday 2026-11-05 to Tuesday. The 2026-11-09 sent reply "Re: Compass: Daily Log assistant" to Sam Rivera quotes the user's 2026-10-28 message "I turned on the Daily Log assistant in Compass Voice and Web for you".
+Window Thursday 2026-01-15 to Tuesday. The 2026-01-19 sent reply "Re: Acme: CSV export" to Sam Rivera quotes the user's 2026-01-02 message "I turned on CSV export for your account".
 
-- Right: one `done-action` fact, "Helped Sam Rivera connect Procore so the Daily Log assistant works", from the 2026-11-09 reply.
-- Wrong: "Turned on the Daily Log assistant for Sam Rivera". That came from the 2026-10-28 quote, before the window.
+- Right: one `done-action` fact, "Helped Sam Rivera reconnect the storage bucket so CSV export works", from the 2026-01-19 reply.
+- Wrong: "Turned on CSV export for Sam Rivera". That came from the 2026-01-02 quote, before the window.
 
-Social threads (a holiday party, a gingerbread competition), out-of-office notices, and invite replies yield no facts.
+Social threads (a team lunch, a birthday card), out-of-office notices, and invite replies yield no facts.
 
 ## Categories
 
@@ -70,15 +70,15 @@ Return exactly one fenced `json` block and nothing else:
 {
   "facts": [
     {
-      "fact": "Helped Sam Rivera connect Procore so the Daily Log assistant works.",
-      "source": "email: Re: Compass: Daily Log assistant (2026-11-09)",
+      "fact": "Helped Sam Rivera reconnect the storage bucket so CSV export works.",
+      "source": "email: Re: Acme: CSV export (2026-01-19)",
       "category": "done-action",
       "sentence": "The exact sentence from the message, verbatim.",
       "issue": null
     }
   ],
   "notRead": [
-    { "ref": "email: Re: Q4 roadmap (2026-11-06)", "reason": "over cap" }
+    { "ref": "email", "reason": "3 sent messages over cap" }
   ]
 }
 ```
@@ -89,4 +89,4 @@ Return exactly one fenced `json` block and nothing else:
 - `issue` is the issue number only when the mail itself states `#N`. Otherwise `null`.
 - At most 10 facts across all messages, tagged facts first. Each `fact` is one short, plain sentence that names the person and the action.
 - Never include a signature, phone number, email address, or any body text beyond the tagged `sentence`.
-- `notRead` lists every message over the cap and every message that failed to open, with a short reason. If listing fails or the tools are unavailable, return no facts and one entry `{ "ref": "email", "reason": "email not scanned: <reason>" }`.
+- `notRead` holds the over-cap count and one entry per message that failed to open, never a subject. If listing fails or the tools are unavailable, return no facts and one entry `{ "ref": "email", "reason": "email not scanned: <reason>" }`.

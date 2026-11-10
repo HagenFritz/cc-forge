@@ -75,7 +75,7 @@ GitHub skills shell out to `gh`; have it installed and authenticated.
 | Skill | What it does | When to use |
 |---|---|---|
 | `/side-quest` | Files a `follow-up` tracking issue for out-of-scope work and stamps the originating issue | Something worth tracking but out of scope right now |
-| `/stand-up` | Recaps your work since the previous weekday at 10:00 — merged PRs with their prod status, open PRs, worktrees with no PR, linked docs, issue stamps, and sent mail — as cited facts on one living Artifact page, then prints a four-line note (Done, Next, Blockers, Notes for the team). Assumes a `prod` branch; email needs the Compass devtools MCP server | Before stand-up; `--since <date>` for a longer window |
+| `/stand-up` | Recaps your work since the previous weekday at 10:00 on one living Artifact page, with each PR's prod status, then prints a four-line stand-up note | Before stand-up; `--since <date>` for a longer window |
 
 ### Response mode
 
