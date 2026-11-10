@@ -10,6 +10,7 @@ Models are pinned per agent using **bare family aliases** (`opus`, `sonnet`, `ha
 | `review/review-synthesizer` | `opus` — highest-judgment step in `/deep-review` |
 | `review/adversarial-reviewer` | `opus` + `effort: high` — race conditions, TOCTOU, and cascade failures are the fleet's hardest reasoning; runs only on large or sensitive diffs, so the cost is bounded |
 | `workflow/lint` | `haiku` — mechanical, fast |
+| `research/stand-up-doc-reader`, `research/stand-up-email-reader` | `haiku` — extract at most 10 cited facts each; `/stand-up` drops any fact whose source it did not hand over, so the judgment stays in the main context |
 | `workflow/scope-observer` | `sonnet` — compares one unit's diff to its plan fields after every unit; flags and never acts, so the judgment cost stays small |
 | `research/learnings-researcher` | `sonnet` + `effort: high` — deterministic grep-filter-read pipeline |
 | `research/git-history-analyzer` | `sonnet` + `effort: high` — runs prescribed git incantations and summarizes; callers supply the commands |
@@ -24,7 +25,7 @@ No agent uses `inherit`; every model is pinned so a run's cost and quality don't
 
 Pins are plain frontmatter — edit them if your org's model allowlist differs. Note a pin also applies when *other* skills dispatch the same agent, and it overrides (even downgrades) whatever model the main session runs. `effort` accepts `low`/`medium`/`high`/`xhigh`/`max` and overrides the session effort level.
 
-`tools:` is an optional frontmatter field naming the exact tools an agent may use. Omit it and the agent inherits every tool available to subagents; list tools and it gets only those. Six agents restrict it, and in every case the restriction is the design rather than a precaution — an agent that cannot reach something cannot be talked into reaching it:
+`tools:` is an optional frontmatter field naming the exact tools an agent may use. Omit it and the agent inherits every tool available to subagents; list tools and it gets only those. Eight agents restrict it, and in every case the restriction is the design rather than a precaution — an agent that cannot reach something cannot be talked into reaching it:
 
 | Agent | `tools:` | Why |
 |---|---|---|
@@ -34,6 +35,8 @@ Pins are plain frontmatter — edit them if your org's model allowlist differs. 
 | `test-plan/surface-lens` | `Read, Glob, Grep, Bash` | reads the changed UI paths; no `Write`, because a lens proposes and never edits |
 | `test-plan/test-judge` | `Read, Glob, Grep, Bash` | reads the document, the diff, and the existing tests; **no `Write` or `Edit`**, so a verdict is all it can produce — a judge that fails has changed nothing |
 | `workflow/scope-observer` | `Read, Glob, Grep, Bash` | reads the diff and the plan; **no `Write` or `Edit`**, so a deviation card is all it can produce — it never fixes, reverts, or gates |
+| `research/stand-up-doc-reader` | `Read` | reads the docs and PR bodies it is handed; no `Write`, `Edit`, or `Bash`, so a cited fact is all it can produce |
+| `research/stand-up-email-reader` | `mcp__compass-devtools-dev__Outlook_List_Emails, mcp__compass-devtools-dev__Outlook_Get_Email_Details` | lists and opens sent mail; **no draft tools**, so it can never draft, send, or change a message |
 
 `test-plan/spec-lens` is the one agent that must reach **no file tools at all** — it proposes test cases from the stated intent, so seeing the repo would defeat it. `tools:` cannot express that, so the shape is `disallowedTools:`:
 
@@ -63,6 +66,8 @@ Several were ported from [EveryInc/compound-engineering-plugin](https://github.c
 | `issue-intelligence-analyst` | Fetches/analyzes GitHub issues for recurring themes and pain patterns | ideate |
 | `learnings-researcher` | Searches `docs/solutions/` for relevant past solutions | blueprint, deep-review, ideate, blueprint-deepen |
 | `repo-research-analyst` | Repo structure, conventions, implementation patterns | triage-issue, blueprint, deprecate, blueprint-deepen |
+| `stand-up-doc-reader` | Reads one issue's linked docs and PR bodies into at most 10 cited facts; a blockers-only mode batches idle issues | stand-up |
+| `stand-up-email-reader` | Reads the mail sent in the stand-up window into at most 10 cited facts | stand-up |
 
 ## review/
 

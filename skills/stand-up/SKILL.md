@@ -1,69 +1,95 @@
 ---
 name: stand-up
-description: Summarize the past 28h of work (commits, PRs, linked issues) for hagenfritz
+description: Recap your own work since the previous weekday at 10:00 — merged PRs with their prod status, open PRs, worktrees with no PR yet, docs and PR bodies read for cited facts, and sent mail — on one living Artifact page, then print a four-line stand-up note (Done, Next, Blockers, Notes for the team). Use when the user says "stand-up", "what did I do yesterday", "prep my stand-up", or invokes /stand-up.
 user-invocable: true
-argument-hint: "[optional: since_hours default=28]"
-allowed-tools: Bash
+argument-hint: "[--since <date|datetime>]"
+allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/pull.cjs *), Bash(printenv HOME), Read, Write, Agent, Artifact
 ---
 
-Generate a concise stand-up summary using the last 28 hours of activity by **hagenfritz** across the current git repo (local commits, unpushed work) and matching GitHub PRs/issues. Group the output by issue for quick readout.
+A bundled script does the whole GitHub and git pull; two Haiku readers turn docs, PR bodies and sent mail into cited facts; this context writes the page and the note. Never fetch or infer anything the script or a reader did not return.
 
-## Steps
+Run it from the repo or any of its worktrees. Read-only: the only writes are two scratchpad files, the state file and the Artifact publish.
 
-1. **Scope and timing.**
-   - If an argument is provided, treat it as the hours to look back (default: 28).
-   - Ensure you are in the target repo (use `git rev-parse --show-toplevel`). If git is unavailable, stop and ask the user to run inside a repo.
+## 1. Pull
 
-2. **Collect local commit signals (author: hagenfritz).**
-   - Run:
-     ```bash
-     git log --since="<hours> hours ago" --author=hagenfritz --oneline
-     ```
-   - Capture unpushed work (to avoid missing local-only changes):
-     ```bash
-     git log --branches --not --remotes --author=hagenfritz --oneline
-     ```
-   - Capture staged/unstaged changes if relevant:
-     ```bash
-     git status --short
-     ```
+`$ARGUMENTS` is empty or exactly `--since <value>`, where `<value>` is `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM` (local). Anything else: print `usage: /stand-up [--since <YYYY-MM-DD | YYYY-MM-DDTHH:MM>]` and stop.
 
-3. **Collect PRs updated in the window (author: hagenfritz).**
-   - Run (limit to recent):
-     ```bash
-     gh pr list --author hagenfritz --state all --limit 20 --search "updated:>=$(date -v-<hours>H +%Y-%m-%d)"
-     ```
-   - For each PR ID from the list, fetch details:
-     ```bash
-     gh pr view <pr-number> --json number,title,state,mergeable,headRefName,baseRefName,url,updatedAt,labels,reviewDecision
-     ```
+```
+node ${CLAUDE_SKILL_DIR}/pull.cjs [--since <value>] --out <scratchpad>/stand-up-pull.json
+```
 
-4. **Pull linked issues (if any).**
-   - For each PR body or linked issue number referenced as `#123`, run:
-     ```bash
-     gh issue view <number> --json number,title,state,labels,url,updatedAt
-     ```
-   - If no issue is linked, note “No linked issue”.
+`<scratchpad>` is the session scratchpad directory the system prompt names. On exit 1 or 2, print the script's stderr line and stop. On exit 0, `Read` the whole JSON file (`allow_large` if it is over the read limit).
 
-5. **(Optional) Check CI status for open PRs.**
-   - For open PRs, you may fetch checks to flag failures:
-     ```bash
-     gh pr view <pr-number> --json statusCheckRollup
-     ```
-   - Summarize pass/fail/queued if available.
+## 2. Read, in parallel
 
-6. **Synthesize stand-up summary (concise, grouped by issue).**
-   - Group items by linked issue when present. Header format:
-     - `#<issue-number> <issue-title> (state)` — include link if available.
-   - Under each issue header, include:
-     - Commits (oneline, mark unpushed/staged).
-     - PRs touching the issue: number/title/state/review/CI, link.
-   - For work with no linked issue, put under “Unlinked work”.
-   - End with **Follow-ups**: e.g., “Push local commits”, “Update PR #123 after review”, “Add linked issue for Unlinked work”, “Fix failing checks”.
-   - Keep it brief; avoid verbosity.
+Send every dispatch below in one message.
 
-## Rules
-- Default lookback is 28h; accept an override in hours.
-- If git/gh commands fail, report the failure and stop, rather than guessing.
-- Do not fabricate PR/issue links; only report what is found.
-- Prefer concise bullets; avoid long paragraphs.
+**Doc reader, full** — `Agent` with `subagent_type: "forge:research:stand-up-doc-reader"`, one per group in `issues[]` and `unkeyed[]` that has `docs` or PR bodies, at most 8 together, by `lastActivity` newest first (`null` last). The prompt names mode `full` and passes:
+- the issue: `{number, title, branches}` (branches from its worktrees and PRs); for an unkeyed group, `number` and `title` are `null` and `branches` holds its `key`,
+- its `docs` as given,
+- its PR bodies: `[{number, title, state, body}]`.
+
+Each group past the 8th goes to Not read as `over-cap`, with every doc and PR body it holds.
+
+**Doc reader, blockers-only** — one dispatch with mode `blockers-only` and `idle[]` as `[{number, title, docs}]`. Skip it when `idle` is empty.
+
+**Email reader** — `Agent` with `subagent_type: "forge:research:stand-up-email-reader"`, prompt = `window.start` verbatim.
+
+Each reader returns one fenced `json` block. A doc reader that fails or returns no block stops the run: print its error. An email reader that fails only adds `email not scanned: <the error>` to Not read. Every reader `notRead` entry goes to Not read.
+
+## 3. Synthesize
+
+Done here, never delegated. The page uses the JSON and the reader facts only.
+
+**References** (page and note): an issue is always `#N (short title)`, a few words cut from its title; a PR always leads with what it does, in words from its body, with `#N` as a link after; an unkeyed item is named by its branch. A bare number is never a reference.
+
+**Citations**: every claim ends in a citation — a PR link, a commit short SHA, a repo-relative doc path (`docs/plans/…`), a stamp's comment `url`, or an email's `source`. Stamp-sourced facts carry the `stamp` tag; a stamp fact that repeats local evidence (a PR, commit or doc already cited) is dropped. Email facts carry the `email` tag.
+
+**Sections**:
+- **Done**: own PRs (in `issues[].prs` and `unkeyed[].prs`) with `state: merged` and `deployStatus: "in prod"`, each with its `carriedBy` release PR when set; then email `done-action` facts. A merged PR at `main only` is listed in its issue's detail with the `main only` tag and never called shipped or done.
+- **Next**: one sentence starting `inferred from <sources>:`, naming open PRs and in-flight worktree work (unpushed commits, dirty files, no-PR branches).
+- **Blockers**: only `blocker`-tagged facts from any reader, each quoting its `sentence`. Empty: `none`.
+- **Notes for the team**: only `team-note`-tagged facts whose issue has a PR `in prod`, plus email `team-note` facts. Empty: `none`.
+- **In flight, no PR**: each active issue with worktrees and no PR — issue, branch, last commit (subject, short SHA), dirty file count, unpushed commits, then its reader facts. Nothing here is called done.
+- **Prod PRs**: one line listing `prodPrs[]` by what each does and its link. Empty: `none`.
+- **Detail**: one `.group` per initiative — `initiative.title`, then `No initiative`, then `Unkeyed`, then `Email`. Issues already shown under In flight, no PR are left out. Each other issue under its group: its PRs with deploy status, in-window commits, and reader and stamp facts. Only tagged email facts (`done-action`, `blocker`, `team-note`) reach the page: those whose `issue` matches an issue here sit under it; the rest go in `Email`.
+- **Not read**: script `notRead[]`, over-cap issues, reader `notRead` entries, and `email not scanned`. Empty: `none`.
+
+Nothing else goes on the page.
+
+## 4. Fill the page
+
+Copy `${CLAUDE_SKILL_DIR}/page.html` to `<scratchpad>/stand-up.html` and replace each `<!-- slot:… -->` comment with its section. HTML-escape every value taken from the JSON or a reader (`&`, `<`, `>`, `"`). `slot:in-flight` takes `.issue` blocks; `slot:detail` takes one `.group` section per group. Use only these patterns:
+
+```html
+<li>Lets a hub site show other sites inside it <a class="cite" href="…/pull/123">#123</a> <span class="tag">in prod</span></li>
+<span class="tag">main only</span> <span class="tag">stamp</span> <span class="tag">email</span>
+<span class="none">none</span>
+<span class="path">/abs/path/doc.md</span>  <code>abc1234</code>
+<div class="issue"><h3><a href="…/issues/123">#123 (short title)</a></h3><ul>…</ul></div>
+<section class="group"><h2>Initiative title</h2> one .issue per issue </section>
+```
+
+The template is fixed, so skip the Artifact quickstart.
+
+## 5. Publish the living page
+
+1. Run `printenv HOME`; the state file is `<HOME>/.local/state/cc-forge-stand-up/artifact-url` (`~/.local/state/cc-forge-stand-up/artifact-url`).
+2. `Read` it. If it holds a URL, call `Artifact` with `action: "read"` and that `url`, then publish with `url` and `file_path: <scratchpad>/stand-up.html`. No `icon` on a republish.
+3. If the file is missing or empty, or the read says the artifact is gone or not found, publish new with `file_path`, `icon: "calendar"` and a one-sentence `description`, then `Write` the new URL alone to the state file (Write creates the directory).
+4. Any other read or publish failure: leave the state file alone and go to step 6.
+
+## 6. Print
+
+Exactly this, nothing else:
+
+```
+Window: <startWeekday> <start date HH:MM> → <endWeekday> <end date HH:MM> (<default | --since>)
+Done: …
+Next (inferred from …): …
+Blockers: …
+Notes for the team: …
+<page URL>
+```
+
+Each note line is one sentence or less and the four read aloud in under 30 seconds: Done names at most three items, then `and N more`. Empty Blockers or Notes print `none`. When publishing failed, the last line is `Page: not published (<reason>)`.

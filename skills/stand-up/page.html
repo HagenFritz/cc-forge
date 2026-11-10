@@ -1,0 +1,101 @@
+<title>Stand-up Recap</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+:root {
+  --bg: #f7f8f9;
+  --fg: #1c2127;
+  --muted: #5d6670;
+  --rule: #dde1e6;
+  --accent: #1f5f8b;
+  --tag-bg: #e8edf2;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15191d; --fg: #e3e7eb; --muted: #98a2ad; --rule: #2b3238; --accent: #7db8e3; --tag-bg: #232a31;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15191d; --fg: #e3e7eb; --muted: #98a2ad; --rule: #2b3238; --accent: #7db8e3; --tag-bg: #232a31;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.55 var(--font-body);
+}
+main {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding-block: 24px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid;
+  gap: 28px;
+}
+h1 { font-size: 1.35rem; margin: 0; text-wrap: balance; }
+h2 {
+  font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted); margin: 0 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--rule);
+}
+h3 { font-size: 1rem; margin: 0 0 6px; text-wrap: balance; }
+section, .group, .issue { min-width: 0; }
+.group { display: grid; gap: 18px; }
+.issue { display: grid; gap: 6px; }
+ul { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
+p { margin: 0; }
+a { color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cite { font-size: 0.85em; white-space: nowrap; }
+.cite::before { content: "("; color: var(--muted); }
+.cite::after { content: ")"; color: var(--muted); }
+.path, code { font-family: var(--font-mono); font-size: 0.82em; overflow-wrap: anywhere; }
+.tag {
+  display: inline-block; font-size: 0.72rem; letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 0 6px; border-radius: 3px; background: var(--tag-bg); color: var(--muted); vertical-align: 1px;
+}
+.none { color: var(--muted); }
+</style>
+
+<main>
+  <h1>Stand-up</h1>
+
+  <section>
+    <h2>Done</h2>
+    <ul><!-- slot:done --></ul>
+  </section>
+
+  <section>
+    <h2>Next</h2>
+    <p><!-- slot:next --></p>
+  </section>
+
+  <section>
+    <h2>Blockers</h2>
+    <ul><!-- slot:blockers --></ul>
+  </section>
+
+  <section>
+    <h2>Notes for the team</h2>
+    <ul><!-- slot:notes --></ul>
+  </section>
+
+  <section>
+    <h2>In flight, no PR</h2>
+    <div class="group"><!-- slot:in-flight --></div>
+  </section>
+
+  <section>
+    <h2>Prod PRs</h2>
+    <p><!-- slot:prod-prs --></p>
+  </section>
+
+  <!-- slot:detail -->
+
+  <section>
+    <h2>Not read</h2>
+    <ul><!-- slot:not-read --></ul>
+  </section>
+</main>
