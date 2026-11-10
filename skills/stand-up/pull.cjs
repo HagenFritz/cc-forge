@@ -8,7 +8,7 @@ const { execFileSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 
-const USAGE = 'usage: pull.cjs [--since <YYYY-MM-DD | YYYY-MM-DDTHH:MM>]'
+const USAGE = 'usage: pull.cjs [--since <YYYY-MM-DD | YYYY-MM-DDTHH:MM>] [--out <path>]'
 const MAX_BUFFER = 256 * 1024 * 1024
 const PR_LIMIT = '1000'
 const PROD_PR_LIMIT = '300'
@@ -85,6 +85,7 @@ function defaultStart(now) {
 
 function parseArgs(argv) {
   let since = null
+  let out = null
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--since') {
@@ -92,11 +93,16 @@ function parseArgs(argv) {
       since = argv[++i]
     } else if (arg.startsWith('--since=')) {
       since = arg.slice('--since='.length)
+    } else if (arg === '--out') {
+      if (i + 1 >= argv.length) usageError('--out needs a value')
+      out = argv[++i]
+    } else if (arg.startsWith('--out=')) {
+      out = arg.slice('--out='.length)
     } else {
       usageError(`unknown argument "${arg}"`)
     }
   }
-  return since
+  return { since, out }
 }
 
 function resolveWindow(since) {
@@ -586,7 +592,8 @@ function rollUp(group) {
 }
 
 function main() {
-  const win = resolveWindow(parseArgs(process.argv.slice(2)))
+  const args = parseArgs(process.argv.slice(2))
+  const win = resolveWindow(args.since)
   const repo = resolveRepo()
   const login = ghLogin()
   fetchRefs(repo.main)
@@ -708,7 +715,17 @@ function main() {
     notRead,
     warnings,
   }
-  process.stdout.write(`${JSON.stringify(out, null, 2)}\n`)
+  const json = `${JSON.stringify(out, null, 2)}\n`
+  if (!args.out) {
+    process.stdout.write(json)
+    return
+  }
+  try {
+    fs.writeFileSync(args.out, json)
+  } catch (err) {
+    die(`cannot write ${args.out} (${errText(err)})`)
+  }
+  process.stdout.write(`stand-up: ${out.issues.length} issues, ${out.unkeyed.length} unkeyed, ${out.idle.length} idle, ${out.prodPrs.length} prod PRs, ${notRead.length} not read, ${warnings.length} warnings -> ${args.out}\n`)
 }
 
 main()
