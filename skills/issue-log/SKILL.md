@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # Issue-Log Stamp Specification (v1)
 
-The issue-log convention makes a GitHub issue's comment thread a reconstructable work log. Participating skills post **one comment per event** — a "stamp" — with a hidden machine-readable marker on line 1 and a human-readable body below. A reader (the `/daily-review` skill) parses the markers to rebuild what happened without inference.
+The issue-log convention makes a GitHub issue's comment thread a reconstructable work log. Participating skills post **one comment per event** — a "stamp" — with a hidden machine-readable marker on line 1 and a human-readable body below. A reader (the `/stand-up` skill) parses the markers to rebuild what happened without inference.
 
 This file is the single source of truth for every rule that applies to more than one skill. Writer skills embed only their own filled-in stamp template inline and reference this spec for everything else. Never restate a shared rule in a writer skill — not even paraphrased.
 
@@ -145,7 +145,7 @@ Writers never dedupe; re-runs may emit duplicate events (re-ship after a PR clos
 
 ## Reader contract
 
-Consumers (the `/daily-review` skill) must:
+Consumers (the `/stand-up` skill) must:
 
 1. Fetch comments via `gh api repos/{owner}/{repo}/issues/{n}/comments --paginate` (raw bodies; `gh issue view --json comments` caps at ~100).
 2. Keep only comments whose author is the authenticated login **and** whose first line matches `^<!-- cc-forge-log v(\d+): (\{.*\}) -->$` — both checks, always (quote-replies copy raw markers into human comments).

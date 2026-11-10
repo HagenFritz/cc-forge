@@ -75,7 +75,7 @@ GitHub skills shell out to `gh`; have it installed and authenticated.
 | Skill | What it does | When to use |
 |---|---|---|
 | `/side-quest` | Files a `follow-up` tracking issue for out-of-scope work and stamps the originating issue | Something worth tracking but out of scope right now |
-| `/stand-up` | Summarizes the past 28h of commits, PRs, and linked issues | Daily catch-up |
+| `/stand-up` | Recaps your work since the previous weekday at 10:00 — merged PRs with their prod status, open PRs, worktrees with no PR, linked docs, issue stamps, and sent mail — as cited facts on one living Artifact page, then prints a four-line note (Done, Next, Blockers, Notes for the team). Assumes a `prod` branch; email needs the Compass devtools MCP server | Before stand-up; `--since <date>` for a longer window |
 
 ### Response mode
 
@@ -107,7 +107,7 @@ Subagents live in `agents/`, grouped by category. Skills reference them as `forg
 
 | Category | Agents | Purpose |
 |---|---|---|
-| `research/` | best-practices-researcher, framework-docs-researcher, git-history-analyzer, issue-intelligence-analyst, learnings-researcher, repo-research-analyst | External docs, git archaeology, issue analysis, institutional learnings, repo conventions |
+| `research/` | best-practices-researcher, framework-docs-researcher, git-history-analyzer, issue-intelligence-analyst, learnings-researcher, repo-research-analyst, stand-up-doc-reader, stand-up-email-reader | External docs, git archaeology, issue analysis, institutional learnings, repo conventions, and `/stand-up`'s cited-fact readers |
 | `review/` | adversarial-reviewer, architecture-strategist, code-simplicity-reviewer, correctness-auditor, data-integrity-guardian, pattern-recognition-specialist, performance-oracle-{python,typescript}, python-reviewer, reliability-engineer, security-sentinel-{python,typescript}, typescript-reviewer | Review specialists across correctness, security, performance, architecture, reliability, simplicity, and language idioms |
 | `workflow/` | lint, scope-observer, spec-flow-analyzer | Linting, per-unit scope observation, and spec/flow analysis |
 | `test-plan/` | blast-radius-lens, spec-lens, surface-lens, test-judge, test-synthesizer, test-writer | Three lenses propose test cases from different views of a change, a synthesizer filters and writes the plan, a judge returns a keep-or-cut verdict on each kept case, and a writer turns the `auto` cases into tests |
