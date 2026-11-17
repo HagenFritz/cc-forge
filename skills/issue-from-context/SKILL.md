@@ -60,7 +60,6 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
    - **Conversation context**: recent discussion summary
    - **Git signals**: run `git status --short` and `git diff --stat` to see touched files; if needed, grab `git diff -U5` for key hunks. If there are recent commits not yet included, use `git log -5 --oneline` to reference the latest changes.
    - If all three sources (argument, conversation, git) are empty, STOP and tell the user to gather more information.
-   - Analyze the combined context to suggest the most likely **type** and **label**
 
 4. **Fetch labels and issue types, then prompt for both at once**
    - Fetch both in parallel:
@@ -77,9 +76,11 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
        }
      }'
      ```
+   - Rank the fetched labels and types against the signals from step 3. Suggest only labels and types from these lists, never one outside them.
    - Use a single `AskUserQuestion` call with two questions so the user sees both and submits once:
-     - **Question 1 (Label)**: Show up to 4 most relevant labels based on context analysis, suggested label first
+     - **Question 1 (Label)**: Show up to 3 fetched labels, most relevant first, then a **No label** option (description: "Create the issue without a label"), always last. If no labels exist on the repo, omit this question and use no label.
      - **Question 2 (Issue type)**: Show all available types, suggested type first. If no issue types exist on the repo, omit this question.
+   - If both questions are omitted, skip the prompt.
    - If user provides a label not found in the repo, show error and re-prompt with full list
 
 5. **Generate title and body from signals**
