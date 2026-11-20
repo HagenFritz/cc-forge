@@ -29,6 +29,7 @@ Things the user will see:
 - Integrations use main's credentials database, so main's Postgres container must be running for them to work.
 - LangSmith traces go to `<project>-wt<N>`, where `N` is the slot.
 - The web app serves its committed generated files; the stack skips the pre-dev build that would rewrite them and dirty the worktree.
+- With an HTTPS `WEB_ORIGIN` configured, web is served on that origin instead of localhost, and `up` stops when the certificate files are missing or the host doesn't resolve to 127.0.0.1.
 
 ## Rules
 
