@@ -57,6 +57,9 @@ if [ ! -f "$CONFIG" ]; then
 else
   . "$CONFIG"
   if [ -z "${WEB_ORIGIN:-}" ]; then WEB_ORIGIN='http://localhost:{web_port}'; fi
+  WEB_HOST="${WEB_ORIGIN#*://}"
+  WEB_HOST="${WEB_HOST%%/*}"
+  WEB_HOST="${WEB_HOST%%:*}"
   WEB_TLS_CERT="${WEB_TLS_CERT:-}"
   WEB_TLS_KEY="${WEB_TLS_KEY:-}"
   WEB_ENV="${WEB_ENV:-}"
@@ -119,11 +122,6 @@ web_port() { echo $((WEB_PORT_BASE + $1)); }
 backend_port() { echo $((BACKEND_PORT_BASE + $1)); }
 db_port() { echo $((DB_PORT_BASE + $1)); }
 web_url() { printf '%s\n' "${WEB_ORIGIN//\{web_port\}/$(web_port "$1")}"; }
-web_host() {
-  local h="${WEB_ORIGIN#*://}"
-  h="${h%%/*}"
-  printf '%s\n' "${h%%:*}"
-}
 
 container_name() { echo "$NAME_PREFIX-db-wt$1"; }
 compose_project() { echo "$NAME_PREFIX-wt$1"; }
@@ -609,29 +607,28 @@ start_docker() {
 }
 
 preflight() {
-  local wt="$1" tool n host
+  local wt="$1" tool n
   for tool in uv pnpm node jq curl; do
     command -v "$tool" >/dev/null || die "$tool is not on PATH"
   done
   [ -f "$MAIN/backend/.env.docker" ] || die "main has no backend/.env.docker; run make env in $MAIN/backend"
   [ -f "$MAIN/web/.env.local" ] || die "main has no web/.env.local; run pnpm env:pull in $MAIN/web"
   for n in $SLOTS; do
-    grep -q "\"$(web_url "$n")\"" "$wt/backend/langgraph.json" 2>/dev/null ||
+    grep -qF "\"$(web_url "$n")\"" "$wt/backend/langgraph.json" 2>/dev/null ||
       die "this branch's backend/langgraph.json does not allow $(web_url "$n"); rebase onto main"
   done
   [ -f "$wt/backend/scripts/local_db.py" ] || die "branch predates backend/scripts/local_db.py — rebase"
   if [ -n "$WEB_TLS_CERT$WEB_TLS_KEY" ]; then
     [ -f "$WEB_TLS_CERT" ] && [ -f "$WEB_TLS_KEY" ] ||
-      die "WEB_TLS_CERT or WEB_TLS_KEY is missing; ${WEB_TLS_SETUP:-see $CONFIG}"
+      die "WEB_TLS_CERT or WEB_TLS_KEY is missing"
   fi
-  host="$(web_host)"
-  if [ "$host" != localhost ]; then
+  if [ "$WEB_HOST" != localhost ]; then
     node -e '
       setTimeout(() => process.exit(1), 5000)
       require("dns").promises.lookup(process.argv[1], { all: true }).then(
         (a) => process.exit(a.length && a.every((x) => x.address === "127.0.0.1") ? 0 : 1),
-        () => process.exit(1))' "$host" ||
-      die "$host does not resolve to 127.0.0.1; ${WEB_TLS_SETUP:-see $CONFIG}"
+        () => process.exit(1))' "$WEB_HOST" ||
+      die "$WEB_HOST does not resolve to 127.0.0.1"
   fi
   start_docker
 }
@@ -755,13 +752,12 @@ start_job() {
 # generated file, which would dirty the worktree and block /land's removal.
 start_services() {
   local n="$1" wt="$2" l keys=" "
-  local extra=() tls=() bind=() web_env=() host
+  local extra=() tls=() bind=() web_env=()
   if [ -n "$WEB_TLS_CERT" ]; then
     tls=(--experimental-https --experimental-https-key "$WEB_TLS_KEY" --experimental-https-cert "$WEB_TLS_CERT")
   fi
-  host="$(web_host)"
-  if [ "$host" != localhost ]; then
-    bind=(--hostname "$host")
+  if [ "$WEB_HOST" != localhost ]; then
+    bind=(--hostname "$WEB_HOST")
   fi
   while IFS= read -r l; do
     if [ -n "$l" ]; then
