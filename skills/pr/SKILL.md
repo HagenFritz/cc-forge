@@ -6,7 +6,7 @@ allowed-tools: Bash, Read, Write, Grep, Glob
 
 # PR — Commit, Push, Open or Update a PR
 
-`/pr` takes a feature branch to an open PR with zero prompts — invoking it is the confirmation. It commits what is uncommitted in logical groups, pushes, and either opens a PR from [the template](pr-template.md) or comments on the branch's existing open PR. Every failure stops the run with the error; nothing is retried.
+`/pr` takes a feature branch to an open PR with zero prompts — invoking it is the confirmation. It commits what is uncommitted in logical groups, pushes, and either opens a PR from [the template](pr-template.md) or comments on the branch's existing open PR. Every failure stops the run with the error; nothing is retried. It never pulls, rebases, or force-pushes.
 
 ## Phase 1: Preflight
 
@@ -18,17 +18,12 @@ allowed-tools: Bash, Read, Write, Grep, Glob
    git diff --name-only --diff-filter=d HEAD
    git ls-files --others --exclude-standard
    ```
-   A file is a hit when its basename matches `.env*`, `*.pem`, or `*.key`, or is exactly `credentials`, `credentials.json`, or `.credentials`. Basenames ending in `.example`, `.sample`, or `.template` are exempt. On any hit, stop before any commit, name each file, and give three ways out: add it to `.gitignore`, move it out of the repository, or, if it is meant to be committed, commit it by hand and re-run `/pr` — the guard never looks at committed files. This is a coarse basename check, not a scanner: it never reads file contents, so a secret inside an ordinary file such as `config.json` gets through.
+   A file is a hit when its basename matches `.env*`, `*.pem`, or `*.key`, or is exactly `credentials`, `credentials.json`, or `.credentials` (basenames ending `.example`, `.sample`, or `.template` are exempt). On any hit, stop before any commit and name each file.
 
 ## Phase 2: Commit in logical groups (skip when the tree is clean)
 
-4. Run `git status` (never `-uall`), `git diff`, and `git log --oneline -5` for the repo's commit style.
-5. Group the changed files by logical change — a feature, a bugfix, a refactor, or an area of concern — avoiding both one file per commit and everything in one commit. Example groupings:
-   - Backend API changes (route + service + model) → one commit
-   - Frontend component changes (component + styles + types) → one commit
-   - Documentation updates → separate commit
-   - Config/infrastructure changes → separate commit
-   - Test files written by `/test-plan-run` → grouped with the change they cover, or their own `test:` commit when they cover several
+4. Run `git status` (never `-uall`), `git diff HEAD`, and `git log --oneline -5` for the repo's commit style. Read untracked files that are not obviously generated before grouping them.
+5. Group the changed files by logical change, avoiding both one file per commit and one commit for everything. Put tests with the change they cover, or in their own `test:` commit when they cover several.
 6. For each group, in dependency order: `git add <file1> <file2> ...`, then `git commit` with a concise message in the repo's style, passed through a HEREDOC.
 
 ## Phase 3: Understand the branch
@@ -40,15 +35,15 @@ allowed-tools: Bash, Read, Write, Grep, Glob
 ## Phase 4: Update an existing PR
 
 10. Run `gh pr view --json number,url,state`. When it fails or `state` is not `"OPEN"`, go to Phase 5. Otherwise:
-    - `git fetch origin <branch>`, then compute what the push will add: `git log --oneline origin/<branch>..HEAD` and `git diff --stat origin/<branch>..HEAD`.
-    - `git push -u origin <branch>`. **On rejection** (the remote advanced), stop and report the error. Never pull, rebase, or force, and post no comment.
-    - When the commit list is non-empty, write a comment to a temp file with the Write tool — one summary sentence of what was updated, a "New commits" list, and a "Changed files" summary from the diff stat — and post it: `gh pr comment <number> --body-file <temp-file>`. When the list is empty, post nothing.
+    - `git fetch origin <branch>`, then compute what the push will add: `git log --oneline origin/<branch>..HEAD`.
+    - `git push -u origin <branch>`. **On rejection** (the remote advanced), stop and report the error, and post no comment.
+    - When the commit list is non-empty, write a comment holding a "New commits" list to a temp file with the Write tool and post it: `gh pr comment <number> --body-file <temp-file>`. When the list is empty, post nothing.
     - Print the PR URL and stop. No stamp and no Next line.
 
 ## Phase 5: Open a new PR
 
-11. **Parse the issue number** from `<branch>`: the second `/`-delimited segment, when it is a positive integer, is `<issue-number>`. Otherwise (non-numeric, `no-ref`, or fewer than two segments) `<issue-number>` is none.
-12. `git push -u origin <branch>`. **On rejection**, stop and report the error. Never pull, rebase, or force.
+11. **Parse the issue number** from `<branch>`: the second `/`-delimited segment, when it is a positive integer, is `<issue-number>`. Otherwise (non-numeric, `no-ref`, or fewer than two segments) `<issue-number>` is none. Verify it with `gh issue view <issue-number>`; if that errors, `<issue-number>` is none.
+12. `git push -u origin <branch>`. **On rejection**, stop and report the error.
 13. **Compose the title and body.**
     - Title: under 70 characters, summarizing the full diff and commit history.
     - Body: fill the fenced skeleton in [pr-template.md](pr-template.md) per that file's instructions. For `### Why`, read the linked issue (`gh issue view <issue-number>`) when there is one, then the conversation, then the diff. Never search for a plan.
@@ -56,6 +51,7 @@ allowed-tools: Bash, Read, Write, Grep, Glob
     ```bash
     gh pr create --title "<title>" --body-file <temp-file>
     ```
+    `<pr-number>` is the trailing path segment of the URL `gh pr create` printed.
 15. Print the PR URL, followed by: Next: `/quick-review` or `/deep-review`, then `/review-sweep`, `/review-walk`, `/review-push`, `/land`.
 16. **Post an issue-log stamp on the linked issue** (skip when `<issue-number>` is none). Compose the body below, write it to a temp file with the Write tool, and post per [the issue-log spec](../issue-log/SKILL.md)'s posting rules:
     ```markdown
@@ -72,9 +68,5 @@ allowed-tools: Bash, Read, Write, Grep, Glob
 
 ## Rules
 
-- Detect the repository from the current git directory — never hardcode a repo.
 - Never `git add -A` or `git add .`.
 - Never skip hooks (no `--no-verify`).
-- Never push to `main` or `master`.
-- Never pull, rebase, or force-push.
-- Pass commit messages through a HEREDOC, and PR bodies and comments through `--body-file`.

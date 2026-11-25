@@ -179,7 +179,7 @@ Body: the fenced skeleton in [`/pr`'s template](../pr/pr-template.md), filled pe
 - **Fix touched outside the findings:** <files> (omit when none)
 ```
 
-When a test doc exists, the plain Pre-merge item `Run /test-plan-run <test doc path> and commit the tests` replaces `- None` rather than sitting alongside it; with no test doc, Pre-merge is `- None`. Write the title and body to temp files, then from the worktree:
+When a test doc exists, the plain Pre-merge item `- [ ] Run /test-plan-run <test doc path> and commit the tests` replaces `- None` rather than sitting alongside it. Write the title and body to temp files, then from the worktree:
 
 ```bash
 gh pr create --base <default-branch> --head <branch> --title "$(cat <title-file>)" --body-file <body-file>
