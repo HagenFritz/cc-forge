@@ -168,7 +168,7 @@ Stamp a verified doc, once the judge step has ended, per [the spec](../test-prot
 
 ### 7. Open the PR
 
-Body: [`/ship`'s PR template](../ship/pr-template.md), with its `Related to #<issue>` line when there is an issue — the body's only issue reference, never a closing keyword like `Closes #N` — and one added section after `### Related Changes`:
+Body: [`/ship`'s PR template](../pr/pr-template.md), with its `Related to #<issue>` line when there is an issue — the body's only issue reference, never a closing keyword like `Closes #N` — and one added section after `### Related Changes`:
 
 ```markdown
 ### Grind Docs

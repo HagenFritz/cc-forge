@@ -1,5 +1,5 @@
 ---
-name: ship
+name: pr
 description: Commit all changes per-file, push the branch, and create a PR
 user-invocable: true
 allowed-tools: Bash, AskUserQuestion, Read, Grep, Glob
@@ -13,7 +13,7 @@ Push the current branch and create a pull request. Also stage and commit any lin
 2. Run `git branch --show-current` to get the current branch name.
 
 **If the current branch is `main` or `master`, STOP immediately** and tell the user:
-> "You're on the main branch. Please check out a feature branch first before using /ship. Try using /branch-from-issue"
+> "You're on the main branch. Please check out a feature branch first before using /pr. Try using /branch-from-issue"
 
 Do NOT proceed with any commits or pushes on main/master.
 
@@ -108,9 +108,9 @@ Do NOT proceed with any commits or pushes on main/master.
 
 12. **Post an issue-log stamp on the linked issue** (skip if `<issue-number>` from step 10a is none). Compose the body below, write it to a temp file with the Write tool, and post per [the issue-log spec](../issue-log/SKILL.md)'s posting rules:
     ```markdown
-    <!-- cc-forge-log v1: {"skill":"ship","event":"pr-created","pr":<pr-number>} -->
+    <!-- cc-forge-log v1: {"skill":"pr","event":"pr-created","pr":<pr-number>} -->
 
-    ### 🚀 /ship — PR created
+    ### 🚀 /pr — PR created
 
     **PR:** <pr-url>
     **Summary:** <one-line summary of the PR>
