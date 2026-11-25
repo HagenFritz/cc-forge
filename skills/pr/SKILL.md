@@ -1,112 +1,63 @@
 ---
 name: pr
-description: Commit all changes per-file, push the branch, and create a PR
-user-invocable: true
-allowed-tools: Bash, AskUserQuestion, Read, Grep, Glob
+description: "Commit the branch's uncommitted changes in logical groups, push the branch, and open a PR from cc-forge's template with a pr-created stamp on the linked issue — or, when the branch already has an open PR, push and comment on it with what is new. Zero prompts; stops before any commit on a secret-looking file. Use when the user says 'open a PR', 'push and create a PR', 'make a PR', or invokes /pr."
+allowed-tools: Bash, Read, Write, Grep, Glob
 ---
 
-Push the current branch and create a pull request. Also stage and commit any lingering uncommitted changes first.
+# PR — Commit, Push, Open or Update a PR
 
-## Safety Check
+`/pr` takes a feature branch to an open PR with zero prompts — invoking it is the confirmation. It commits what is uncommitted in logical groups, pushes, and either opens a PR from [the template](pr-template.md) or comments on the branch's existing open PR. Every failure stops the run with the error; nothing is retried.
 
-1. Run `git rev-parse --show-toplevel` to determine the **current repository root**. All subsequent git operations must be scoped to this repository only.
-2. Run `git branch --show-current` to get the current branch name.
+## Phase 1: Preflight
 
-**If the current branch is `main` or `master`, STOP immediately** and tell the user:
-> "You're on the main branch. Please check out a feature branch first before using /pr. Try using /branch-from-issue"
+1. Run `git rev-parse --show-toplevel` for the repository root and `git branch --show-current` for `<branch>`. All git operations stay in this repository.
+2. **On `main` or `master`, stop** before anything else:
+   > "You're on the main branch. Check out a feature branch first with /tree or /branch-from-issue, then re-run /pr."
+3. **Secret guard.** List the files `/pr` would commit — modified, staged, and untracked-but-not-ignored, with deletions excluded:
+   ```bash
+   git diff --name-only --diff-filter=d HEAD
+   git ls-files --others --exclude-standard
+   ```
+   A file is a hit when its basename matches `.env*`, `*.pem`, or `*.key`, or is exactly `credentials`, `credentials.json`, or `.credentials`. Basenames ending in `.example`, `.sample`, or `.template` are exempt. On any hit, stop before any commit, name each file, and give three ways out: add it to `.gitignore`, move it out of the repository, or, if it is meant to be committed, commit it by hand and re-run `/pr` — the guard never looks at committed files. This is a coarse basename check, not a scanner: it never reads file contents, so a secret inside an ordinary file such as `config.json` gets through.
 
-Do NOT proceed with any commits or pushes on main/master.
+## Phase 2: Commit in logical groups (skip when the tree is clean)
 
-## Steps
+4. Run `git status` (never `-uall`), `git diff`, and `git log --oneline -5` for the repo's commit style.
+5. Group the changed files by logical change — a feature, a bugfix, a refactor, or an area of concern — avoiding both one file per commit and everything in one commit. Example groupings:
+   - Backend API changes (route + service + model) → one commit
+   - Frontend component changes (component + styles + types) → one commit
+   - Documentation updates → separate commit
+   - Config/infrastructure changes → separate commit
+   - Test files written by `/test-plan-run` → grouped with the change they cover, or their own `test:` commit when they cover several
+6. For each group, in dependency order: `git add <file1> <file2> ...`, then `git commit` with a concise message in the repo's style, passed through a HEREDOC.
 
-### Phase 1: Handle uncommitted changes (skip if working tree is clean)
+## Phase 3: Understand the branch
 
-1. Run `git status` to identify any modified, deleted, or untracked files (never use `-uall` flag).
-2. **Filter files to current repo only**: Only process files that are within the current repository root (from Safety Check step 1). Ignore any files in other repositories.
-3. If there are uncommitted changes **in the current repo**:
-   - Run `git diff` to understand the changes across all files.
-   - Run `git log --oneline -5` to understand the repo's commit message style.
-   - **Analyze and group changes logically**:
-     - Group files that belong to the same logical change (e.g., all files for "add billing goals API" or "fix authentication bug")
-     - Consider grouping by: feature, bugfix, refactor, or area of concern
-     - Avoid overly granular (one file per commit) or overly broad (all changes in one commit) groupings
-   - For **each logical group**, in order of dependency:
-     - `git add <file1> <file2> ...` (all files in the group)
-     - `git commit` with a concise message describing the logical change. Follow the repo's existing commit style.
-     - End each commit message with: `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`
-   - **Example groupings**:
-     - Backend API changes (route + service + model) → one commit
-     - Frontend component changes (component + styles + types) → one commit
-     - Documentation updates → separate commit
-     - Config/infrastructure changes → separate commit
-     - Test files written by `/test-plan-run` → grouped with the change they cover, or their own `test:` commit when they cover several
-4. **Detect changes in other repos**: If `git status` or file inspection shows changes in other repository directories (outside current repo root), note this for the PR body but do NOT commit or push those changes.
+7. Run `git fetch origin main` and compare against `origin/main`, never the local `main`. A failed fetch stops the run. Run `git log --oneline origin/main..HEAD`; **when it is empty, stop** before pushing: "Nothing on `<branch>` is ahead of origin/main — no PR to open."
+8. Run `git diff origin/main...HEAD` and read it in full; it informs the title, the body, and any update comment.
+9. Detect `<owner>/<repo>` from `git remote get-url origin`.
 
-### Phase 2: Understand the full branch
+## Phase 4: Update an existing PR
 
-5. Run `git fetch origin main` and diff against `origin/main`, never the local `main`. If the fetch fails, report it and stop. Then run `git log --oneline origin/main..HEAD`.
-6. Run `git diff origin/main...HEAD`.
-7. Read through the diff carefully — this is what informs the PR title and body.
+10. Run `gh pr view --json number,url,state`. When it fails or `state` is not `"OPEN"`, go to Phase 5. Otherwise:
+    - `git fetch origin <branch>`, then compute what the push will add: `git log --oneline origin/<branch>..HEAD` and `git diff --stat origin/<branch>..HEAD`.
+    - `git push -u origin <branch>`. **On rejection** (the remote advanced), stop and report the error. Never pull, rebase, or force, and post no comment.
+    - When the commit list is non-empty, write a comment to a temp file with the Write tool — one summary sentence of what was updated, a "New commits" list, and a "Changed files" summary from the diff stat — and post it: `gh pr comment <number> --body-file <temp-file>`. When the list is empty, post nothing.
+    - Print the PR URL and stop. No stamp and no Next line.
 
-### Phase 3: Push and create PR
+## Phase 5: Open a new PR
 
-8. Detect `<owner>/<repo>` from `git remote get-url origin`.
-
-9. **Check for an existing open PR on this branch:**
-   Run `gh pr view --json number,url,state 2>/dev/null`. If the command succeeds and `state` is `"OPEN"`:
-   - **Update path (PR already exists):**
-     - Push the branch: `git push -u origin <branch-name>`
-     - Run `git log origin/<branch-name>..HEAD --oneline` to list new commits since the last push.
-     - Run `git diff --stat origin/<branch-name>..HEAD` to summarize changed files.
-     - Generate a concise comment body with:
-       - A short summary sentence describing what was updated
-       - A "New commits" list (from the `git log` output)
-       - A "Changed files" summary (from `git diff --stat`)
-     - Post the comment: `gh pr comment <number> --body "$(cat <<'EOF' ... EOF)"`
-     - Output the existing PR URL and stop.
-   - If the command fails or `state` is not `"OPEN"` (closed or merged PR), treat as no PR and continue to the new PR path below.
-
-10. **New PR path:**
-
-    a. **Parse the issue number** from the branch name: split the branch name on `/` and take the second segment. If it is a positive integer, store it as `<issue-number>`. Otherwise (non-numeric, `no-ref`, or branch has fewer than two `/`-delimited segments), set `<issue-number>` to none.
-
-    b. **Push the branch**: `git push -u origin <branch-name>`
-
-    c. **Generate PR title and body:**
-       - Title: concise (under 70 chars), summarizing the branch's changes in the current repo based on the full diff and commit history.
-       - Body: use the template in [pr-template.md](pr-template.md). Substitute `<issue-number>` where the template instructs. If `<issue-number>` is none, omit the bare `#N` line and write "N/A" for the `### Related Issue` section.
-       - **Primary Changes**: only changes from the current repository.
-       - **Related Changes**: if changes were detected in other repositories (from Phase 1 step 4), add a brief note. Do NOT include specific file or change details from other repos.
-
-    d. **Show confirmation prompt** using `AskUserQuestion` with a single question:
-       - Set the `preview` field on the **Confirm** option to a metadata stub only — never the PR body. The body is far larger than the preview panel and will fail to render:
-         ```
-         Title: <title>
-         Branch: <branch-name> → main
-         Issue: #<issue-number>  (or "No linked issue" if none)
-         Summary: <plain-language summary of what the PR does, at most 3 sentences,
-                  wrapped to the panel width>
-         ```
-       - Write the `Summary:` value from the PR body composed in step 10c. Three sentences is a ceiling, not a target — one sentence is enough for a simple PR. Keep it plain and short; the preview panel is narrow.
-       - Options:
-         - **Confirm** (description: "Create this PR as shown") — carries the stub preview
-         - **Cancel** (description: "Abort without creating the PR")
-       - Also allow **Other** (automatic) for free-form input.
-       - **If Confirm:** proceed to step 10e.
-       - **If Cancel:** output "PR creation cancelled. Branch has been pushed to remote." and stop.
-       - **If Other:** first print the full composed PR body as ordinary message text (not in a `preview` field) so the user can read what they are revising — print it at most once per revision round, and skip the print if this round's body has already been printed. Then treat the free-form input as a revised title and/or body revision notes, regenerate the title and body accordingly, and re-ask with the updated stub (loop back to step 10d). Repeat until the user confirms or cancels.
-
-    e. **Create the PR:**
-       ```
-       gh pr create --title "<title>" --body "$(cat <<'EOF'
-       <body>
-       EOF
-       )"
-       ```
-
-11. Output the PR URL, followed by: Next: `/quick-review` or `/deep-review`, then `/review-sweep`, `/review-walk`, `/review-push`, `/land`.
-
-12. **Post an issue-log stamp on the linked issue** (skip if `<issue-number>` from step 10a is none). Compose the body below, write it to a temp file with the Write tool, and post per [the issue-log spec](../issue-log/SKILL.md)'s posting rules:
+11. **Parse the issue number** from `<branch>`: the second `/`-delimited segment, when it is a positive integer, is `<issue-number>`. Otherwise (non-numeric, `no-ref`, or fewer than two segments) `<issue-number>` is none.
+12. `git push -u origin <branch>`. **On rejection**, stop and report the error. Never pull, rebase, or force.
+13. **Compose the title and body.**
+    - Title: under 70 characters, summarizing the full diff and commit history.
+    - Body: fill the fenced skeleton in [pr-template.md](pr-template.md) per that file's instructions. For `### Why`, read the linked issue (`gh issue view <issue-number>`) when there is one, then the conversation, then the diff. Never search for a plan.
+14. Write the body to a temp file with the Write tool and create the PR:
+    ```bash
+    gh pr create --title "<title>" --body-file <temp-file>
+    ```
+15. Print the PR URL, followed by: Next: `/quick-review` or `/deep-review`, then `/review-sweep`, `/review-walk`, `/review-push`, `/land`.
+16. **Post an issue-log stamp on the linked issue** (skip when `<issue-number>` is none). Compose the body below, write it to a temp file with the Write tool, and post per [the issue-log spec](../issue-log/SKILL.md)'s posting rules:
     ```markdown
     <!-- cc-forge-log v1: {"skill":"pr","event":"pr-created","pr":<pr-number>} -->
 
@@ -121,10 +72,9 @@ Do NOT proceed with any commits or pushes on main/master.
 
 ## Rules
 
-- **Repo scoping**: Only commit and push changes within the current repository root. Never commit changes from other repositories.
-- Always detect the repository from the current git directory — never hardcode a repo
-- Do NOT use `git add -A` or `git add .`
-- Do NOT skip hooks (no `--no-verify`)
-- Do NOT push to main/master under any circumstances
-- Use a HEREDOC to pass commit messages to git
-- If changes exist in other repos, mention them briefly in PR body but provide NO details about those changes
+- Detect the repository from the current git directory — never hardcode a repo.
+- Never `git add -A` or `git add .`.
+- Never skip hooks (no `--no-verify`).
+- Never push to `main` or `master`.
+- Never pull, rebase, or force-push.
+- Pass commit messages through a HEREDOC, and PR bodies and comments through `--body-file`.
