@@ -168,7 +168,7 @@ Stamp a verified doc, once the judge step has ended, per [the spec](../test-prot
 
 ### 7. Open the PR
 
-Body: the fenced skeleton in [`/pr`'s template](../pr/pr-template.md), filled per that file's instructions, with `### Why` taken from the plan's Problem Frame, its `Related to #<issue>` line when there is an issue — the body's only issue reference, never a closing keyword like `Closes #N` — and one added section after the change sections, before the `---`:
+Body: the fenced skeleton in [`/open-pr`'s template](../open-pr/pr-template.md), filled per that file's instructions, with `### Why` taken from the plan's Problem Frame, its `Related to #<issue>` line when there is an issue — the body's only issue reference, never a closing keyword like `Closes #N` — and one added section after the change sections, before the `---`:
 
 ```markdown
 ### Grind Docs
@@ -201,7 +201,7 @@ Print:
   ```
   Next — review in a new session in the worktree:
     cd <worktree> && claude
-    /review-walk <review doc>  →  /review-push  →  /test-plan-walk <test doc>  →  /test-plan-run <test doc>  →  /pr  →  /land
+    /review-walk <review doc>  →  /review-push  →  /test-plan-walk <test doc>  →  /test-plan-run <test doc>  →  /open-pr  →  /land
   ```
 
   Drop the review steps when there is no review doc, and the test steps when there is no test doc.
