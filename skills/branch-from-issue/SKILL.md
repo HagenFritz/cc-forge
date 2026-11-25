@@ -95,4 +95,4 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
 - Always branch from the current HEAD
 - The short description must be 2–4 words
 - Use kebab-case for the description
-- Do NOT push the branch (that's what /ship is for)
+- Do NOT push the branch (that's what /pr is for)
