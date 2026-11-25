@@ -83,7 +83,7 @@ Optional keys:
 | test-plan-walk | `test-plan-walk-complete` | 🚶 | Summary line + counts of cases kept and cut; cut counts per reason code; terms added to the glossary |
 | test-plan-run | `tests-run` | 🧾 | Doc path, scope (`scope` in the marker), result counts, revised counts, receipts line, discarded tests |
 | side-quest | `side-quest-filed` | 🧭 | What was found, tracking-issue link (`tracking`, `followup:true`) |
-| pr | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
+| open-pr | `pr-created` | 🚀 | PR link (`pr`), one-line summary |
 | land | `pr-merged` | ✅ | 2-3 sentence summary of what landed + follow-ups (`pr`) |
 | grind | `grind-started` | ⚙️ | Plan path, start time, session resume command, phase line (`phase` of `phases`), slice count (`slices`), one line per slice |
 | grind | `unit-complete` | 🔨 | Same shape as work's row: **Did** (always), **Solved** (only when a problem was solved); `branch` in the marker |
@@ -125,7 +125,7 @@ Precedence, evaluated top-down; first hit wins:
 
 1. Explicit argument to the skill
 2. Branch name: split on `/`, second segment if a positive integer (`feat/57/issue-log-stamps` → 57)
-3. PR body: any GitHub closing-keyword reference (`close`/`fix`/`resolve` and their variants, followed by `#N`), or a `Related to #N` line. **Read-only** — skills parse these, never write a closing keyword into a body (see [pr's pr-template.md](../pr/pr-template.md): `Related to #N` is the only issue line a skill writes).
+3. PR body: any GitHub closing-keyword reference (`close`/`fix`/`resolve` and their variants, followed by `#N`), or a `Related to #N` line. **Read-only** — skills parse these, never write a closing keyword into a body (see [open-pr's pr-template.md](../open-pr/pr-template.md): `Related to #N` is the only issue line a skill writes).
 4. Doc frontmatter (`issue:` in side-quest docs)
 5. Issue established in session context (e.g. via `/read-issue`, `/triage-issue`) — last resort: a number derived from the branch or PR always outranks a remembered one, so a stale earlier issue never wins over the branch you're on.
 
@@ -141,7 +141,7 @@ If nothing resolves, **skip the stamp silently** — no error, no prompt. Skills
 
 ## Dedupe semantics
 
-Writers never dedupe; re-runs may emit duplicate events (re-running `/pr` after a PR close, worktree recreate, resumed `/work` re-stamping a unit). Concurrent sessions are safe by construction — comments are append-only. The **reader** applies latest-wins per `(skill, event, unit)`, scoping `unit` by the plan path carried in `paths`.
+Writers never dedupe; re-runs may emit duplicate events (re-running `/open-pr` after a PR close, worktree recreate, resumed `/work` re-stamping a unit). Concurrent sessions are safe by construction — comments are append-only. The **reader** applies latest-wins per `(skill, event, unit)`, scoping `unit` by the plan path carried in `paths`.
 
 ## Reader contract
 

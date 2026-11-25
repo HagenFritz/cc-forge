@@ -32,7 +32,7 @@ This skill **reads** the review doc — it never edits it. `/review-walk` owns t
 1. Verify `gh` is available (`gh --version`). If not, stop: "GitHub CLI (`gh`) is required for /review-push."
 2. `git rev-parse --show-toplevel` for the repo root; scope all operations to it.
 3. `git branch --show-current`. If on `main`/`master`, stop: "You're on the default branch. /review-push pushes onto a PR's feature branch — check out the PR branch first (or run this on the machine where /review-walk ran)."
-4. **Resolve the open PR for this branch:** `gh pr view --json number,title,url,state,headRefName`. If no open PR, stop: "No open PR found for `<branch>`. /review-push pushes review fixes onto an existing PR — open one with /pr first." If `state` isn't `OPEN`, stop with the same shape.
+4. **Resolve the open PR for this branch:** `gh pr view --json number,title,url,state,headRefName`. If no open PR, stop: "No open PR found for `<branch>`. /review-push pushes review fixes onto an existing PR — open one with /open-pr first." If `state` isn't `OPEN`, stop with the same shape.
 
 ### Phase 2: Resolve the review doc
 
