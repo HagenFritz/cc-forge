@@ -118,7 +118,7 @@ Everything here runs **before any agent is dispatched, any test file is written,
 
 7. **Record the outcome per case** — a `Status:` value from [the spec's five](../test-protocol/SKILL.md#the-five-status-values) and a `**Filter:**` line in [the spec's grammar](../test-protocol/SKILL.md#the-filter-line), written directly under `Status:`, anchored on that case's `### T-<NNN>:` or `### V-<NNN>:` heading. One `**Filter:**` line per case: rewrite the existing one rather than adding a second. Once every revise outcome is recorded, delete the snapshot directory per [the spec](../test-protocol/SKILL.md#delete).
 
-8. **Leave the test files uncommitted** — deleted ones included, as working-tree deletions. `/ship` commits them. Never `git add`, never commit, never push, never stash.
+8. **Leave the test files uncommitted** — deleted ones included, as working-tree deletions. `/pr` commits them. Never `git add`, never commit, never push, never stash.
 
 #### `browser`
 
@@ -153,7 +153,7 @@ Emit [the spec's completion report](../test-protocol/SKILL.md#the-completion-rep
 
 Add, below the table, any line this run owes the reader and the spec's sections do not hold: every `discarded — slow` and `discarded — timeout` case ID, per [the spec's time limits](../test-protocol/SKILL.md#time-limits), the digest drift warning, a live-service disagreement, the writer's "cases not written" lines, and a "the code under test may be wrong" sentence carried from a fix round.
 
-Close with [the spec's next-steps block](../test-protocol/SKILL.md#the-next-steps-block), which ends this skill at `/ship`.
+Close with [the spec's next-steps block](../test-protocol/SKILL.md#the-next-steps-block), which ends this skill at `/pr`.
 
 ### 6. Stamp the linked issue
 
@@ -183,7 +183,7 @@ A no-argument run that covered two modes stamps **once per mode**, each with its
 ## What this skill never does
 
 - **It never rewrites a test on disk**; the only change to one is a within-file revise `delete` removing its named test, per [the spec](../test-protocol/SKILL.md#delete). There is no `--rewrite` flag and no prompt that offers one. Deleting the file by hand is how a human asks for a rewrite.
-- **It never runs the suite.** Only this run's new or re-verified tests and the gate's single targets, per the spec — CI runs the suite once, off `/ship`'s push.
+- **It never runs the suite.** Only this run's new or re-verified tests and the gate's single targets, per the spec — CI runs the suite once, off `/pr`'s push.
 - **It never commits, pushes, or stashes.** The tests land in the working tree and stay there.
 - **It never dispatches a lens or the synthesizer.** A document that does not exist is `/test-plan`'s problem; this skill consumes one that does.
 - **It never calls `AskUserQuestion`.** Every question is a plain-text numbered list with a free-text catch-all.

@@ -406,7 +406,7 @@ After all findings are terminal:
   reported the term was already present counts too. Omit the line when none.
 - Stamp the walk outcome (§6a).
 - Next step, one line: if any `done` finding changed code, check for an open PR
-  (`gh pr view --json state,number`). Open PR → suggest `/review-push`. No PR → `/ship`.
+  (`gh pr view --json state,number`). Open PR → suggest `/review-push`. No PR → `/pr`.
 
 ### 6a. Stamp the Walk Outcome
 

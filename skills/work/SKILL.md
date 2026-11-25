@@ -215,9 +215,9 @@ This command takes a work document (plan, specification, or todo file) and execu
 
 4. **Write No Tests, Run No Tests**
 
-   - `/work` writes zero tests and runs no suite. Tests are written afterward by `/test-plan` and `/test-plan-run`, and the suite runs once in CI off `/ship`'s push.
+   - `/work` writes zero tests and runs no suite. Tests are written afterward by `/test-plan` and `/test-plan-run`, and the suite runs once in CI off `/pr`'s push.
    - Each unit leaves the working tree buildable and lint-clean. That is the bar the worker owns.
-   - A change that breaks an existing test is caught in CI after ship, not here.
+   - A change that breaks an existing test is caught in CI after `/pr`, not here.
 
 5. **Track Progress**
    - Keep the task list updated as you complete tasks
@@ -236,7 +236,7 @@ This command takes a work document (plan, specification, or todo file) and execu
    # Use linting-agent before pushing to origin
    ```
 
-   Do not run the test suite here. It runs once, in CI, off `/ship`'s push.
+   Do not run the test suite here. It runs once, in CI, off `/pr`'s push.
 
 2. **Consider Reviewer Agents** (Optional)
 
@@ -268,8 +268,8 @@ This command takes a work document (plan, specification, or todo file) and execu
 3. **Suggest Next Steps**
    - Run [`/test-plan`](../test-plan/SKILL.md) to generate the test plan for this change
    - Run [`/test-plan-run`](../test-plan-run/SKILL.md) to write and verify its tests
-   - Run `/ship` to commit, push, and open a PR — the suite runs in CI off that push
-   - Review after ship: `/quick-review`, or `/deep-review` if the change is large or risky
+   - Run `/pr` to commit, push, and open a PR — the suite runs in CI off that push
+   - Review after `/pr`: `/quick-review`, or `/deep-review` if the change is large or risky
 
 4. **Display Work Summary**
 
@@ -328,7 +328,7 @@ Most plans should use subagent dispatch from standard mode. Agent teams consume 
 
 - `/work` writes no tests and runs no suite
 - `/test-plan` and `/test-plan-run` write them once the units have landed
-- The suite runs once, in CI, off `/ship`'s push
+- The suite runs once, in CI, off `/pr`'s push
 
 ### Quality is Built In
 
@@ -352,7 +352,7 @@ Before creating PR, verify:
 - [ ] Linting passes (use linting-agent)
 - [ ] Code follows existing patterns
 - [ ] Commit messages follow conventional format
-- [ ] Run `/test-plan`, then `/test-plan-run`, then `/ship` to push branch and create PR
+- [ ] Run `/test-plan`, then `/test-plan-run`, then `/pr` to push branch and create PR
 
 ## When to Use Reviewer Agents
 

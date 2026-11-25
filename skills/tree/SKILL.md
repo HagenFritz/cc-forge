@@ -124,5 +124,5 @@ Before starting, use `TaskList` to find any lingering tasks and delete them all 
 - Always branch from the up-to-date default branch, never from arbitrary HEAD
 - The short description must be 2–4 words, kebab-case
 - One worktree per branch — never reuse an existing worktree for a new branch
-- Do NOT push the branch (that's what /ship is for)
+- Do NOT push the branch (that's what /pr is for)
 - Do NOT remove worktrees (that's what /land does on merge)

@@ -542,7 +542,7 @@ members.
     - `/review-walk <absolute doc path>` — with the count it will walk (the recommended and surfaced
       findings together; the terminal ones are already decided).
     - Then `/review-push` when `gh pr view --json number` finds an open PR for the current branch,
-      or `/ship` when it does not.
+      or `/pr` when it does not.
 
 **Zero implemented is a successful terminal state.** The report prints in full, the closes,
 recommendations, and surfaced findings carry the run's value, and nothing about the wording treats

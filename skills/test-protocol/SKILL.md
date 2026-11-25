@@ -868,7 +868,7 @@ included, before any test's reruns begin. The phase clock then spends itself on 
 never on a test that has not yet been seen to pass.
 
 **Only the new tests are run — never the suite.** Running the suite here would duplicate
-the CI run that `/ship`'s push triggers, which is the whole reason the suite was taken out
+the CI run that `/pr`'s push triggers, which is the whole reason the suite was taken out
 of `/work`.
 
 ### Classifying a collect failure, and the one fix round
@@ -1151,7 +1151,7 @@ Each caller ends at a different place, and each states only its own:
 
 - `/test-plan` → "review the document, walk it with `/test-plan-walk` if you want, then
   `/test-plan-run`."
-- `/test-plan-run` → `/ship`.
+- `/test-plan-run` → `/pr`.
 - grind → its own terminal report owns its next steps.
 
 A caller may **append** its own follow-on offer after this block; it never rewrites the
@@ -1240,7 +1240,7 @@ happened.
 - **Every revise case passes [the gate](#the-gate) first.** Only a failing target is
   deleted or recorded `regression`; a passing one is `still valid` and untouched.
 - **Only the new tests are run, never the suite.** The gate runs one original target. CI
-  runs the suite once, off `/ship`'s push.
+  runs the suite once, off `/pr`'s push.
 - **Breadth-first: every test reaches pass before any reruns.** The phase clock cuts only
   reruns; a test that never passed is discarded as `timeout`, never shipped.
 - **Nothing is capped.** Not `auto`, not the revise bucket; the judge cuts by rule, never
